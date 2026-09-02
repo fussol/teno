@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">#F4C182</color>
+  <color name="ic_launcher_background_2">#1E3A5F</color>
+  <color name="ic_launcher_background_3">#2E5D3A</color>
+  <color name="ic_launcher_background_4">#FF9A62</color>
+  <color name="ic_launcher_background_5">#121826</color>
+  <color name="ic_launcher_background_6">#FFF3B0</color>
+  <color name="ic_launcher_background_7">#A8E6CF</color>
+  <color name="ic_launcher_background_8">#FFD6E0</color>
+  <color name="ic_launcher_background_9">#2B2B2B</color>
+  <color name="ic_launcher_background_10">#FAF0E6</color>
+  <color name="ic_launcher_background_11">#E3F2FD</color>
+  <color name="ic_launcher_background_12">#EEF8CD</color>
+  <color name="ic_launcher_background_13">#D9FFF4</color>
+  <color name="ic_launcher_background_14">#F8B2B2</color>
+  <color name="ic_launcher_background_15">#0F3040</color>
+  <color name="ic_launcher_background_16">#E8F5E9</color>
+  <color name="ic_launcher_background_17">#F7F4ED</color>
+  <color name="ic_launcher_background_18">#FFDD9C</color>
+  <color name="ic_launcher_background_19">#E1E100</color>
+  <color name="ic_launcher_background_20">#F6D8BD</color>
+</resources>

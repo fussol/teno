@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.teno" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- 原生 splash：中性深色（與 app 深色底一致）。視覺（icon 色+圖）由前端 splash 接管，
+             因為 Android 12+ 的 SplashScreen 讀 targetActivity 的 theme，動態 icon 無法在原生層顯示 -->
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <!-- Android <12 fallback：windowBackground 同色，避免白屏閃爍 -->
+        <item name="android:windowBackground">@color/splash_background</item>
+    </style>
+</resources>

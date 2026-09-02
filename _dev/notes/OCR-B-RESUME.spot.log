@@ -1,0 +1,588 @@
+Query: 你是 Teno 離線波次OCR-B-RESUME（B′ 切割續跑收尾專員）。先讀 
+_dev/notes/PM-OCR-B-RESUME-MISSION.md 了解任務書，接著嚴格照它執行：前首相已寫好
+B′ 切割兩態 code（未 commit），你覆核已寫的 ocr.js/crop.js、補 
+verify-ocr2-crop.mjs、驗證、審查 1 席、commit（5.9.6）。禁碰 store.js（OCR-CD 
+在用）。以繁體中文回報。
+Initializing agent...
+────────────────────────────────────────
+
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    收到，B′ 切割續跑收尾專員報到。先讀任務書。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/_dev/notes/PM-OCR-B-RESUME-MISSION.md  0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    任務書清楚了。先讀鐵律公文、計畫段、以及待覆核的 code。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 preparing read_file…
+  ┊ 📖 preparing read_file…
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/_dev/notes/GOV-BRIEF.md  0.1s
+  ┊ 📖 read      ~/teno/_dev/notes/OCR-OPTIMIZE-plan.md  0.1s
+  ┊ 📖 read      ~/teno/src/pages/ocr.js  0.1s
+  ┊ 📖 read      ~/teno/src/lib/ocr/crop.js  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    ocr.js 前 500 行看了,crop.js 完整讀完。把 ocr.js 剩下段讀完,同時確認 git 狀態與 baseline。
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 💻 preparing terminal…
+  ┊ 📖 read      ~/teno/src/pages/ocr.js  0.1s
+  ┊ 💻 $         cd ~/teno && git status && echo "---HEAD---" && git rev-parse HEAD && echo "---LOG---" && git log --oneline -6  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    B′ code 讀完了。確認一下 ocr.js 的 working tree diff vs HEAD（f58c236, 5.9.5）是否純屬 B′ 段（A/C 已在 5.9.5/5.9.4 commit），排除並行首相的改動混入。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && git diff src/pages/ocr.js | head -300  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    B′ diff 精確,乾淨——只動 .ocr-img-wrap 移掉 touch-action:none+crosshair、把 wrap 的單一矩形 pointer 改成 SVG polygon + 四角 handle + 兩態狀態機。A/C 已在 5.9.5/5.9.4 commit,所以 diff 純 B′。✓
+    
+    看一下既有的 verify-ocr2-* harness 格式(A 段的 highlightfilter 應該存在),照 style 對齊寫 crop harness。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔎 preparing search_files…
+  ┊ 📖 preparing read_file…
+  ┊ 🔎 find      verify-ocr2-*.mjs  0.0s
+  ┊ 📖 read      ~/teno/tools/verify-ocr2-enrich.mjs  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    B′ code 覆核完畢,diff 純屬 B′ 段(移掉 wrap 的 touch-action:none+crosshair+wrap pointer 綁定,改成 SVG polygon + 四角 handle + 兩態狀態機),A/C 已在 HEAD commit,乾淨不混亂。現在寫 harness。先看 highlightfilter 的格式與負控制 style 保持一致。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/tools/verify-ocr2-highlightfilter.mjs  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    B′ code 覆核確認乾淨、純 B′ diff。寫 harness 對齊既有 style。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ ✍️ preparing write_file…
+  ┊ ✍️  write     ~/teno/tools/verify-ocr2-crop.mjs  1.4s
+  ┊ review diff
+a/tools/verify-ocr2-crop.mjs → b/tools/verify-ocr2-crop.mjs
+@@ -0,0 +1,147 @@
++#!/usr/bin/env node
++// ═══════════════════════════════════════════════════════════════
++// OCR-OPTIMIZE B′ 段 — 切割兩態（preview/cutting）＋四角 handle 驗證
++// 檔案: tools/verify-ocr2-crop.mjs
++//
++// 測 src/lib/ocr/crop.js 純函式層（零 DOM，直接 import）+ 靜態釘 ocr.js：
++//   T1 cornersToRect：四角 → 軸向包圍矩形（min/min/max/max）；不完整回 null
++//   T2 moveCorner：拖單角 clamp 在 [0,dispW]×[0,dispH]；越界(idx)自保
++//   T3 defaultCorners：中央 60% 框，四點順序 [左上,右上,右下,左下]
++//   T4 untangleCorners：對角線自交 → 矯正回包圍矩形；非自交 → 各自 clamp
++//   T5 mapCornersToSource：顯示座標 → 原圖 px 映射（不越界）
++//   T6 touchActionFor / bindsCropPointer：
++//        preview → 'auto'（可捲動）+ 不綁切割 pointer（不影響滑頁）
++//        cutting → 'none' + 綁（切割態鎖 scroll 合理）
++//   NC 負控制：把 _cropMode 預設當成 'cutting' → touchActionFor='none' +
++//      bindsCropPointer=true → 精準重現「進 OCR 頁影響滑動」原 bug
++//   NCS 靜態釘 ocr.js：.ocr-img-wrap 無 touch-action:none、wrap 不綁
++//      pointerdown 切割、handle pointerdown guard 要求 cutting 態。
++// 用法: node tools/verify-ocr2-crop.mjs
++// ═══════════════════════════════════════════════════════════════
++import fs from 'node:fs';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++import {
++  CORNER_COUNT, cornersToRect, defaultCorners, moveCorner,
++  untangleCorners, mapCornersToSource, defaultMapToSource,
++  touchActionFor, bindsCropPointer,
++} from '../src/lib/ocr/crop.js';
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++const ROOT = path.resolve(__dirname, '..');
++const OCR_SRC = fs.readFileSync(path.join(ROOT, 'src/pages/ocr.js'), 'utf8');
++
++let failures = 0;
++const check = (label, got, expect) => {
++  const pass = JSON.stringify(got) === JSON.stringify(expect);
++  if (!pass) failures++;
++  console.log(`${pass ? 'PASS' : 'FAIL'} ${label}: got=${JSON.stringify(got)} expect=${JSON.stringify(expect)}`);
++};
++
++console.log('═══ OCR2-B′ 切割兩態 四角 handle 驗證 ═══');
++
++// T1 cornersToRect：四角 → 軸向包圍矩形
++{
++  const r = cornersToRect([
++    { x: 10, y: 10 }, { x: 100, y: 20 }, { x: 90, y: 80 }, { x: 5, y: 70 },
++  ]);
++  check('T1a 包圍矩形 {x:5,y:10,w:95,h:70}', r, { x: 5, y: 10, w: 95, h: 70 });
++  check('T1b 非四角 → null', cornersToRect([{ x: 1, y: 2 }, { x: 3, y: 4 }]), null);
++  check('T1c 含非數字 → null', cornersToRect([{ x: 1, y: 2 }, { x: 'a', y: 4 }, { x: 5, y: 6 }, { x: 7, y: 8 }]), null);
++  check('T1d 非陣列 → null', cornersToRect('x'), null);
++  check('T1e 零邊長矩形成立', cornersToRect([{ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }]), { x: 5, y: 5, w: 0, h: 0 });
++}
++
++// T2 moveCorner：拖單角 + clamp
++{
++  const base = defaultCorners(200, 100);
++  const out = moveCorner(base, 0, -50, 500, 200, 100);   // 溢出 → clamp
++  check('T2a idx0 clamp [0,200]', out[0], { x: 0, y: 100 });
++  check('T2b 其餘角不動', out[1], base[1]);
++  check('T2c idx 越界 → 回拷貝不變', moveCorner(base, 9, 5, 5, 200, 100), base);
++  const mid = moveCorner(base, 2, 150, 60, 200, 100);
++  check('T2d idx2 正常到位', mid[2], { x: 150, y: 60 });
++}
++
++// T3 defaultCorners：中央 60% 框
++{
++  const c = defaultCorners(200, 100);
++  check('T3a 長度 4', c.length, 4);
++  check('T3b 左上=(40,20)', c[0], { x: 40, y: 20 });
++  check('T3c 右上=(160,20)', c[1], { x: 160, y: 20 });
++  check('T3d 右下=(160,80)', c[2], { x: 160, y: 80 });
++  check('T3e 左下=(40,80)', c[3], { x: 40, y: 80 });
++}
++
++// T4 untangleCorners：自交矯正
++{
++  // 對角線自交案例：左上(0,0) 右上(50,50) 右下(10,40) 左下(20,20) → ac(0↔2) 與 bd(1↔3) 相交
+… omitted 69 diff line(s) across 1 additional file(s)/section(s)
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    Harness 寫好了。跑 PRE(負控制)＋正式分開跑,再加既有 OCR harness 回歸 + node --check + vite build。先跑 PRE 跟正式。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && echo "===== BR′ CROP harness =====" && node tools/verify-ocr2-crop.mjs; echo "exit=$?"  0.1s
+  ┊ 💻 $         cd ~/teno && echo "===== node --check all touched =====" && node --check src/lib/ocr/crop.js && echo "crop OK" && node --check src/pages/ocr.js && echo "ocr OK" && node --check tools/verify-ocr2-crop.mjs && echo "harness OK"  0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    B′ harness 爆了 2 個 FAIL——都是 untangleCorners 的實作問題。這正是要覆核抓的洞。看 t4a/t4b 的 got：
+    
+    - t4a 期望矯正回矩形，但它把輸入原樣回了 → 自交沒被判出
+    - t4b 期望「非自交各自 clamp」，它卻矯正回矩形 → 正常凸四邊形被誤判成自交
+    
+    根因在 untangleCorners 用 segmentsIntersect(corners[0],corners[2],corners[1],corners[3]) —— 它測的是對角線 AC↔BD 是否相交。但任何正常凸四邊形的對角線都必交於內部，所以這個判斷對所有合法凸四邊形永遠成立 → 每個拖曳動一下就被強制拉回軸向矩形，完全毀掉 B′「任意四邊形」的裁示；而真正的 bowtie（自交）反而因為端點/退化 case 漏判。
+    
+    正確的自交偵測要看非相鄰邊（邊0-1 vs 邊2-3、邊1-2 vs 邊3-0），不是對角線。這是前首相 code 的洞，任務書明言「發現未完成的洞直接補完」。先讀現行實作再修。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/src/lib/ocr/crop.js  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    實錘了根因。untangleCorners 用對角線(ac↔bd)是否相交判自交——但凸四邊形的對角線本來就必交於內部，所以所有拖曳都會被強制拉回軸向矩形，毀掉「任意四邊形」；同時真正的 bowtie(自交)卻因端點相接漏判。正確判自交要看非相鄰邊是否相交。修 code：
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/lib/ocr/crop.js  0.5s
+  ┊ review diff
+a//home/jupiter/teno/src/lib/ocr/crop.js → b//home/jupiter/teno/src/lib/ocr/crop.js
+@@ -126,9 +126,11 @@
+ }
+ 
+ /**
+- * 防誤判：指出該角點是否「靠向某角」，進行角拖曳時若四角退化成近矩形，
+- * 附帶把對角同推（維持四邊形不自相交）。回新的 corners。
+- * 實作：拖動單角後，若有任一對「對角線」反轉（自交），滾回包圍矩形。
++ * 防誤判：拖動單角後若四角成自交（bowtie：非相鄰邊相交），滾回包圍矩形；
++ * 否則只各自 clamp 在顯示範圍。回新的 corners。
++ * 自交判定：檢查「非相鄰邊」邊0-1 vs 邊2-3、邊1-2 vs 邊3-0 是否相交。
++ *   ——不能用對角線(ac vs bd)測：正常凸四邊形的對角線本就必交於內部，
++ *     會把每個合法四邊形誤判成自交、強制拉回軸向矩形（毀掉任意四邊形）。
+  * @param {{x:number,y:number}[]} corners
+  * @param {number} dispW
+  * @param {number} dispH
+@@ -136,9 +138,11 @@
+  */
+ export function untangleCorners(corners, dispW, dispH) {
+   if (!Array.isArray(corners) || corners.length !== CORNER_COUNT) return corners;
+-  // 檢查對角線 ac(0↔2) 與 bd(1↔3) 相交 → 判定自交。
+-  // 四角按順序 [0,1,2,3]，若對角線相交表示多邊形非凸/自交，退回包圍矩形。
+-  if (segmentsIntersect(corners[0], corners[2], corners[1], corners[3])) {
++  // 檢查自交：非相鄰邊相交（0-1 vs 2-3；1-2 vs 3-0）
++  const selfCross =
++    segmentsIntersect(corners[0], corners[1], corners[2], corners[3]) ||
++    segmentsIntersect(corners[1], corners[2], corners[3], corners[0]);
++  if (selfCross) {
+     const r = cornersToRect(corners);
+     if (!r) return corners;
+     return [
+@@ -148,7 +152,7 @@
+       { x: r.x, y: r.y + r.h },
+     ];
+   }
+-  // 對角線不相交 → 讓角點各自 clamp 在顯示範圍（bounds sanity）
++  // 非自交 → 讓角點各自 clamp 在顯示範圍（bounds sanity）
+   return corners.map(c => ({
+     x: Math.max(0, Math.min(dispW, c.x)),
+     y: Math.max(0, Math.min(dispH, c.y)),
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    修好了 root cause。但我 harness 的 t4a 案例本身設計失誤——那不是嚴格自交(端點相接 (20,20) 落在 y=x 上),沒構成 bowtie。改用真正自交的 X 形案例重寫 t4a：
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/tools/verify-ocr2-crop.mjs  0.1s
+  ┊ review diff
+a//home/jupiter/teno/tools/verify-ocr2-crop.mjs → b//home/jupiter/teno/tools/verify-ocr2-crop.mjs
+@@ -75,26 +75,34 @@
+ 
+ // T4 untangleCorners：自交矯正
+ {
+-  // 對角線自交案例：左上(0,0) 右上(50,50) 右下(10,40) 左下(20,20) → ac(0↔2) 與 bd(1↔3) 相交
+-  const selfCross = [
+-    { x: 0, y: 0 }, { x: 50, y: 50 }, { x: 10, y: 40 }, { x: 20, y: 20 },
++  // 真正自交（bowtie / X 形）：邊0-1=(0,0)-(2,2) 與 邊2-3=(0,2)-(2,0) 在 (1,1) 交叉
++  const bowtie = [
++    { x: 0, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 }, { x: 2, y: 0 },
+   ];
+-  const fixed = untangleCorners(selfCross, 100, 100);
+-  // 應矯正回包圍矩形 {0,0,50,50}
+-  check('T4a 自交 → 回包圍矩形', fixed, [
+-    { x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 0, y: 50 },
++  const fixed = untangleCorners(bowtie, 100, 100);
++  // 應矯正回包圍矩形 {0,0,2,2}
++  check('T4a 自交(X形) → 回包圍矩形', fixed, [
++    { x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 2 }, { x: 0, y: 2 },
+   ]);
+-  // 非自交 → 只 clamp
+-  const ok = [
+-    { x: -5, y: 0 }, { x: 50, y: 10 }, { x: 40, y: 200 }, { x: 0, y: 100 },
++  // 非自交凸四邊形（例：梯形，非軸向）→ 不被強制拉回矩形，只 clamp——保住「任意四邊形」
++  const trapezoid = [
++    { x: 10, y: 10 }, { x: 80, y: 20 }, { x: 70, y: 90 }, { x: 20, y: 85 },
+   ];
+-  const clamped = untangleCorners(ok, 100, 100);
+-  check('T4b 非自交 clamp', clamped, [
+-    { x: 0, y: 0 }, { x: 50, y: 10 }, { x: 40, y: 100 }, { x: 0, y: 100 },
++  const kept = untangleCorners(trapezoid, 100, 100);
++  check('T4b 凸梯形保留四角（不強制矩形）', kept, [
++    { x: 10, y: 10 }, { x: 80, y: 20 }, { x: 70, y: 90 }, { x: 20, y: 85 },
+   ]);
+   // 退化：單點（三點同）非自交 → 原樣 clamp
+   const degenerated = untangleCorners([{ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }], 100, 100);
+   check('T4c 退化單點保持', degenerated[0], { x: 5, y: 5 });
++  // 邊界 clamp：非自交但出界 → 各自收進 [0,disp]
++  const clampOk = [
++    { x: -5, y: 0 }, { x: 50, y: 10 }, { x: 40, y: 200 }, { x: 0, y: 100 },
++  ];
++  const clamped = untangleCorners(clampOk, 100, 100);
++  check('T4d 非自交出界 → 各自 clamp', clamped, [
++    { x: 0, y: 0 }, { x: 50, y: 10 }, { x: 40, y: 100 }, { x: 0, y: 100 },
++  ]);
+ }
+ 
+ // T5 mapCornersToSource / defaultMapToSource：顯示→原圖映像
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    重跑 harness 驗證修復,並行跑既有 OCR 回歸 harness。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && node tools/verify-ocr2-crop.mjs; echo "exit=$?"  0.1s
+  ┊ 💻 $         cd ~/teno && for f in verify-ocr-graylist verify-ocr-blacklist verify-ocr-import verify-ocr-v2-integration verify-restore-dict verify-ocr2-highlightfilter verify-ocr2-override; do echo "=== $f ==="; node tools/$f.mjs 2>&1 | tail -3; done  0.3s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    crop harness 全 PASS(34/34 含 T4ab 修復)。幾個既有 harness 崩了——照記憶,凡是用 mock.module 的腳本裸跑會炸,要加 --experimental-test-module-mocks flag。確認一下:
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && for f in verify-ocr-graylist verify-ocr-blacklist verify-ocr-import verify-ocr2-override; do echo "=== $f (with flag) ==="; node --experimental-test-module-mocks tools/$f.mjs 2>&1 | tail -4; done  0.3s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    blacklist 加 flag 也炸,看完整錯誤——可能是 OCR-CD 在改 store.js 有衝突,需要確認不是我的 B′ 造成的。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && node --experimental-test-module-mocks tools/verify-ocr-blacklist.mjs 2>&1 | head -30  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    blacklist harness 其實在 _dev/notes/ 底下,不是 tools/。找它的實際位置跑。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && find . -name "verify-ocr-blacklist.mjs" -not -path "*/node_modules/*" 2>/dev/null  0.5s
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && node --experimental-test-module-mocks _dev/notes/verify-ocr-blacklist.mjs 2>&1 | tail -4; echo "exit=$?"  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    全部回歸 PASS(blacklist 在 _dev/notes/)。現在跑 vite build 確認編譯。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && npx vite build 2>&1 | tail -20; echo "build_exit=${PIPESTATUS[0]}"  0.0s [This foreground command appears to start a lo...]
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    build 被誤判成 watch process,加明確 timeout 跑。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && npx vite build --logLevel warn 2>&1 | tail -20; echo "build_exit=${PIPESTATUS[0]}"  0.0s [This foreground command appears to start a lo...]
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && timeout 150 npx vite build > /tmp/vite-build.log 2>&1; echo "build_exit=$?"; tail -25 /tmp/vite-build.log  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    偵測器看到 vite 字樣就當成長駐 process。改用 background 跑。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && npx vite build --logLevel warn > /tmp/vite-build.log 2>&1; echo "build_exit=$?"; tail -20 /tmp/vite-build.log  0.6s
+  ┊ ⚙️ preparing process…
+  ┊ ⚙️  proc      wait proc_f93d8f2  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    build 成功(exit 0,只有 chunk 大小 warning,import path 的 ocr.js 正常)。現在 commit 前先升版。先看 version.sh 採誰、核對 HEAD 現值是否=我的(f58c236,5.9.5),避免撞號。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && cat package.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('version=', d.get('version'))" 2>/dev/null; grep -rn '"version"' src-tauri/tauri.conf.json 2>/dev/null; echo "---"; git rev-parse HEAD  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    版本現值 5.9.5, HEAD=f58c236 正是我的基底(無其他首相插隊),升 5.9.6 不撞號。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && ./tools/version.sh 5.9.6; echo "exit=$?"; echo "---after---"; grep '"version"' package.json; grep '"version"' src-tauri/tauri.conf.json  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    升版完成(三源一致 5.9.6, sync PASS)。審查前先做 browser 實跑驗證(DOM 層)——B′ 是純邏輯 harness 已過,但 ocr.js 的 DOM 綁定要實際驗證。任務要求審查 1 席(唯讀+負控制重跑)。先確認審查範圍:任務書列交付含「審查 1 席」。依 GOV-BRIEF,審查委須唯讀+獨立重跑驗證+負控制。
+    
+    在那之前,先把 commit 的檔案整理清楚,確認 git status 只含我的檔。並先寫好 subagent-log。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && git status --short src/pages/ocr.js src/lib/ocr/crop.js tools/verify-ocr2-crop.mjs package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml; echo "---diff stat src lib version---"; git diff --stat src/pages/ocr.js package.json src-tauri/; echo "---crop untracked---"; git status --short src/lib/ocr/crop.js  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    我只 commit 我的 B′ 檔 + version 三檔。注意 src-tauri/cambridge_scraper/src/english.rs 也在 diff stat 但那是別人留的未 commit 檔,不屬我,絕不 add。
+    
+    先起 dev server 做 browser 實跑驗證 B′ DOM 行為。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && npx vite --port 5199 --logLevel warn > /tmp/vite-dev.log 2>&1  1.0s
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         sleep 2 && cat /tmp/vite-dev.log | tail -5 && curl -s -o /dev/null -w "%{http_code}" http://localhost:5199/ ; echo " <- root"  2.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    dev server 起來了。用 browser 驗證 ocr.js 的 B′ DOM 行為。這單頁 app 需要先 navigate 到 OCR 頁。先看 app 結構怎麼進 OCR 工具頁。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🌐 preparing browser_navigate…
+  ┊ 🌐 navigate  localhost:5199  1.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    OCR 頁是工具頁之一,需經由導覽進入。先看路由機制與是否有 runtime 錯誤。用 console 檢查實際載入的 ocr.js DOM 與 CSS 釘。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🖥️ preparing browser_console…
+  ┊ ⚡ browser_c   0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    OCR 頁需要 DB + 載圖,在無 seed 的環境較難走完整路徑。改用更直接的方式:在 page 裡動態 import ocr.js 的 render(),驗證 B′ DOM 結構實際輸出,並檢查非觸電式綁定。這能獨立證明 DOM 層。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🖥️ preparing browser_console…
+  ┊ ⚡ browser_c   0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    Browser 實跑確認 B′ DOM 層全對:
+    - ocrCutStartBtn(切割進入鈕)存在 ✓
+    - 4 個 ocrHandle ✓
+    - .ocr-img-wrap 無 touch-action:none(preview 可滑動)✓
+    - .ocr-crop-handle 有 touch-action:none(僅切割態鎖)✓
+    - 完成/取消鈕、preview 提示全部到位 ✓
+    - 模組乾淨載入,無 runtime error ✓
+    
+    現在開審查 1 席——依限時協議,委要唯讀 + 獨立重跑 harness + 檢查我的 untangleCorners 修復。
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔀 preparing delegate_task…
+  ┊ 🔀 delegate  審查 B′ OCR 切割兩態 commit(唯讀):獨立重跑 harness、覆核 untangleCorners 自交修復的幾何正確性、檢查 ocr.js/crop.js 一致性與兩態正確性、確認未碰禁區 store.js。回 ✅/❌ + 證據。  6990.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    審查回 ❌ FAIL,抓出 D1(viewBox 座標系錯位)、D2(取消 no-op)、D3(wrap 未鎖 touch-action)、D4(死碼 CSS)＋NC 未 fail-closed。審查提到 D′ 首相已在期間 commit deb1202(store.js 已入庫、ocr.js 的 D′ 5 行已分離)。我先自己驗證這些缺陷 + 重核 ocr.js 目前 vs HEAD 的 diff 是純 B′。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && echo "=== HEAD now ===" && git log --oneline -3 && echo "=== ocr.js diff stat vs HEAD ===" && git diff --stat src/pages/ocr.js && echo "=== crop-overlay dead? ===" && grep -c "ocrCropOverlay" src/pages/ocr.js && echo "--- svg element line ---" && grep -n "ocr-crop-svg\|viewBox\|ocrCropPoly\|_crop = _crop \|\_savedCrop" src/pages/ocr.js  0.1s [exit 1]
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    版號被 D′ 搶先了——HEAD 已是 deb1202(5.9.6)。我的 B′ 要改用 5.9.7。先確認 deb1202 碰了哪些檔、驗證審查的 D1-D4,並重核 ocr.js diff 對現 HEAD 是否純 B′。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && echo "=== files in deb1202 ===" && git show --stat --oneline deb1202 | head -20 && echo "=== does HEAD ocr.js diff include D' lines? check enrich string ===" && git diff HEAD -- src/pages/ocr.js | grep -i "enrich\|res.enriched" | head; echo "(empty above = pure B')" && echo "=== D1 viewBox + poly ===" && grep -n 'viewBox\|ocrCropPoly\|setAttribute(.points' src/pages/ocr.js && echo "=== D2 cancel ===" && grep -n '_crop = _crop \|_corners = null; _crop' src/pages/ocr.js  0.1s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    審查證據實錘。授權驗證三缺陷都屬實:
+    
+    D1 (viewBox 錯位): svg 有 viewBox="0 0 100 100",但是 paintCorners 寫的 points 是顯示 px(如 wrap 360px 寬時座標到 360)。SVG viewBox 是 0 0 100 100,所以 px 座標全部被縮放錯位——只有 wrap 恰為 100×100 才對。這是真 bug,切割框視覺完全不對。修法:刪 viewBox。
+    
+    D2 (取消 no-op): _crop = _crop || null 恆等 no-op,取消從不真正清。修法:進 cutting 前存 _savedCrop,取消回退。
+    
+    D4: .ocr-crop-overlay 死碼已確認 0 使用(舊 CSS :74 行 .ocr-crop-overlay 仍在,但要刪)。
+    
+    D3: wrap cutting 態沒 touch-action:none(設計 B.4 說 cutting 鎖)。
+    
+    先看 D3/D4 相關 CSS 現況行號,一次修齊。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/src/pages/ocr.js  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    四缺陷全實錘。逐項修。先修 CSS(D1 viewBox、D3 cutting 鎖、D4 死碼),再修 D2 取消邏輯。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/pages/ocr.js  0.5s
+  ┊ review diff
+a//home/jupiter/teno/src/pages/ocr.js → b//home/jupiter/teno/src/pages/ocr.js
+@@ -62,7 +62,7 @@
+       .ocr-source-btn .ico{color:var(--accent)}
+       .ocr-stage{display:none;margin-top:var(--s2)}
+       .ocr-img-wrap{position:relative;width:100%;overflow:hidden;border-radius:var(--r-md);border:1px solid var(--border);background:#000;-webkit-user-select:none;user-select:none}
+-      .ocr-img-wrap.cutting{-webkit-user-select:none;user-select:none}
++      .ocr-img-wrap.cutting{-webkit-user-select:none;user-select:none;touch-action:none}
+       .ocr-crop-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+       .ocr-crop-handle{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);pointer-events:auto;z-index:4;cursor:grab;touch-action:none;transform:translate(-50%,-50%)}
+       .ocr-img{display:block;width:100%;height:auto}
+@@ -71,7 +71,6 @@
+       .ocr-hl-color{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r1);border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;transition:.15s}
+       .ocr-hl-color.active{border-color:var(--accent);background:var(--bg-hover)}
+       .ocr-hl-swatch{width:10px;height:10px;border-radius:50%;flex:none}
+-      .ocr-crop-overlay{position:absolute;border:2px solid var(--accent);background:rgba(59,130,246,.16);pointer-events:none;box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+       .ocr-crop-row{display:flex;gap:var(--s2);margin-top:var(--s2);align-items:center;flex-wrap:wrap}
+       .ocr-hint{font-size:11px;color:var(--text-tertiary)}
+       .ocr-result{display:none;margin-top:var(--s3)}
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    D1 + D3 + D4 修好。現在修 D2(viewBox 刪除)與 D1 的另一半(viewBox 屬性),以及 D2 取消邏輯。先修 svg viewBox(刪掉固定 100x100 viewBox,改為與 wrap 同座標系)。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/pages/ocr.js  0.2s
+  ┊ review diff
+a//home/jupiter/teno/src/pages/ocr.js → b//home/jupiter/teno/src/pages/ocr.js
+@@ -133,7 +133,7 @@
+       <div class="ocr-stage" id="ocrStage">
+         <div class="ocr-img-wrap" id="ocrImgWrap">
+           <img id="ocrImgEl" class="ocr-img" alt="待辨識影像">
+-          <svg class="ocr-crop-svg" id="ocrCropSvg" viewBox="0 0 100 100" style="display:none" preserveAspectRatio="none">
++          <svg class="ocr-crop-svg" id="ocrCropSvg" style="display:none" preserveAspectRatio="none">
+             <polygon id="ocrCropPoly" fill="rgba(59,130,246,.16)" stroke="var(--accent)" stroke-width="2" />
+           </svg>
+           <div class="ocr-crop-handle" id="ocrHandle0" style="display:none"></div>
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    viewBox 已刪,切割框現與 wrap 同 px 座標系。現在修 D2(取消 no-op)——enterCutting 前存快照,cancel 回退。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 📖 preparing read_file…
+  ┊ 📖 read      ~/teno/src/pages/ocr.js  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    修 D2:在 _corners 變數旁加 _savedCrop,enterCutting 存進入前快照,cancel 回退。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/pages/ocr.js  0.2s
+  ┊ review diff
+a//home/jupiter/teno/src/pages/ocr.js → b//home/jupiter/teno/src/pages/ocr.js
+@@ -374,6 +374,7 @@
+   // cutting 態走：按「切割」進逼 → 四角 handle 顯示 → 拖曳 → 完成/取消回 preview
+   function enterCutting() {
+     if (_busy) return;
++    _savedCrop = _crop ? { x: _crop.x, y: _crop.y, w: _crop.w, h: _crop.h } : null;   // 取消回退快照
+     _corners = _crop ? (() => {
+       // 若已有切割框，用它當四角起始
+       return [
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    補 _savedCrop 變數宣告 + 改 leaveCutting 的 else 分支回退。先宣告變數。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/pages/ocr.js  0.2s
+  ┊ review diff
+a//home/jupiter/teno/src/pages/ocr.js → b//home/jupiter/teno/src/pages/ocr.js
+@@ -202,6 +202,7 @@
+   let _crop = null;                // 顯示座標 {x,y,w,h}（由四角 cornersToRect 收斂）
+   let _cropMode = 'preview';       // B′ 兩態：preview 純瀏覽（不綁切割）/ cutting 四角成型
+   let _corners = null;             // cutting 態的四角 [{x,y}×4]（顯示座標）
++  let _savedCrop = null;           // enterCutting 前的裁剪快照（「取消」回退用）
+   let _dragIdx = null;             // 正在拖動的 handle 索引
+   let _file = null;                // 目前載入的原始 File（不圈選時直接饋引擎，繞開 canvas 污染）
+ 
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    改造 leaveCutting else 分支回退到 _savedCrop。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/src/pages/ocr.js  0.2s
+  ┊ review diff
+a//home/jupiter/teno/src/pages/ocr.js → b//home/jupiter/teno/src/pages/ocr.js
+@@ -404,7 +404,7 @@
+     svgEl.style.display = 'none';
+     handles.forEach(h => { h.style.display = 'none'; });
+     if (commit) { collapseCrop(); hint.textContent = '已框選；可按「切割」再調整，或直接辨識'; }
+-    else { _corners = null; _crop = _crop || null; hint.textContent = '已取消切割；預覽圖可直接下滑瀏覽'; }
++    else { _corners = null; _crop = _savedCrop; _savedCrop = null; hint.textContent = '已取消切割；預覽圖可直接下滑瀏覽'; }
+   }
+   cutStartBtn?.addEventListener('click', enterCutting);
+   cutDoneBtn?.addEventListener('click', () => leaveCutting(true));
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    D2 修好。現在補 harness:加檢視 D1(viewBox 移除)、D2(cancel 回退快照)、D3(cutting 鎖 touch-action)的靜態釘,把審查的缺陷變成 fail-closed 的負控制釘。同時修正審查指出的 NC 未 fail-closed 問題(NCS6 _cropMode = 'preview' 出現多次,單改預設行不會翻紅)。
+    
+    看 NCS6 現有釘——它測 /^_cropMode = 'preview'/,但 leaveCutting/layoutImage 也有同字串,所以不 fail-closed。改成釘初始化行(let _cropMode = 'preview')。
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔧 preparing patch…
+  ┊ 🔧 patch     ~/teno/tools/verify-ocr2-crop.mjs  0.1s
+  ┊ review diff
+a//home/jupiter/teno/tools/verify-ocr2-crop.mjs → b//home/jupiter/teno/tools/verify-ocr2-crop.mjs
+@@ -147,8 +147,18 @@
+   check('NCS3 四角 handle 綁 pointerdown', /handles\.forEach\(\(h, i\)/.test(OCR_SRC), true);
+   check('NCS4 handle pointerdown guard cutting 態', /_cropMode !== 'cutting'/.test(OCR_SRC), true);
+   check('NCS5 有「切割」進入鈕', /\bocrCutStartBtn\b/.test(OCR_SRC), true);
+-  check('NCS6 preview 預設值', /_cropMode = 'preview'/.test(OCR_SRC), true);
++  check('NCS6 preview 初始化（let 行，fail-closed：剝離此釘精准重現）', /let _cropMode = 'preview'/.test(OCR_SRC), true);
+   check('NCS7 handle pointerdown 綁在 handle 非 wrap', /h\.addEventListener\('pointerdown'/.test(OCR_SRC), true);
++  // NCS8（審查 D1）svg 不得有固定 viewBox（否則切割框座標系錯位 2.5~4 倍、出界不可見）
++  const svgTag = /<svg[^>]*ocr-crop-svg[^>]*>/.exec(OCR_SRC)?.[0] || '';
++  check('NCS8 ocr-crop-svg 無固定 viewBox', /viewBox/.test(svgTag), false);
++  // NCS9（審查 D2）「取消」回退 enterCutting 前快照（不再 no-op 保留被污染框）
++  check('NCS9 enterCutting 存 _savedCrop 快照', /_savedCrop = _crop \?/.test(OCR_SRC), true);
++  check('NCS9b 取消回退 _savedCrop（非 _crop || null no-op）', /_crop = _savedCrop/.test(OCR_SRC), true);
++  // NCS10（審查 D3）cutting 態 wrap 鎖 touch-action
++  check('NCS10 .ocr-img-wrap.cutting 鎖 touch-action:none', /\.ocr-img-wrap\.cutting\{[^}]*touch-action:none/.test(OCR_SRC), true);
++  // NCS11（審查 D4）死碼 .ocr-crop-overlay 已移除
++  check('NCS11 無 .ocr-crop-overlay 殘留', /ocr-crop-overlay/.test(OCR_SRC), false);
+ }
+ 
+ console.log(failures === 0 ? '\n═══ ALL PASS ═══' : `\n═══ ${failures} FAILURES ═══`);
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    跑修復後 harness + node --check。
+    
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && node tools/verify-ocr2-crop.mjs 2>&1 | tail -15; echo "exit=$?"; echo "=== node --check ===" && node --check src/pages/ocr.js && echo "ocr OK" && node --check src/lib/ocr/crop.js && echo "crop OK"  0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    全 PASS(41 項)。NCS1 已驗證 wrap 無 touch-action:none(preview 可滑,NCS10 是 cutting 態鎖,兩者不衝突)。重新跑 vite build 確認修復後仍編譯,並重跑回歸 harness。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && npx vite build --logLevel warn > /tmp/vite-build2.log 2>&1; echo "build_exit=$?"; tail -6 /tmp/vite-build2.log  0.6s
+  ┊ ⚙️ preparing process…
+  ┊ ⚙️  proc      wait proc_0e78e20  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    build exit 0。修復全部完成。重新送審查(第 2 輪,同 1 席惟讀)確認 D1-D4 + NC fail-closed 修好。同時先確認 ocr.js diff 對現 HEAD(deb1202)是否純 B′ 不含 D′。
+    
+    先並行:重跑回歸 harness + browser 重驗 D1 修復。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && node --experimental-test-module-mocks tools/verify-ocr-graylist.mjs 2>&1 | tail -2; node --experimental-test-module-mocks tools/verify-ocr-import.mjs 2>&1 | tail -2; node --experimental-test-module-mocks tools/verify-ocr2-override.mjs 2>&1 | tail -2; node tools/verify-ocr-v2-integration.mjs 2>&1 | tail -2; node tools/verify-restore-dict.mjs 2>&1 | tail -2; node tools/verify-ocr2-highlightfilter.mjs 2>&1 | tail -2; node --experimental-test-module-mocks _dev/notes/verify-ocr-blacklist.mjs 2>&1 | tail -2  0.5s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    全回歸 PASS。browser 重驗 D1 修復(裁掉 viewBox 後 polygon 座標 = wrap px)。
+    
+    dev server 還在跑,用 browser 重 import render 驗證 svg 無 viewBox。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🖥️ preparing browser_console…
+  ┊ ⚡ browser_c   0.4s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    cache query 讓 vite 解析失敗,去掉 query 重試。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🖥️ preparing browser_console…
+  ┊ ⚡ browser_c   0.2s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    browser import 因 vite 模組解析受限(遠端 browser 連本機 dev 的已知限制)。但 D1/D3/D4 都在 DOM 層且 harness NCS8/10/11 已直接讀檔驗證 PASS;D2 是 JS 語義,由 NCS9 + code 覆核。證據已足。現在確認修復後 ocr.js diff 對現 HEAD(deb1202)純 B′ 無 D′ 混入,再送第 2 輪審查。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 💻 preparing terminal…
+  ┊ 💻 $         cd ~/teno && echo "=== ocr.js diff names (should be all crop/cut/svg/saved/hint = B') ===" && git diff HEAD -- src/pages/ocr.js | grep "^[+-]" | grep -v "^[+-][+-]" | grep -iv "ocrCrop\|_cropMode\|_corners\|_savedCrop\|handle\|CutStart\|CutDone\|CutCancel\|paintCorners\|collapseCrop\|leaveCutting\|enterCutting\|cutting\|corner\|four\|svg\|polygon\|viewBox\|user-select\|touch-action\|crop-overlay\|預覽\|下滑瀏覽\|切割\|拖曳\|完成\|取消\|框選\|exit\|setPointerCapture\|_dragIdx\|untangle\|moveCorner\|defaultCorners\|cornersToRect\|clearBtn\|clearCrop" | head -30; echo "=== END diff (anything above is unexpected non-B') ==="  0.0s
+
+╭─ ⚕ Hermes ───────────────────────────────────────────────────────────────────╮
+    全屬 B′ 切割重寫內容(舊 wrap pointer 拖曳/overlay 移除,新兩態/四角/快照加入),無 D′ 混入。確定純 B′。現在送第 2 輪審查(1 席惟讀,重跑 harness 檢查 D1-D4 修復 + NC fail-closed)。
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ┊ 🔀 preparing delegate_task…

@@ -1,0 +1,34 @@
+node_modules/
+dist/
+/_local/
+_dev/notes/*.log
+_dev/notes/*.bak
+src-tauri/target/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+.DS_Store
+src-tauri/resources/piper/
+src-tauri/gen/android/app/src/main/assets/
+*.tenoc
+*.deb
+*.rpm
+*.AppImage
+*.apk
+*.idsig
+*.pkg.tar.zst
+*.tar.gz
+*.keystore
+cargo-wrapper.sh
+build-android.sh
+src/teno-5.1.0/
+pkg/
+pkg-src/
+/teno
+
+# KDE folder metadata
+.directory
+
+# OCR 建置期資產（npm run ocr:assets 再生，勿入 repo）
+public/assets/ocr/

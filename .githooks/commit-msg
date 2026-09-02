@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# 版本指紋機械閘 — 法典・版本制定規範（一結案一版本）之 commit-msg 實作。
+# 掛 commit-msg 而非 pre-commit：pre-commit 拿不到 message（$1 是 commit-msg 專屬），
+# [skip-version] 逃生門必須讀 message 才能判定。
+# 規則：code 路徑有變更的 commit，必須同步 staged 三個版本指紋檔、三檔全等、且版本有升。
+# 免升：docs / test / 計畫書 / 覆核紀錄 / tools / _dev（非 code 路徑天然放行）。
+# 逃生門：message 含 [skip-version]（留可 grep 紀錄，依治理需總統同意）。
+set -e
+
+CODE_RE='^src/|^src-tauri/src/|^src-tauri/cambridge_scraper/|^src-tauri/gen/android/app/src/main/'
+
+# merge commit 放行（合併的 staged 差異非本次工作產物）
+if [ -e "$(git rev-parse --git-path MERGE_HEAD 2>/dev/null)" ]; then exit 0; fi
+
+msgfile="${1:-}"
+if [ -n "$msgfile" ] && [ -f "$msgfile" ] && grep -q '\[skip-version\]' "$msgfile"; then
+  echo "version-gate: [skip-version] 明示跳過（此 commit 將被版本治理追溯）"
+  exit 0
+fi
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+code=$(echo "$staged" | grep -E "$CODE_RE" || true)
+[ -z "$code" ] && exit 0
+
+fail() {
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "❌ 版本閘攔下（法典：一結案一版本）"
+  echo "   本 commit 含 code 變更：$(echo "$code" | head -3 | tr '\n' ' ')"
+  echo "$1"
+  echo ""
+  echo "   修法：./tools/version.sh patch   # bug 結案"
+  echo "         ./tools/version.sh minor   # 功能完整落地"
+  echo "   然後 git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml"
+  echo "   （明示跳過：commit message 加 [skip-version]，需總統同意）"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 1
+}
+
+missing=""
+for f in package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml; do
+  echo "$staged" | grep -qx "$f" || missing="$missing $f"
+done
+[ -n "$missing" ] && fail "   缺 staged 指紋檔：$missing"
+
+v1=$(git show :package.json              | grep -m1 '"version"' | sed 's/.*"version": "\([^"]*\)".*/\1/')
+v2=$(git show :src-tauri/tauri.conf.json | grep -m1 '"version"' | sed 's/.*"version": "\([^"]*\)".*/\1/')
+v3=$(git show :src-tauri/Cargo.toml      | grep -m1 '^version = ' | sed 's/.*"\(.*\)".*/\1/')
+
+if [ "$v1" != "$v2" ] || [ "$v1" != "$v3" ]; then
+  fail "   三檔指紋不一致：package.json=$v1  tauri.conf.json=$v2  Cargo.toml=$v3"
+fi
+
+headv=$(git show HEAD:package.json | grep -m1 '"version"' | sed 's/.*"version": "\([^"]*\)".*/\1/')
+if [ "$v1" = "$headv" ]; then
+  fail "   版本未升（HEAD 已是 $v1）— code 結案 commit 必須帶新版本號"
+fi
+
+echo "version-gate: OK（$headv → $v1，三檔一致）"
+exit 0

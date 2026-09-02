@@ -1,0 +1,5 @@
+# 吸收登記：被其他案件的 fix commit 涵蓋的 ID（格式 ID=覆蓋ID）
+# 依據：verify-a3-status.mjs 7/7 實證三態縮水語意在 A1 統一 fuzz 點中生效
+A3=A1
+# 依據：verify-f18-timeout.mjs 11/11 實證（T0 PRE dabfea1 紅基線重現＋T1-T7 POST 路徑＋NC1/NC2 負控制），覆蓋 commit b620d46
+F18=F2

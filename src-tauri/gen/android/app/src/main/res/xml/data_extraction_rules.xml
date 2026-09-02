@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    F6-SR1: 堵 Android D2D(device-to-device) 與 cloud 傳輸外洩。
+    allowBackup=false 在 targetSdk31+ 部分廠商(Smart Switch)不停 D2D(官方明示);
+    官方語意: "no rules for a mode = fully enabled" -> 空 section 堵不住,必須顯式 exclude。
+    依官方 schema 9 domain 全列根域(含 device-protected storage 之 device_* 四域),
+    mapping-agnostic 保證 database(teno.db)/sharedpref(Drive token)/root 皆不外洩。
+    資料遷移僅走 app 內 TENOC 容器/Drive sync 官方通道。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="device_file" path="."/>
+        <exclude domain="device_database" path="."/>
+        <exclude domain="device_sharedpref" path="."/>
+        <exclude domain="device_root" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+        <exclude domain="root" path="."/>
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="."/>
+        <exclude domain="database" path="."/>
+        <exclude domain="device_file" path="."/>
+        <exclude domain="device_database" path="."/>
+        <exclude domain="device_sharedpref" path="."/>
+        <exclude domain="device_root" path="."/>
+        <exclude domain="sharedpref" path="."/>
+        <exclude domain="external" path="."/>
+        <exclude domain="root" path="."/>
+    </device-transfer>
+</data-extraction-rules>
