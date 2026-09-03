@@ -19,18 +19,13 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-sql": "^2.4.0",
+    "@tauri-apps/plugin-sql": "^2.4.1",
     "fdir": "^6.5.0",
-    "kokoro-js": "^1.2.1",
-    "lucide-static": "^1.28.0",
-    "pako": "^3.0.0",
-    "ws": "^8.21.1"
+    "lucide-static": "^1.40.0",
+    "pako": "^3.0.1"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
-    "fdir@6.5.0": true,
-    "onnxruntime-node": false,
-    "protobufjs": false,
-    "sharp": false
+    "fdir@6.5.0": true
   }
 }
