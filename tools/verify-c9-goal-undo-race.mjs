@@ -89,7 +89,7 @@ class FakeDatabase {
 
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 // ── C9 閘門層：透包裝 db.saveGoalStreak（記憶體同步段保真，只有落地受控）──
 const realDb = await import('../src/lib/db.js');

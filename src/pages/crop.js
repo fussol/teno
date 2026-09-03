@@ -12,7 +12,7 @@
 //   • 候選清單：累積制（跨照片疊加、保留勾選）→ 一次匯入（importOcrText）
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_KEYS } from '../lib/ocr/preprocess.js';
 import { crossTileVote } from '../lib/ocr/tile-scan.js';
 

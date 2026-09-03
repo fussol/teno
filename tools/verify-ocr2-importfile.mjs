@@ -52,7 +52,7 @@ class FakeDatabase {
 }
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 mock.module('../src/lib/svg.js', { exports: { icon: (n) => `<i data-icon="${n}"/>` } });
 mock.module('../src/lib/ocr/preprocess.js', { exports: { filterHighlighter: async () => ({ file: null, count: 0, boxes: [] }), resolveColor: () => null, HIGHLIGHTER_COLORS: { yellow: { name: '黃', h: [20, 35] }, green: { name: '綠', h: [70, 95] }, pink: { name: '粉', h: [300, 340] } }, HIGHLIGHTER_KEYS: ['yellow', 'green', 'pink'] } });
 

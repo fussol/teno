@@ -36,7 +36,7 @@ mkDoc();
 globalThis.requestAnimationFrame = (cb) => setTimeout(cb, 0);
 
 let toasts = [];
-mock.module('../src/main.js', { exports: { toast(msg, cls) { toasts.push(msg); } } });
+mock.module('../src/lib/toast.js', { exports: { toast(msg, cls) { toasts.push(msg); } } });
 
 let failures = 0;
 function check(label, got, expect) {

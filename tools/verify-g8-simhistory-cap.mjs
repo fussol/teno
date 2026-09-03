@@ -33,7 +33,7 @@ globalThis.document = dom.window.document;
 let simCalls = 0;             // 僅成功計數（FIX-1：指紋帳本＝成功輪序）
 globalThis.__simFail = false;
 const toasts = [];
-mock.module('../src/main.js', { exports: { toast: (m, t) => toasts.push([m, t]) } });
+mock.module('../src/lib/toast.js', { exports: { toast: (m, t) => toasts.push([m, t]) } });
 mock.module('../src/lib/svg.js', { exports: { icon: () => '<svg></svg>' } });
 mock.module('../src/lib/app-log.js', { exports: { addSimRun: async () => {} } });
 mock.module('../src/lib/api.js', {

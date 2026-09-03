@@ -1,7 +1,7 @@
 {
   "name": "teno",
   "private": true,
-  "version": "5.9.39",
+  "version": "5.9.40",
   "buildHash": "a029123",
   "type": "module",
   "scripts": {

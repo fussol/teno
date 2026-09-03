@@ -1,5 +1,5 @@
 import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
 

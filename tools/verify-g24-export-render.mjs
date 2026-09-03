@@ -14,7 +14,7 @@ function ok(name, cond, detail='') {
 }
 
 mock.module('../src/lib/svg.js', { exports: { icon: () => '' } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 mock.module('../src/core/import.js', { exports: { buildCSV: (arr) => 'CSV' } });
 mock.module('../src/lib/api.js', { exports: { exportCsvDialog: async () => '/tmp/x.csv' } });
 mock.module('../src/lib/platform.js', { exports: { isAndroid: false, downloadBlob: () => {} } });

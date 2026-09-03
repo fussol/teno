@@ -1,5 +1,6 @@
 import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
-import { store, toast } from '../main.js';
+import { store } from '../lib/app-store.js';
+import { toast } from '../lib/toast.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
 import { speak, stopSpeech } from '../lib/tts.js';
 import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';

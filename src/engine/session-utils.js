@@ -1,6 +1,6 @@
 import { Session } from './session-v4.js';
 import { FSRS, AGAIN, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../core/fsrs.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { checkStudyMessages, checkMilestone, checkAchievement } from '../lib/easter-eggs.js';
 
 export let session = null;

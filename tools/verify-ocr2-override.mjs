@@ -86,7 +86,7 @@ class FakeDatabase {
 // invoke 全空（lookupCambridge 走 invoke→undefined→data 非 array→continue 不炸）
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 let fakeDb = null;
 const mkWord = (id, w) => ({

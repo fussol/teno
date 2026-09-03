@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { buildCSV } from '../core/import.js';
 import { exportCsvDialog } from '../lib/api.js';
 import { isAndroid, downloadBlob } from '../lib/platform.js';

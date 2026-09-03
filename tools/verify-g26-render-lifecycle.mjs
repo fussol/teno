@@ -45,7 +45,7 @@ const CHART = '總時間成本';
 
 // ── mock 層（custom-select/chart 用真模組） ──
 const toasts = [];
-mock.module('../src/main.js', { exports: { toast: (m, t) => toasts.push([m, t]) } });
+mock.module('../src/lib/toast.js', { exports: { toast: (m, t) => toasts.push([m, t]) } });
 mock.module('../src/lib/svg.js', { exports: { icon: () => '<svg></svg>' } });
 // FIX-4：app-log spy——留痕呼叫計數可釘（模式競態=不該留痕）
 const simRuns = [];

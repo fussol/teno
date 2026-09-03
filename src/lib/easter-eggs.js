@@ -1,4 +1,4 @@
-import { toast } from '../main.js';
+import { toast } from './toast.js';
 
 const STUDY_MSGS = [
   { at: 5, msg: '🌱 5 cards — a seed of knowledge!' },

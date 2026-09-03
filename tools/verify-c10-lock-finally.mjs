@@ -89,7 +89,7 @@ class FakeDatabase {
 
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 // ── 注入層 1：Session.next() 武裝式單發拋錯（三檔通用；快照後、釋鎖前必中裸奔段）──
 const realS4 = await import('../src/engine/session-v4.js');

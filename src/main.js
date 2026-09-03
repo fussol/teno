@@ -137,8 +137,10 @@ try {
   logToDb('log', '[boot] console forwarding enabled');
 } catch (_) {}
 
-// ─── Create store (single source of truth) ───
-export const store = createStore();
+// ─── App state & toast (extracted to lib/ to avoid pages→main.js cycle) ───
+export { store } from './lib/app-store.js';
+export { toast } from './lib/toast.js';
+import { store } from './lib/app-store.js';
 
 // ─── Lazy page imports ───
 const pages = {};
@@ -351,16 +353,6 @@ function bindNav() {
     window.__navFromSidebar = true;   // B10: sidebar「管理字本」導航
     store.actions.navigate('settings');
   });
-}
-
-// ─── Toast system ───
-export function toast(message, type = '') {
-  const container = $('toastContainer');
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = message;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 300); }, 2600);
 }
 
 // ─── Render current page ───

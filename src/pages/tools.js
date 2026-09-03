@@ -1,5 +1,5 @@
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
 
 // OCR token 白名單（計畫 v1.3 §5，與 store.importOcrText 端同一正則）

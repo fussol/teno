@@ -96,7 +96,7 @@ class FakeDatabase {
 
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 // ── fixtures ──
 const mkWord = id => ({

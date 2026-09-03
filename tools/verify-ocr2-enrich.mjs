@@ -113,7 +113,7 @@ mock.module('@tauri-apps/api/core', {
     },
   },
 });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 let fakeDb = null;
 // 空欄字卡（definition/pos/pron/example/examples 全空）——OCR 入庫的殘缺典型

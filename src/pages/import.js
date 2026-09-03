@@ -1,5 +1,5 @@
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { scrapeQuizlet } from '../lib/api.js';
 import { isMobile } from '../lib/platform.js';
 import {

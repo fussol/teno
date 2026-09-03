@@ -2,7 +2,7 @@
 // 學習分析 — 基於 app DB (state.cards / reviewLog) 顯示成熟度、複習統計、診斷
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { runCli, getAppPaths, simulateFsrs } from '../lib/api.js';
 import { barChart, lineChart, pieChart, pieLegend } from '../lib/chart.js';
 import { initCustomSelects } from '../lib/custom-select.js';   // G14 同族：renderInPlace 重渲染後重建 custom-select 轉換

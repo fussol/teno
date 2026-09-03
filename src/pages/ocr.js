@@ -8,7 +8,7 @@
 // 入庫：s.actions.importOcrText（黑名單/Cambridge/補欄位 pipeline 原封不動）
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { listEngines } from '../lib/ocr/engine.js';
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_KEYS } from '../lib/ocr/preprocess.js';
 import { cornersToRect, defaultCorners, moveCorner, untangleCorners } from '../lib/ocr/crop.js';

@@ -5,7 +5,7 @@
 
 import { icon } from '../lib/svg.js';
 import { initCustomSelects } from '../lib/custom-select.js';   // G14: renderInPlace 重渲染後重建 custom-select
-import { toast } from '../main.js';
+import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';

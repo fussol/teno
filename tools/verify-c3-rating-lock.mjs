@@ -93,7 +93,7 @@ class FakeDatabase {
 // ── mock 必須在 import src 模組之前註冊 ──
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
 mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
-mock.module('../src/main.js', { exports: { toast() {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 // ── 共用 setup：真實 store + FakeDatabase ──
 let store = null;
