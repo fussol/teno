@@ -58,10 +58,6 @@ node tools/verify-vision-v2.mjs
 
 完整的打包邊界與本機資料規則請見 [`_dev/WORKSPACE.md`](_dev/WORKSPACE.md)。
 
-## 本機資料與安全
-
-使用者資料庫、簽名金鑰、APK、封裝檔及建置快取不納入 Git。它們集中在本機的 `_local/` 或既有 ignored 路徑；請勿提交 OAuth 憑證、token 或任何私密金鑰。
-
 ## 授權
 
 詳見 [LICENSE](LICENSE) 與 [DISCLAIMER.md](DISCLAIMER.md)。
