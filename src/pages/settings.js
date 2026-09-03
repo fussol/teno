@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportAppLogText, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -408,13 +408,31 @@ function renderSettingsContent(s) {
         <div style="border-top:1px solid var(--border-subtle);padding-top:var(--s3);display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center">
           <button class="btn btn-sm" id="dangerExportBtn">${icon('save')} 匯出 .db 備份</button>
           <button class="btn btn-sm" id="dangerImportBtn">${icon('upload')} 匯入 .db 備份</button>
-          <label style="font-size:12px;color:var(--text-tertiary);display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="exportIncludeLog" checked> 一併匯出操作日誌
-          </label>
         </div>
+        ${s.state.devMode ? `
+        <div style="border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
+          <div class="muted" style="font-size:11px;margin-bottom:var(--s2)">開發者模式專區</div>
+          <div style="display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center">
+            <button class="btn btn-sm" id="exportAppLogBtn">${icon('list')} 匯出操作日誌 (.txt)</button>
+          </div>
+        </div>
+        ` : ''}
         <div style="border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
           <button class="btn btn-sm" id="dangerBackupBtn">${icon('clock')} 自動備份管理</button>
           <div id="backupList" style="margin-top:var(--s2);display:none;font-size:12px;color:var(--text-tertiary)"></div>
+          ${s.state.devMode ? `
+          <div style="display:flex;gap:var(--s4);margin-top:var(--s3);flex-wrap:wrap">
+            <label style="font-size:12px;color:var(--text-tertiary);display:flex;align-items:center;gap:6px">
+              備份間隔(時)
+              <input type="number" id="backupIntervalH" min="1" max="168" value="${s.state.backupIntervalH ?? 24}" style="width:64px">
+            </label>
+            <label style="font-size:12px;color:var(--text-tertiary);display:flex;align-items:center;gap:6px">
+              最多保留(個)
+              <input type="number" id="backupKeepMax" min="1" max="100" value="${s.state.backupKeepMax ?? 7}" style="width:64px">
+            </label>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:4px">預設一天備份一次、最多留 7 個（超出刪最舊）。修改即時生效。</div>
+          ` : ''}
         </div>
       </div>
     </div>
@@ -495,7 +513,6 @@ function renderSettingsContent(s) {
 
 async function runExportDb() {
   try {
-    const includeLog = document.getElementById('exportIncludeLog')?.checked ?? true;
     const d = await import('../lib/db.js');
     try {
       // H3（2026-09-01 顧問報告）：humanEvents 上限 50000 事件全量塞 DB 曾實測 700KB+ 累積。
@@ -516,24 +533,40 @@ async function runExportDb() {
       if (pf) await d.setSetting('_backup_humanProfile', pf);
     } catch (_) {}
     await d.checkpoint();
-    if (includeLog) {
-      try {
-        const { checkpointAppLog } = await import('../lib/app-log.js');
-        await checkpointAppLog();
-      } catch (_) {}
-    }
     if (isAndroid) {
-      const data = await exportDbData(includeLog);
+      const data = await exportDbData();
       downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
-      await d.addAudit('export-db', `匯出 .db 備份 (Android, includeLog=${includeLog})`).catch(() => {});
-      toast(includeLog ? '資料庫 + 操作日誌已匯出' : '資料庫已匯出 (不含操作日誌)', 'toast-success');
+      await d.addAudit('export-db', '匯出 .db 備份 (Android)').catch(() => {});
+      toast('資料庫已匯出（僅 teno.db）', 'toast-success');
     } else {
-      const path = await exportDbDialog(includeLog);
-      await d.addAudit('export-db', `匯出 → ${path} (includeLog=${includeLog})`).catch(() => {});
-      toast(includeLog ? `資料庫 + 操作日誌已匯出 → ${path}` : `資料庫已匯出 → ${path}`, 'toast-success');
+      const path = await exportDbDialog();
+      await d.addAudit('export-db', `匯出 → ${path}`).catch(() => {});
+      toast(`資料庫已匯出 → ${path}`, 'toast-success');
     }
   } catch (e) {
     if (e !== '使用者取消') toast('匯出失敗: ' + e, 'toast-error');
+  }
+}
+
+// devMode 限定：操作日誌 → 文字檔（Rust 直讀 app-log.db，不走 IPC 大陣列）
+async function runExportAppLog() {
+  try {
+    const { checkpointAppLog } = await import('../lib/app-log.js');
+    await checkpointAppLog().catch(() => {});
+    const bytes = await exportAppLogText();
+    const fname = `teno-applog-${new Date().toISOString().slice(0, 10)}.txt`;
+    if (isAndroid) {
+      downloadBlobFromArray(bytes, fname, 'text/plain');
+    } else {
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname; a.click();
+      URL.revokeObjectURL(url);
+    }
+    toast('操作日誌已匯出（文字檔）', 'toast-success');
+  } catch (e) {
+    toast('操作日誌匯出失敗: ' + e, 'toast-error');
   }
 }
 
@@ -1216,6 +1249,29 @@ export function onMount(s) {
   document.getElementById('dangerExportBtn')?.addEventListener('click', runExportDb);
   document.getElementById('dangerImportBtn')?.addEventListener('click', runImportDb);
   document.getElementById('dangerBackupBtn')?.addEventListener('click', showBackups);
+  // devMode：操作日誌文字檔匯出 + 自動備份設定
+  document.getElementById('exportAppLogBtn')?.addEventListener('click', runExportAppLog);
+  const biEl = document.getElementById('backupIntervalH');
+  const bkEl = document.getElementById('backupKeepMax');
+  const applyBackupCfg = async () => {
+    const h = Math.max(1, Math.min(168, parseInt(biEl?.value) || 24));
+    const n = Math.max(1, Math.min(100, parseInt(bkEl?.value) || 7));
+    try {
+      const d = await import('../lib/db.js');
+      await d.setSetting('backupIntervalH', h);
+      await d.setSetting('backupKeepMax', n);
+      s.state.backupIntervalH = h;
+      s.state.backupKeepMax = n;
+      const { startAutoBackup, stopAutoBackup } = await import('../lib/backup-scheduler.js');
+      stopAutoBackup();
+      startAutoBackup();
+      toast(`自動備份：每 ${h} 小時一次、保留 ${n} 個`, 'toast-success');
+    } catch (e) {
+      toast('備份設定儲存失敗: ' + e, 'toast-error');
+    }
+  };
+  biEl?.addEventListener('change', applyBackupCfg);
+  bkEl?.addEventListener('change', applyBackupCfg);
 
   // ── 過濾牌組事件 ──
   document.getElementById('filteredDeckAddBtn')?.addEventListener('click', () => {

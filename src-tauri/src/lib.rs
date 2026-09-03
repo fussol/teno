@@ -1267,12 +1267,12 @@ fn log_msg(msg: String, app_handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
-async fn export_db_dialog(app_handle: tauri::AppHandle, include_log: bool) -> Result<String, String> {
+async fn export_db_dialog(app_handle: tauri::AppHandle) -> Result<String, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
     app_handle.dialog()
         .file()
-        .add_filter("SQLite Database", &["db", "teno"])
+        .add_filter("SQLite Database", &["db", "tenoc"])
         .set_file_name("teno-backup.db")
         .save_file(move |file| { let _ = tx.send(file); });
     let file = rx.await.map_err(|_| "對話框錯誤".to_string())?
@@ -1281,10 +1281,10 @@ async fn export_db_dialog(app_handle: tauri::AppHandle, include_log: bool) -> Re
             "使用者取消".to_string()
         })?;
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
-    let data = pack_db_container(&app_dir, include_log)?;
+    let data = pack_db_container(&app_dir, false)?;
     match file {
         FilePath::Path(dest) => {
-            log::info!("export_db_dialog dst={:?} data_len={} include_log={}", dest, data.len(), include_log);
+            log::info!("export_db_dialog dst={:?} data_len={}", dest, data.len());
             std::fs::write(&dest, &data)
                 .map_err(|e| format!("寫入匯出檔失敗: {}", e))?;
             log::info!("export_db_dialog OK");
@@ -1531,9 +1531,62 @@ fn delete_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), S
 }
 
 #[tauri::command]
-async fn export_db_data(app_handle: tauri::AppHandle, include_log: bool) -> Result<Vec<u8>, String> {
+async fn export_db_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+    // 2026-09-04: 匯出永遠只帶 teno.db（含 log 的 15MB+ 容器在 Android WebView
+    // IPC/btoa 炸 OOM，且使用者已裁示 app-log 永不綁匯出）。操作日誌另走
+    // devMode 文字檔匯出（export_app_log_text）。
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
-    pack_db_container(&app_dir, include_log)
+    pack_db_container(&app_dir, false)
+}
+
+#[tauri::command]
+async fn export_app_log_text(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+    // devMode 限定：app_log + sim_runs 全表 → 文字檔（ts ISO | level | message）。
+    // 直接讀 sqlite 檔（不經 plugin-sql 連線，避免與前端 flush 競態）。
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let log_path = app_dir.join("app-log.db");
+    if !log_path.exists() { return Ok("（尚無操作日誌）\n".as_bytes().to_vec()); }
+    let conn = rusqlite::Connection::open(&log_path).map_err(|e| format!("開啟操作日誌失敗: {}", e))?;
+    let mut out = String::new();
+    out.push_str("# Teno 操作日誌導出 (app_log)\n");
+    out.push_str("# 格式: ISO時間 | level | message\n");
+    let mut stmt = conn.prepare("SELECT ts, level, message FROM app_log ORDER BY ts ASC")
+        .map_err(|e| format!("讀取 app_log 失敗: {}", e))?;
+    let rows: Vec<(i64, String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| format!("讀取 app_log 失敗: {}", e))?
+        .filter_map(|r| r.ok()).collect();
+    for (ts, level, msg) in rows {
+        let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
+            .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+            .unwrap_or_else(|| ts.to_string());
+        out.push_str(&format!("{} | {} | {}\n", iso, level, msg.replace('\n', "\\n")));
+    }
+    let mut stmt2 = conn.prepare("SELECT ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary FROM sim_runs ORDER BY ts ASC")
+        .map_err(|e| format!("讀取 sim_runs 失敗: {}", e))?;
+    let sims: Vec<(i64, String, Option<i64>, Option<f64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<String>)> =
+        stmt2.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)))
+        .map_err(|e| format!("讀取 sim_runs 失敗: {}", e))?
+        .filter_map(|r| r.ok()).collect();
+    if !sims.is_empty() {
+        out.push_str("\n# 模擬歷史 (sim_runs)\n");
+        out.push_str("# 格式: ISO時間 | kind | days | target% | seed | from_zero | reviews | mature | mature% | summary\n");
+        for (ts, kind, days, tgt, seed, fz, rv, mc, mp, sm) in sims {
+            let iso = chrono::DateTime::from_timestamp(ts / 1000, 0)
+                .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_else(|| ts.to_string());
+            out.push_str(&format!("{} | {} | {} | {} | {} | {} | {} | {} | {} | {}\n",
+                iso, kind,
+                days.map(|v| v.to_string()).unwrap_or("-".into()),
+                tgt.map(|v| format!("{}", v)).unwrap_or("-".into()),
+                seed.map(|v| v.to_string()).unwrap_or("-".into()),
+                fz.map(|v| v.to_string()).unwrap_or("-".into()),
+                rv.map(|v| v.to_string()).unwrap_or("-".into()),
+                mc.map(|v| v.to_string()).unwrap_or("-".into()),
+                mp.map(|v| format!("{}", v)).unwrap_or("-".into()),
+                sm.unwrap_or_default().replace('\n', "\\n")));
+        }
+    }
+    Ok(out.into_bytes())
 }
 
 #[tauri::command]
@@ -1804,7 +1857,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {

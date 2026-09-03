@@ -101,15 +101,19 @@ export const importDbDialog = () =>
 export const writeDbBytes = (buf) =>
   invoke('write_db_bytes', { data: Array.from(new Uint8Array(buf)) })
 
-export const exportDbDialog = (includeLog = true) =>
-  invoke('export_db_dialog', { includeLog })
+export const exportDbDialog = () =>
+  invoke('export_db_dialog')
 
 export const exportCsvDialog = (csv, filename) =>
   invoke('export_csv_dialog', { csv, filename })
 
 // ─── Android export (returns data for Blob download) ──
-export const exportDbData = (includeLog = true) =>
-  invoke('export_db_data', { includeLog })
+export const exportDbData = () =>
+  invoke('export_db_data')
+
+// devMode 限定：操作日誌 → 文字檔（ts ISO | level | message）
+export const exportAppLogText = () =>
+  invoke('export_app_log_text')
 
 export const exportBackupData = (filename) =>
   invoke('export_backup_data', { filename })

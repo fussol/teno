@@ -24,8 +24,8 @@ ok('T2 設 _ticking=true', /_ticking = true/.test(src));
 ok('T3 finally 釋放 _ticking=false', /finally[\s\S]*?_ticking = false/.test(src));
 // T4 FIX MARKER: 宣告 _ticking 初始 false
 ok('T4 宣告 let _ticking = false', /let _ticking = false/.test(src));
-// T5 原有 backupDb 邏輯保留
-ok('T5 backupDb/pruneBackups 保留', /await backupDb\(\)/.test(src) && /await pruneBackups\(MAX_BACKUPS\)/.test(src));
+// T5 原有 backupDb 邏輯保留（2026-09-04 起 prune 上限改為可調 keepMax — devMode 備份設定）
+ok('T5 backupDb/pruneBackups 保留', /await backupDb\(\)/.test(src) && /await pruneBackups\(keepMax\)/.test(src));
 
 // T6 重入語意模擬：兩次 tick 同時 → 只執行一次 backup
 // 驗證 _ticking flag 的「檢查→設鎖」順序（同步前綴，符合 JS 單執行緒）
