@@ -1,5 +1,5 @@
 import { speakText as nativeSpeak, speakAndroid as androidSpeak, stopAndroid } from './api.js'
-import { isAndroid } from './platform.js'
+import { isAndroid, isWindows } from './platform.js'
 
 const _voiceMap = {
   'en-us': 'en_US-amy-medium',
@@ -89,7 +89,47 @@ if (isAndroid) {
 export function speak(text, speed, voice, pitch) {
   if (!text) return Promise.resolve();
   if (isAndroid) return speakAndroidTts(text, speed ?? 0.9, voice || '', pitch ?? 50);
+  // 2026-09-05 方案 C（使用者裁示）：Windows 走 WebView2 speechSynthesis（Edge/Microsoft
+  // 自然語音，免 piper 免安裝）；Linux 維持 piper。speechSynthesis 不可用或零語音時
+  // fallback piper（speakAsync，Windows 無 piper 會失敗並反映在 ttsAvailable）。
+  if (isWindows && typeof speechSynthesis !== 'undefined' && speechSynthesis.getVoices().length > 0) {
+    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50);
+  }
   return speakAsync(text, speed ?? 0.9, _voiceMap[voice] || voice || 'en_US-ryan-high', pitch ?? 50);
+}
+
+// Windows：WebView2 speechSynthesis（Chromium on Windows 吃 OS/Edge 語音，含自然語音）
+let _wsVoice = null;
+function pickWindowsEnVoice() {
+  if (_wsVoice) return _wsVoice;
+  const vs = speechSynthesis.getVoices();
+  // 優先 en-US 自然語音（Natural/Online 標記），退而求其次任何 en
+  _wsVoice = vs.find(v => /en[-_]US/i.test(v.lang) && /natural|online/i.test(v.name))
+    || vs.find(v => /^en/i.test(v.lang) && /natural|online/i.test(v.name))
+    || vs.find(v => /^en[-_]US/i.test(v.lang))
+    || vs.find(v => /^en/i.test(v.lang))
+    || null;
+  return _wsVoice;
+}
+function speakWebSpeech(text, speed, pitch) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      const v = pickWindowsEnVoice();
+      if (v) u.voice = v;
+      u.lang = v?.lang || 'en-US';
+      u.rate = Math.max(0.5, Math.min(2.0, speed));
+      u.pitch = Math.max(0, Math.min(2.0, pitch / 50));
+      u.onend = () => resolve();
+      u.onerror = (ev) => reject(new Error('speech error: ' + (ev?.error || 'unknown')));
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+      // 保底 timeout：onend 不觸發時不永久 pending
+      setTimeout(() => { speechSynthesis.cancel(); resolve({ cancelled: true }); }, 30000);
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 function speakAndroidTts(text, speed, voice, pitch) {
@@ -151,7 +191,9 @@ export function ttsAvailable() {
   // G9：誠實語意——桌面發音唯一路徑是 native plugin，舊 `|| speechSynthesis` 分支
   // 假設了已不存在的 Web Speech fallback（誤報源）。未知時樂觀 true（首次呼叫揭曉），
   // 連續失敗後 false（重試仍進行，僅可用性匯報翻臉）。
+  // 2026-09-05：Windows 走 speechSynthesis（方案 C）——樂觀 true，WebView2 必帶語音。
   if (isAndroid) return true;
+  if (isWindows) return true;
   return _hasNative !== false;
 }
 

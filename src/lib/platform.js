@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 const ua = navigator.userAgent;
 export const isAndroid = /Android/i.test(ua);
+export const isWindows = /Windows/i.test(ua);
 export const isTauri = typeof window.__TAURI__?.core === 'object';
 export const isMobile = isAndroid || /Mobi|iPhone|iPad|iPod/i.test(ua);
 
