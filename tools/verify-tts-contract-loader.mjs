@@ -18,7 +18,8 @@ export const stopAndroid = async () => { globalThis.__ttsApi.stopCalls++; };
 
 // 平台開關（G9 驗證用）：預設 true＝Android，verify-tts-contract 既有行為零變動；
 // G9 桌面路徑腳本 import 前設 globalThis.__ttsPlatformIsAndroid = false。
-const platformStub = `export const isAndroid = globalThis.__ttsPlatformIsAndroid !== false;`;
+const platformStub = `export const isAndroid = globalThis.__ttsPlatformIsAndroid !== false;
+export const isWindows = globalThis.__ttsPlatformIsWindows === true;`;
 
 const eventStub = `
 globalThis.__ttsListeners = new Map();

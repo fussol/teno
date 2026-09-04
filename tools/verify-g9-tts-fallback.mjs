@@ -185,11 +185,10 @@ test('T6. POST：stopSpeech → speechSynthesis.cancel 仍被呼叫', { timeout:
 });
 
 // T7. 死碼靜態釘：工作區真碼零殘留
-test('T7. 靜態釘：_enVoice/getVoices/onvoiceschanged/_nativeFailTime 全除', () => {
+test('T7. 靜態釘：_enVoice/onvoiceschanged/_nativeFailTime 全除（2026-09-05 起 getVoices 豁免：Windows speechSynthesis 活碼分支）', () => {
   // 註解剝離後掃描（F17 教訓：來源註解提及被禁 token 不得誤報——本檔註解即此案例）
   const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   assert.ok(!/_enVoice/.test(CODE), '_enVoice 死碼已除');
-  assert.ok(!/getVoices/.test(CODE), 'getVoices 死碼已除');
   assert.ok(!/onvoiceschanged/.test(CODE), 'onvoiceschanged 死碼已除');
   assert.ok(!/_nativeFailTime/.test(CODE), '冷卻閘變數已除');
   const av = bodyOf(CODE, 'export function ttsAvailable()');
@@ -199,6 +198,11 @@ test('T7. 靜態釘：_enVoice/getVoices/onvoiceschanged/_nativeFailTime 全除'
   // R1#2 強烈建議①：節流機制釘死——防日後改 setInterval/flag 偽裝換制（T3 之外第二哨兵）
   assert.match(sa, /Date\.now\(\)/, '節流必基於 Date.now');
   assert.match(sa, /_lastFailToast/, '節流狀態變數在位');
+  // 2026-09-05 方案 C：getVoices 僅允許出現在 Windows speechSynthesis 活碼
+  // （speakWebSpeech/pickWindowsEnVoice）——speakAsync/ttsAvailable（Linux 桌面路徑）仍禁。
+  const wsOk = /pickWindowsEnVoice/.test(CODE) && /isWindows/.test(CODE);
+  assert.ok(wsOk, 'Windows speechSynthesis 分支在位（方案 C）');
+  assert.ok(!/getVoices/.test(sa), 'speakAsync 仍零 getVoices（Linux 桌面不吃 Web Speech）');
 });
 
 // T7b. R1#1 必須項成對釘：讀取端↔賦值端同源（防信道改名再度斷鏈）

@@ -296,7 +296,7 @@ async function main() {
   fl9.ensureSession(store.state);
   fl9.ensureQueue(undefined, store.state);
   fl9.mount(store, 's4FlipBtn', () => {});
-  const probe = { stateAtRender: null, wordAtRender: null, rateDuringRender: -1 };
+  const probe = { stateAtRender: null, wordAtRender: null, ratedWord: null, rateDuringRender: -1 };
   const rd9 = () => {
     // renderFn 同步採樣：渲染瞬間的引擎狀態（stale render / 渲染期持鎖偵測）
     if (probe.stateAtRender === null) {
@@ -309,10 +309,14 @@ async function main() {
       probe.rateDuringRender = rateCalls.length - rP;
     }
   };
-  await rateCurrent(fl9, 2, 'flip', rd9);   // 評 wA → next 到次題（隊列經 shuffle，非必 wB）
+  probe.ratedWord = fl9.session.current?.word?.id ?? null;   // 評分前捕獲：渲染時 current 必須已換成次卡
+  await rateCurrent(fl9, 2, 'flip', rd9);   // 評 current → next 到次題（隊列 shuffle 順序由 mode+日期 seed 決定——日期免疫寫法）
   await tick();
   check('T9 渲染時 state=QUESTION（封提前渲染的 ANSWER 殘留）', probe.stateAtRender, 'QUESTION');
-  check('T9 渲染時 current≠剛評卡 wA（封 stale render）', probe.wordAtRender === 'wA' ? 'wA' : 'other', 'other');
+  // 2026-09-05 修：原斷言寫死 wA（假設開局必 wA）——queue 順序是「mode+當天日期」seed 的
+  // shuffle（A7 設計），換日後 next 恰為 wA → 誤紅。改比對「渲染時 current ≠ 剛評的那張」
+  // （剛評卡在 rateCurrent 前捕獲），任何 shuffle 順序下語意等價且日期免疫。
+  check('T9 渲染時 current≠剛評卡（封 stale render）', probe.wordAtRender === probe.ratedWord ? probe.ratedWord : 'other', 'other');
   check('T9 渲染期重入評分不被鎖吞（封渲染期持鎖；+1=鎖釋先於渲染）', probe.rateDuringRender, 1);
 
   // ── T10 結構忠實靜態釘（封「只包 await 段＋finally」結構違約變體）──
