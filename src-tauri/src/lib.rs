@@ -1343,13 +1343,19 @@ async fn export_csv_dialog(app_handle: tauri::AppHandle, csv: String, filename: 
 /// D17: 唯一備份目的地——O_EXCL _atomic 建立，同名碰撞-forward 1µs 重試。
 /// 純函式（零 AppHandle）便於單元測與獨立驗證；回傳 (已建立檔柄, 路徑)。
 fn unique_backup_dest(backups_dir: &std::path::Path, ts_ns: u64) -> Result<(std::fs::File, std::path::PathBuf), String> {
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt; // R1#1-M-2：.mode(0o600)
     let mut ts = ts_ns;
     for _ in 0..10_000u32 {
         let dest = backups_dir.join(format!("teno-{}.db", ts));
         // R1#1-M-2：備份含全量复习史，0600 預設（F11 write_private 同課；
         // 僅作用於新建路徑——O_EXCL 語意下 open 成功必為本呼叫獨創新檔）
-        match std::fs::File::options().write(true).create_new(true).mode(0o600).open(&dest) {
+        // Windows 無 0600 概念 → 普通 create_new（語意等價：O_EXCL 獨佔建立）
+        #[cfg(unix)]
+        let open_result = std::fs::File::options().write(true).create_new(true).mode(0o600).open(&dest);
+        #[cfg(windows)]
+        let open_result = std::fs::File::options().write(true).create_new(true).open(&dest);
+        match open_result {
             Ok(f) => return Ok((f, dest)),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 // 同 µs（極罕見）或手刻同名檔：前进 1µs 換名，絕不覆寫既有快照

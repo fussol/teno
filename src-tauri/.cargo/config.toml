@@ -1,2 +1,12 @@
 [target.aarch64-linux-android]
 linker = "/home/jupiter/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+
+# 交叉編譯 Windows（cargo-xwin）：cc-rs 預設找 MSVC 的 lib.exe，
+# 這台機器用 LLVM 工具鏈替代（llvm-lib 是 lib.exe 的 drop-in）。
+[target.x86_64-pc-windows-msvc]
+linker = "lld-link"
+
+# 頂層 [env]（cargo 1.56+）：build scripts 的 cc-rs 工具發現
+[env]
+CC_x86_64_pc_windows_msvc = "clang-cl"
+AR_x86_64_pc_windows_msvc = "llvm-lib"
