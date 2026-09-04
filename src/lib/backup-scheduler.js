@@ -3,14 +3,29 @@ import { getDbMtime, backupDb, pruneBackups } from './api.js'
 let timer = null;
 let lastBackupMtime = 0;
 let _ticking = false;   // G30: tick 重入保護 — 重複備份 race 防護（前一個 backupDb await 未完，下一個 tick 觸發時跳過）
-const INTERVAL_MS = 10 * 60 * 1000;
-const MAX_BACKUPS = 100;
+const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;   // 預設一天一次（2026-09-04 使用者裁示）
+const DEFAULT_KEEP_MAX = 7;                       // 預設最多保留 7 個（超出刪最舊）
 
-export function startAutoBackup() {
-  if (timer) return;
+// 使用者可調（devMode 設定頁）：backupIntervalH（小時）、backupKeepMax（個數）
+async function readCfg() {
+  let intervalMs = DEFAULT_INTERVAL_MS;
+  let keepMax = DEFAULT_KEEP_MAX;
+  try {
+    const { getSetting } = await import('./db.js');
+    const h = await getSetting('backupIntervalH');
+    const n = await getSetting('backupKeepMax');
+    if (Number.isFinite(h) && h >= 1) intervalMs = h * 60 * 60 * 1000;
+    if (Number.isFinite(n) && n >= 1) keepMax = n;
+  } catch (_) {}
+  return { intervalMs, keepMax };
+}
+
+export async function startAutoBackup() {
+  stopAutoBackup();
+  const { intervalMs } = await readCfg();
   seedLastBackupMtime();   // D18: 啟動以目前 DB mtime 定基準，避免每次啟動都備份洗掉有差異舊檔
   tick();
-  timer = setInterval(tick, INTERVAL_MS);
+  timer = setInterval(tick, intervalMs);
   window.addEventListener('beforeunload', stopAutoBackup);
 }
 
@@ -45,7 +60,8 @@ async function tick() {
     const mtime = await getDbMtime();
     if (mtime <= lastBackupMtime) return;
     await backupDb();
-    await pruneBackups(MAX_BACKUPS);
+    const { keepMax } = await readCfg();
+    await pruneBackups(keepMax);
     lastBackupMtime = mtime;
   } catch (e) {
     console.warn('[auto-backup]', e);

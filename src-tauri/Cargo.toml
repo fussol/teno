@@ -3,7 +3,7 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.9.40"
+version = "5.9.43"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"
@@ -37,5 +37,6 @@ tauri-plugin-opener = "2.5.4"
 fsrs = "=6.6.1"
 rand = "0.9"
 chrono = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"

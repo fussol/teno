@@ -35,10 +35,10 @@ rm -rf src-tauri/gen/android/app/src/main/assets/resources/piper
 echo "== 3/6 frontend build"
 npm run build >/dev/null 2>&1
 
-echo "== 4/6 tauri android build (debug, aarch64)"
-npx tauri android build --debug --target aarch64 --apk
+echo "== 4/6 tauri android build (release, aarch64)"
+npx tauri android build --target aarch64 --apk
 
-APK=src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+APK=src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
 OUT=dist
 mkdir -p "$OUT"
 
@@ -46,11 +46,16 @@ echo "== 5/6 strip + 重壓 + 簽名"
 WORK=$(mktemp -d)
 unzip -q "$APK" -d "$WORK/extracted"
 "$NDK_BIN/llvm-strip" "$WORK/extracted/lib/arm64-v8a/libteno_lib.so"
-(cd "$WORK/extracted" && zip -q -r -9 ../teno-9.apk .)
-"$BT/zipalign" -f 4 "$WORK/teno-9.apk" "$WORK/teno-aligned.apk"
+# 2026-09-04 修：targetSdk 30+ 要求 .so 與 resources.arsc 未壓縮存放（extractNativeLibs=false）。
+# 全量 zip -9 會把兩者壓縮 → INSTALL_FAILED_INVALID_APK (res=-2) / -124 (arsc)。
+# 改法：非 lib/非 arsc 走 -9，.so/.arsc 用 -0 -X Stored，zipalign 加 -p（page-align .so）。
+(cd "$WORK/extracted" \
+  && find . -type f -not -path "./lib/*" -not -name "resources.arsc" | zip -q -9 ../teno-9.apk -@ \
+  && zip -q -0 -X ../teno-9.apk resources.arsc lib/arm64-v8a/libteno_lib.so)
+"$BT/zipalign" -f -p 4 "$WORK/teno-9.apk" "$WORK/teno-aligned.apk"
 "$BT/apksigner" sign \
-  --ks "$HOME/.android/debug.keystore" --ks-pass pass:android \
-  --key-pass pass:android --ks-key-alias androiddebugkey \
+  --ks "$HOME/.teno-keys/release-key.keystore" --ks-pass pass:teno2026 \
+  --key-pass pass:teno2026 --ks-key-alias teno-release \
   --out "$WORK/teno-final.apk" "$WORK/teno-aligned.apk" 2>/dev/null
 
 echo "== 6/6 split 9MB 段 → $OUT/"

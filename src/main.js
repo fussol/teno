@@ -141,6 +141,7 @@ try {
 export { store } from './lib/app-store.js';
 export { toast } from './lib/toast.js';
 import { store } from './lib/app-store.js';
+import { toast } from './lib/toast.js';
 
 // ─── Lazy page imports ───
 const pages = {};

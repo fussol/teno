@@ -106,6 +106,8 @@ export function createStore() {
     simParams: { ...DEFAULT_SIM },
     logRetentionDays: 14,
     devMode: false,           // developer mode (tap version 10× in Settings → unlock CLI tools)
+    backupIntervalH: 24,       // 自動備份間隔（小時）；devMode 可調，預設一天一次
+    backupKeepMax: 7,         // 最多保留備份個數；devMode 可調，超出刪最舊
     blacklist: DEFAULT_BLACKLIST.slice(),   // OCR 錄入黑名單（含預設：簡單字＋草漯 100/基礎/初級詞，devMode 可增刪）
     graylist: [],                            // OCR 灰名單：使用者 OCR「取消勾選淘汰」的字，同黑名單排除，devMode 可增刪＋CSV 匯入
     ocrMode: 'scan',                       // OCR 模式：scan（全掃描·一般辨識）/ highlight（螢光筆·高信心）
@@ -294,6 +296,8 @@ export function createStore() {
             colorPalette: await db.getSetting('colorPalette'),
             logRetentionDays: await db.getSetting('logRetentionDays'),
             devMode: await db.getSetting('devMode'),
+            backupIntervalH: await db.getSetting('backupIntervalH'),
+            backupKeepMax: await db.getSetting('backupKeepMax'),
             blacklist: await db.getSetting('blacklist'),
             ocrCambridgeVerify: await db.getSetting('ocrCambridgeVerify'),
           };
