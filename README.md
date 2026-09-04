@@ -48,6 +48,8 @@ node tools/verify-crop-flow.mjs
 node tools/verify-vision-v2.mjs
 ```
 
+這是vibe coding 的產物，核心部分是引用anki官方
+
 ## 專案結構
 
 - `src/`：Vite 前端與學習引擎
