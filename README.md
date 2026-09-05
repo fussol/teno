@@ -1,13 +1,13 @@
 # Teno
 
-Teno 是一個以繁體中文介面打造、離線優先的英文單字學習工具。它使用 FSRS 間隔重複排程，支援字本、拼字與選擇題測驗、OCR 匯入、離線桌面 TTS，以及 Android 與桌面版。
+Teno 是一個以ANKI複習方式為主的優質英文單字學習工具。它使用 FSRS 間隔重複排程，支援翻卡、拼字與選擇題測驗、拍照匯入單字、TTS支援WINDOWS LINUX ANDROID 
 
 ## 功能
 
 - FSRS 6.6.1 排程與 Anki 相容的複習流程
 - 字本、標籤、單字瀏覽、CSV/Anki TSV 匯入與匯出
 - 翻卡、選擇題、拼字測驗與學習統計
-- OCR 圖片匯入：全掃描、局部切割、連拍累積、候選篩選與黑灰名單覆寫
+- 圖片匯入：全掃描、局部切割、連拍累積、候選篩選與黑灰名單覆寫
 - Desktop Piper TTS，以及 Android 原生 TTS
 - SQLite 本機資料庫，不使用 localStorage 作為資料來源
 
