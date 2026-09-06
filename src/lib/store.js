@@ -1760,10 +1760,10 @@ export function createStore() {
       notify();
     },
 
-    /** Create a deck */
-    async createDeck(name, color) {
+    /** Create a deck. DW1: newWeight 新卡抽卡權重（預設 1）。 */
+    async createDeck(name, color, newWeight = 1) {
       const id = 'deck_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Math.random().toString(36).slice(2, 6);
-      const deck = { id, name, color: color || '#5e6ad2' };
+      const deck = { id, name, color: color || '#5e6ad2', newWeight };
       state.decks.push(deck);
       try { await db.saveDeck(deck); } catch (e) { console.warn('[store] createDeck saveDeck error:', e); }
       await saveDeckOrder();

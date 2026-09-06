@@ -1376,6 +1376,11 @@ function openDeckModal(s, deck) {
             <span style="font-family:var(--mono);font-size:11px;color:var(--text-tertiary);margin-left:var(--s1)" id="deckColorLabel">${deck?.color || '#b69dff'}</span>
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">新卡權重 <span style="font-size:11px;color:var(--text-tertiary)">（DW1）</span></label>
+          <input class="form-input" id="deckNewWeight" type="number" min="0" max="100" step="0.5" value="${deck?.newWeight ?? 1}" style="width:100px">
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">1 = 正常隨機；越高，這本的新卡越容易被抽到；0 = 今天不出這本的新卡（既有卡複習不受影響）</div>
+        </div>
         <div class="modal-footer">
           ${isEdit ? `<button class="btn btn-danger" id="deckModalDelete" style="margin-right:auto">${icon('trash')} 刪除</button>` : ''}
           <button class="btn" id="deckModalCancel">取消</button>
@@ -1416,12 +1421,15 @@ function openDeckModal(s, deck) {
     // 檢查重複名稱
     const dup = s.state.decks.find(d => d.name.toLowerCase() === name.toLowerCase() && d.id !== deck?.id);
     if (dup) { toast('已有同名字本', 'toast-error'); return; }
+    // DW1: 新卡權重 — Number.isFinite 防呆（parseFloat+?? 接不住 NaN），clamp [0,100]
+    const rawW = parseFloat(document.getElementById('deckNewWeight')?.value);
+    const newWeight = Number.isFinite(rawW) ? Math.min(100, Math.max(0, rawW)) : 1;
 
     if (isEdit && deck) {
-      await s.actions.updateDeck(deck.id, { name, color: chosenColor });
+      await s.actions.updateDeck(deck.id, { name, color: chosenColor, newWeight });
       toast(`已更新字本「${name}」`, 'toast-success');
     } else {
-      await s.actions.createDeck(name, chosenColor);
+      await s.actions.createDeck(name, chosenColor, newWeight);
       toast(`已建立字本「${name}」`, 'toast-success');
     }
     close();

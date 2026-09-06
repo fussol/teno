@@ -1816,6 +1816,13 @@ pub fn run() {
             sql: "ALTER TABLE words ADD COLUMN forms TEXT DEFAULT '[]';",
             kind: MigrationKind::Up,
         },
+        Migration {
+            // DW1: 字本新卡抽卡權重 — 預設 1（全字本權重 1 時 buildQueue 走原 Fisher-Yates 路徑，零回歸）
+            version: 11,
+            description: "add new_weight column to decks (DW1 deck new-card draw weight)",
+            sql: "ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)

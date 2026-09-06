@@ -100,6 +100,8 @@ async function migrate(d) {
   for (const col of cols) {
     try { await d.execute(`ALTER TABLE words ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`); } catch (_) {}
   }
+  // DW1: 字本新卡抽卡權重（與 lib.rs migration v11 對應的雙保險；已存在則靜默跳過）
+  try { await d.execute('ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1'); } catch (_) {}
   // v5.2: review_log 記錄複習後的狀態 (fsrs-report 轉移分析不用 replay)
   try { await d.execute('ALTER TABLE review_log ADD COLUMN new_state INTEGER'); } catch (_) {}
   // v5.2: 審計日誌 (設定變更/匯入匯出/CLI 寫入)
@@ -348,14 +350,14 @@ export async function bulkSaveCards(cards) {
 // ─── Decks ─────────────────────────────────────
 
 export async function getAllDecks() {
-  const rows = await requireDB().select('SELECT id, name, color FROM decks ORDER BY name');
-  return rows.map(r => ({ id: r.id, name: r.name, color: r.color }));
+  const rows = await requireDB().select('SELECT id, name, color, new_weight FROM decks ORDER BY name');
+  return rows.map(r => ({ id: r.id, name: r.name, color: r.color, newWeight: r.new_weight ?? 1 }));
 }
 
 export async function saveDeck(deck) {
   await requireDB().execute(
-    'INSERT INTO decks (id, name, color) VALUES ($1, $2, $3) ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color',
-    [deck.id, deck.name, deck.color || '#5e6ad2']
+    'INSERT INTO decks (id, name, color, new_weight) VALUES ($1, $2, $3, $4) ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color, new_weight=excluded.new_weight',
+    [deck.id, deck.name, deck.color || '#5e6ad2', deck.newWeight ?? 1]
   );
 }
 

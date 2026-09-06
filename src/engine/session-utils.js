@@ -47,7 +47,18 @@ export function ensureSession(storeState) {
     timezoneOffset: storeState.ankiSettings.timezoneOffset,
     mode: 'flip',
     learnAheadLimit: storeState.ankiSettings.learnAheadLimit,
+    deckWeights: buildDeckWeights(storeState),
   });
+}
+
+// DW1: 字本新卡權重 Map（name → w）。ensureSession 建構時傳入；ensureQueue
+// live-sync 每次重建（改權重不重啟 session，下次 rebuild 生效——與 newPerDay 同款熱更新語意）。
+function buildDeckWeights(storeState) {
+  const decks = storeState?.decks;
+  if (!Array.isArray(decks) || !decks.length) return null;
+  const m = new Map();
+  for (const d of decks) m.set(d.name, (typeof d.newWeight === 'number' && Number.isFinite(d.newWeight)) ? d.newWeight : 1);
+  return m;
 }
 
 export function ensureQueue(filter, storeState) {
@@ -68,6 +79,8 @@ export function ensureQueue(filter, storeState) {
     session.newPerDay = storeState.ankiSettings.cardsPerDay;
     session.ratedNewToday = storeState.newRatedToday;
     session.maxReviewsPerDay = storeState.simParams?.maxReviewsPerDay ?? 0;
+    // DW1: 權重 live-sync — 改權重後（running session 完成後）下次 rebuild 生效
+    session.deckWeights = buildDeckWeights(storeState);
     // C4: live sync — ensureSession 只建一次 FSRS，設定變更後此行保證預覽 cap 與 store 端一致
     session.fsrs.maximumInterval = Math.max(1, storeState.ankiSettings?.maxIvl ?? 365);
   }

@@ -18,7 +18,7 @@ function mulberry32(seed) {
 }
 
 export class Session {
-  constructor({ words, cards, buried, suspended, fsrs, dayCutoff, newPerDay, ratedNewToday, learnSteps, relearnSteps, maxReviewsPerDay, reviewMix, timezoneOffset, mode, learnAheadLimit }) {
+  constructor({ words, cards, buried, suspended, fsrs, dayCutoff, newPerDay, ratedNewToday, learnSteps, relearnSteps, maxReviewsPerDay, reviewMix, timezoneOffset, mode, learnAheadLimit, deckWeights }) {
     this.words = words;
     this.cards = cards;
     this.buried = buried;
@@ -31,6 +31,10 @@ export class Session {
     this.maxReviewsPerDay = maxReviewsPerDay ?? 0;
     this.reviewMix = reviewMix ?? 2;
     this.mode = mode || 'flip';
+    // DW1: 字本新卡抽卡權重 — Map<deckName, w>；null 或全 1 → buildQueue 走原
+    // Fisher-Yates 路徑（零回歸）。權重以字本名為鍵（words.deck 存 name），
+    // 由 ensureQueue 每次從 storeState.decks 重建（改名後自動跟上新名）。
+    this.deckWeights = deckWeights || null;
     // NOTE: new 卡 shuffle 的 RNG 不在這裡建立 — buildQueue 每次用
     // (mode + 當天日期) 重新 seed（A7：Anki 每天 salt re-hash 每天不同；
     // 同天內重進 session 順序穩定）。mulberry32 有狀態，若只在 constructor
@@ -89,9 +93,31 @@ export class Session {
     // 重新建 RNG：同一天 → 相同 seed → 完全相同順序；跨天（含 app 開著跨
     // 午夜）→ 新日期字串 → 新順序。reviewMix / learning 排序不受影響。
     const rng = mulberry32(hashCode(this.mode + '_' + today));
-    for (let i = newCards.length - 1; i > 0; i--) {
-      const j = rng() * (i + 1) | 0;
-      [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
+    // DW1: 字本新卡抽卡權重 — 雙分支零回歸設計。hasWeight 涵蓋 map=null 與
+    // 全 1 兩態（皆走下方原 Fisher-Yates 原碼，與修前 bit-identical，harness
+    // T2 釘此）；任一 w≠1 → Efraimidis–Spirakis A-Res 不放回加權抽樣：
+    // key = u^(1/w)，取 key 最大的前 newSlots 張。同用一顆 seeded RNG →
+    // 同天重進 session 順序穩定（A7 語意延伸至加權態；harness T3 釘）。
+    // w<=0 的字本新卡先剔除（語意：0 = 今天不出這本的新卡；harness T4 釘）。
+    const dw = this.deckWeights;
+    const hasWeight = !!(dw && [...dw.values()].some(w => w !== 1));
+    if (hasWeight) {
+      const pool = newCards.filter(item => {
+        const w = dw.get(item.word.deck);
+        return w === undefined || w > 0;
+      });
+      for (const item of pool) {
+        const w = dw.get(item.word.deck) ?? 1;
+        item._esKey = Math.pow(rng(), 1 / w);
+      }
+      pool.sort((a, b) => b._esKey - a._esKey);
+      newCards.length = 0;
+      newCards.push(...pool);
+    } else {
+      for (let i = newCards.length - 1; i > 0; i--) {
+        const j = rng() * (i + 1) | 0;
+        [newCards[i], newCards[j]] = [newCards[j], newCards[i]];
+      }
     }
     if (newCards.length > newSlots) newCards.length = newSlots;
     if (this.maxReviewsPerDay > 0 && reviewQueue.length > this.maxReviewsPerDay) {

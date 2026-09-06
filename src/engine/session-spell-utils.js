@@ -48,7 +48,17 @@ export function ensureSession(storeState) {
     mode: 'spell',
     learnAheadLimit: storeState.ankiSettingsSpell.learnAheadLimit,
     maxIvl: storeState.ankiSettingsSpell.maxIvl,
+    deckWeights: buildDeckWeights(storeState),
   });
+}
+
+// DW1: 字本新卡權重 Map（name → w）— 與 session-utils.js 同款
+function buildDeckWeights(storeState) {
+  const decks = storeState?.decks;
+  if (!Array.isArray(decks) || !decks.length) return null;
+  const m = new Map();
+  for (const d of decks) m.set(d.name, (typeof d.newWeight === 'number' && Number.isFinite(d.newWeight)) ? d.newWeight : 1);
+  return m;
 }
 
 export function ensureQueue(filter, storeState) {
@@ -68,6 +78,7 @@ export function ensureQueue(filter, storeState) {
     session.newPerDay = storeState.ankiSettingsSpell.cardsPerDay;
     session.ratedNewToday = storeState.newRatedTodaySpell;
     session.maxReviewsPerDay = storeState.simParams?.maxReviewsPerDay ?? 0;
+    session.deckWeights = buildDeckWeights(storeState);   // DW1 live-sync
     // C4: live sync — ensureSession 只建一次 FSRS，設定變更後此行保證預覽 cap 與 store 端一致
     session.fsrs.maximumInterval = Math.max(1, storeState.ankiSettingsSpell?.maxIvl ?? 365);
   }
