@@ -1,6 +1,7 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts } from '../engine/session-utils.js';
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
 import { bindSpeakClick } from '../lib/tts.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
 export function render(s) {
   ensureSession(s.state);
@@ -69,6 +70,7 @@ function renderCard(s) {
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
+      ${wordImageSlotHTML(w.id)}
       ${isAns ? splitFieldsHtml(w.pos, w.definition) || '' : ''}
       ${w.pron ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${isAns && w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
@@ -94,6 +96,10 @@ function renderCard(s) {
 export function onMount(s) {
   mount(s, 's4FlipBtn', () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
+  // IMG1: 卡面圖片占位填充（翻卡 rip → 重 render → onMount 重跑 → 換圖自然更新）
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
+  const wid = session?.current?.word?.id;
+  if (wid) mountWordImages([wid]).catch(() => {});
 }
 
 function rip(s) {

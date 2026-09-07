@@ -1,4 +1,6 @@
 import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages } from '../lib/word-image.js';
+import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
@@ -389,6 +391,42 @@ function inlineEditTags(s, id) {
 }
 
 // ─── Edit Modal ────────────────────────────────────────────
+// ── IMG1: 編輯器圖片縮圖列（新增/編輯 modal 共用；存檔時 getVal() 全量替換寫庫）──
+function attachImagePicker({ thumbsId, pickId, filesId, wordId }) {
+  let api = null;
+  let cleanup = null;
+  let changed = false;
+  const el = () => document.getElementById(thumbsId);
+  const render = () => {
+    const t = el(); if (!t || !api) return;
+    if (cleanup) cleanup();
+    t.innerHTML = api.html;
+    cleanup = bindEditorThumbs(t, api);
+  };
+  (async () => {
+    const existing = wordId ? await getWordImages(wordId) : [];
+    api = renderEditorThumbs(existing, () => { changed = true; render(); });
+    render();
+  })().catch(() => { api = renderEditorThumbs([], () => { changed = true; render(); }); render(); });
+  document.getElementById(pickId)?.addEventListener('click', () => document.getElementById(filesId)?.click());
+  document.getElementById(filesId)?.addEventListener('change', async (ev) => {
+    if (!api) return;
+    await api.addFiles([...(ev.target.files || [])], (m) => toast(m, 'toast-error'));
+    changed = true;
+    ev.target.value = '';
+  });
+  return {
+    /** 存檔時呼叫：動過才全刪全插保序寫庫 */
+    persist: async (targetId) => {
+      if (!api || !changed || !targetId) return;
+      const imgs = api.getVal();
+      await deleteWordImagesForWord(targetId);
+      for (const im of imgs) await addWordImage(targetId, im.filename, im.data);
+      invalidateWordImages(targetId);
+    },
+  };
+}
+
 function openAddModal(s) {
   const container = document.getElementById('pageContainer');
   if (!container) return;
@@ -476,6 +514,15 @@ function openAddModal(s) {
           </select>
         </div>
         <div class="form-group">
+          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <div id="deckAddImgsThumbs"></div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input type="file" id="deckAddImgFiles" accept="image/*" multiple style="display:none">
+            <button class="btn btn-sm" type="button" id="deckAddImgPick">${icon('image')} 選擇圖片</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">標籤</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px" id="deckAddTagGroup">
             ${tagPickerHtml(s.state.systemTags || [], s.state.tags || [], [], 'deck-add-tag-checkbox')}
@@ -503,6 +550,9 @@ function openAddModal(s) {
   document.getElementById('deckAddModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'deckAddModal') close();
   });
+
+  // IMG1: 圖片選擇器（新增字：無既有圖）
+  const addImgPicker = attachImagePicker({ thumbsId: 'deckAddImgsThumbs', pickId: 'deckAddImgPick', filesId: 'deckAddImgFiles', wordId: null });
 
   // ── Tag input for definition & example ───
   // ═══ 統一膠囊輸入系統（元首令 2026-08-31 v2）═══
@@ -687,7 +737,8 @@ function openAddModal(s) {
     try {
       const dup = s.state.words.find(w => w.word.toLowerCase().trim() === data.word);
       if (dup) { close(); showDeckMergeModal(s, dup, data); return; }
-      await s.actions.addWord(data);
+      const added = await s.actions.addWord(data);
+      await addImgPicker.persist(added?.id);   // IMG1: 新增字帶圖
       toast(`已新增「${data.word}」`, 'toast-success');
       close();
       renderInPlace(s);
@@ -960,6 +1011,15 @@ function openEditModal(s, id) {
           </select>
         </div>
         <div class="form-group">
+          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <div id="deckEditImgsThumbs"></div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input type="file" id="deckEditImgFiles" accept="image/*" multiple style="display:none">
+            <button class="btn btn-sm" type="button" id="deckEditImgPick">${icon('image')} 選擇圖片</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">標籤</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px" id="deckEditTagGroup">
             ${tagPickerHtml(s.state.systemTags || [], s.state.tags || [], w.tags || [], 'deck-tag-checkbox')}
@@ -988,6 +1048,9 @@ function openEditModal(s, id) {
   document.getElementById('deckEditModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'deckEditModal') close();
   });
+
+  // IMG1: 圖片選擇器（編輯字：預載現圖）
+  const editImgPicker = attachImagePicker({ thumbsId: 'deckEditImgsThumbs', pickId: 'deckEditImgPick', filesId: 'deckEditImgFiles', wordId: w.id });
 
   // ── Tag input for definition & example ───
   // _tagInputEdit 與 _tagInput 同款（統一膠囊系統 v2：例句模式/草稿保留/API 掛載）
@@ -1300,6 +1363,7 @@ function openEditModal(s, id) {
     };
     try {
       await s.actions.editWord(id, data);
+      await editImgPicker.persist(id);   // IMG1: 動過才全量替換寫庫
       toast(`已更新「${data.word}」`, 'toast-success');
       close();
       renderInPlace(s);
@@ -1381,12 +1445,15 @@ function showCard(idx) {
     if (idx > 0 && nav) nav.insertBefore(btn('deckCardPrev', '‹', () => { stopAuto(); showCard(_cardState.idx - 1); }), nav.firstChild);
     if (idx < total - 1 && nav) nav.appendChild(btn('deckCardNext', '›', () => { stopAuto(); showCard(_cardState.idx + 1); }));
     scrollRuler(idx);
+    // IMG1: 占位填充（換字重跑）
+    mountWordImages([w.id]).catch(() => {});
     if (st.pronManual && w.pron) playCardTTS(s, w.word);
     if (cardSettings.autoAdvance) scheduleNext(idx).catch(() => {});
     return;
   }
 
   if (!document.getElementById('deckCardStyle')) document.head.insertAdjacentHTML('beforeend', deckCardCSS);
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
   const isFull = _cardState.fullscreen || false;
   const sidebar = document.getElementById('sidebar');
   if (sidebar) sidebar.style.display = 'none';
@@ -1395,6 +1462,8 @@ function showCard(idx) {
 
   document.body.insertAdjacentHTML('beforeend', mkPanelHTML(w, s, st, idx, total, words, isFull));
   bindCardEvents(s, w, idx, total, st);
+  // IMG1: 首掛面板後填充
+  mountWordImages([w.id]).catch(() => {});
   if (cardSettings.autoAdvance) scheduleNext(idx).catch(() => {});
 }
 
@@ -1447,6 +1516,7 @@ function cardBodyHTML(w, s, st) {
   const ah = !st.showComplete && st.hiddenFields.length > 0;
   return `<div class="card-panel-body${ah ? '' : ' revealed'}" id="deckCardPreviewBody">
     <div class="card-panel-word">${escapeHtml(w.word)}</div>
+    ${wordImageSlotHTML(w.id)}
     ${w.pron ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
     ${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? ' card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}
     ${w.example ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(w.example)}</div>` : ''}
@@ -1651,6 +1721,7 @@ function closeCardPreview() {
     _cardKeyHandler = null;
     _cardKeyBound = false;
   }
+  disableWordImageKeys();   // IMG1: 面板關閉停用 carousel 方向鍵
   const el = document.getElementById('deckCardPreview');
   if (el) el.remove();
   const sidebar = document.getElementById('sidebar');

@@ -2,6 +2,7 @@ import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
 let e = {
   phase: 'config',
@@ -148,6 +149,7 @@ function renderExam(s) {
         <div class="study-word-row">
           <div class="study-word" style="font-size:32px">${esc(w.word)}</div>
         </div>
+        ${wordImageSlotHTML(w.id)}
         <div style="margin-top:10px;font-size:14px;font-weight:600;color:${w._picked === w._correctIdx ? 'var(--green)' : 'var(--red)'}">
           你選了：${esc(w._picked >= 0 ? (w._options[w._picked] ?? '-') : '-')}${w._picked !== w._correctIdx ? `（正確：${esc(w.word)}）` : ''}
         </div>
@@ -410,6 +412,13 @@ async function applyTags(s) {
 export function onMount(s) {
   document.querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
+
+  // IMG1: 多選測驗答題後（_answered）顯示完整卡含圖
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
+  if (e.phase === 'exam' && e.words[e.idx]?._answered) {
+    const wid = e.words[e.idx].id;
+    if (wid) mountWordImages([wid]).catch(() => {});
+  }
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）

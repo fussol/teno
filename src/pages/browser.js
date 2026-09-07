@@ -4,6 +4,8 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages } from '../lib/word-image.js';
+import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { speak, stopSpeech } from '../lib/tts.js';
@@ -314,6 +316,7 @@ function cardBodyHTML(w, s, st) {
   const ah = !st.showComplete && st.hiddenFields.length > 0;
   return `<div class="card-panel-body${ah ? '' : ' revealed'}" id="cardPreviewBody">
     <div class="card-panel-word">${escapeHtml(w.word)}</div>
+    ${wordImageSlotHTML(w.id)}
     ${w.pron ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
     ${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? 'card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}
     ${w.example ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(w.example)}</div>` : ''}
@@ -367,12 +370,15 @@ function showCard(idx) {
     if (idx > 0 && nav) nav.insertBefore(_btn('cardPrev', '‹', () => { stopAuto(); showCard(_cardState.idx - 1); }), nav.firstChild);
     if (idx < total - 1 && nav) nav.appendChild(_btn('cardNext', '›', () => { stopAuto(); showCard(_cardState.idx + 1); }));
     scrollBrowserRuler(idx);
+    // IMG1: 占位填充（showCard 換字時重跑——word-image 快取已 hydrate 則零重查）
+    mountWordImages([w.id]).catch(() => {});
     if (st.pronManual && w.pron) playCardTTS(s, w.word);
     if (cardSettings.autoAdvance) scheduleNext(idx).catch(() => {});
     return;
   }
 
   if (!document.getElementById('cardStyle')) document.head.insertAdjacentHTML('beforeend', cardPanelCSS);
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
   const isFull = _cardState.fullscreen || false;
   const sidebar = document.getElementById('sidebar');
   if (sidebar) sidebar.style.display = 'none';
@@ -381,6 +387,8 @@ function showCard(idx) {
 
   document.body.insertAdjacentHTML('beforeend', mkPanelHTML(w, s, st, idx, total, words, isFull));
   bindCardEvents(s, w, st);
+  // IMG1: 首掛面板後填充
+  mountWordImages([w.id]).catch(() => {});
   if (cardSettings.autoAdvance) scheduleNext(idx).catch(() => {});
 }
 
@@ -570,6 +578,7 @@ function closeCardPreview() {
     _cardKeyHandler = null;
     _cardKeyBound = false;
   }
+  disableWordImageKeys();   // IMG1: 面板關閉停用 carousel 方向鍵（R2 席：Escape 解綁）
   const el = document.getElementById('cardPreviewModal');
   if (el) el.remove();
   const sidebar = document.getElementById('sidebar');
@@ -917,6 +926,15 @@ function openModal(s, word) {
           </select>
         </div>
         <div class="form-group">
+          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <div id="fImagesThumbs"></div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input type="file" id="fImageFiles" accept="image/*" multiple style="display:none">
+            <button class="btn btn-sm" type="button" id="fImagePick">${icon('image')} 選擇圖片</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">標籤</label>
           <div style="display:flex;flex-wrap:wrap;gap:6px" id="fTagGroup">
             ${tagPickerHtml(s.state.systemTags || [], s.state.tags || [], word?.tags || [], 'tag-checkbox')}
@@ -1038,6 +1056,33 @@ function openModal(s, word) {
   const close = () => document.getElementById('wordModal')?.remove();
   document.getElementById('modalClose')?.addEventListener('click', close);
   document.getElementById('modalCancel')?.addEventListener('click', close);
+
+  // ── IMG1: 圖片縮圖列（編輯時載入現圖；選檔/排序/刪除；存檔全量替換）──
+  let _imgApi = null;
+  let _imgCleanup = null;
+  let _imgsChanged = false;
+  const thumbsEl = document.getElementById('fImagesThumbs');
+  const renderImgs = (list) => {
+    _imgsChanged = true;   // 任何變更（含排序/刪除）都標記，存檔時全量替換
+    if (!thumbsEl) return;
+    if (_imgCleanup) _imgCleanup();
+    thumbsEl.innerHTML = _imgApi ? _imgApi.html : '';
+    _imgCleanup = _imgApi ? bindEditorThumbs(thumbsEl, _imgApi) : null;
+  };
+  (async () => {
+    if (!isEdit || !word) { _imgApi = renderEditorThumbs([], renderImgs); renderImgs(); _imgsChanged = false; return; }
+    const existing = await getWordImages(word.id);
+    _imgApi = renderEditorThumbs(existing, renderImgs);
+    renderImgs();
+    _imgsChanged = false;   // 初始化渲染不標記（只有使用者操作後才寫庫）
+  })().catch(() => { _imgApi = renderEditorThumbs([], renderImgs); renderImgs(); _imgsChanged = false; });
+  document.getElementById('fImagePick')?.addEventListener('click', () => document.getElementById('fImageFiles')?.click());
+  document.getElementById('fImageFiles')?.addEventListener('change', async (ev) => {
+    if (!_imgApi) return;
+    await _imgApi.addFiles([...(ev.target.files || [])], (m) => toast(m, 'toast-error'));
+    _imgsChanged = true;
+    ev.target.value = '';
+  });
   document.getElementById('wordModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'wordModal') close();
   });
@@ -1072,14 +1117,25 @@ function openModal(s, word) {
     data.word = data.word.toLowerCase();
 
     try {
+      let savedId = word?.id;
       if (isEdit && word) {
         await s.actions.editWord(word.id, data);
         toast(`已更新「${data.word}」`, 'toast-success');
       } else {
         const dup = s.state.words.find(w => w.word.toLowerCase().trim() === data.word);
         if (dup) { showMergeModal(s, dup, data, close); return; }
-        await s.actions.addWord(data);
+        const added = await s.actions.addWord(data);
+        savedId = added?.id;
         toast(`已新增「${data.word}」`, 'toast-success');
+      }
+      // IMG1: 圖片全量替換（僅動過才寫——全刪全插保序；新增字直接寫入）
+      if (_imgApi && savedId && _imgsChanged) {
+        const finalImgs = _imgApi.getVal();
+        await deleteWordImagesForWord(savedId);
+        for (const im of finalImgs) {
+          await addWordImage(savedId, im.filename, im.data);
+        }
+        invalidateWordImages(savedId);
       }
       close();
       renderInPlace(s);

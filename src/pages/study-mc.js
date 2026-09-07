@@ -2,6 +2,7 @@ import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCou
 
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
 import { bindSpeakClick } from '../lib/tts.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
 export function render(s) {
   ensureSession(s.state);
@@ -102,6 +103,7 @@ function renderBack(w, cnt) {
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
+      ${wordImageSlotHTML(w.id)}
       ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${e(w.definition || '(無定義)')}</div>`}
       ${w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
       ${w.pron ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
@@ -123,6 +125,10 @@ function renderBack(w, cnt) {
 export function onMount(s) {
   mount(s, () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
+  // IMG1: 背面（renderBack）顯示圖；正面無圖（選項是英文擾動，帶圖洩答案）
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
+  const wid = session?.current?.word?.id;
+  if (wid) mountWordImages([wid]).catch(() => {});
 }
 
 function rip(s) {

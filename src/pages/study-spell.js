@@ -2,6 +2,7 @@ import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCou
 
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
 import { bindSpeakClick } from '../lib/tts.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 let _ssVvHandler = null;   // G11: visualViewport resize（常駐節點累積）
 
 export function render(s) {
@@ -101,6 +102,7 @@ function renderBack(w, cnt) {
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
+      ${wordImageSlotHTML(w.id)}
       ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${e(w.definition || '(無定義)')}</div>`}
       ${w.pron ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
@@ -123,6 +125,10 @@ function renderBack(w, cnt) {
 export function onMount(s) {
   mount(s, () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
+  // IMG1: 背面顯示圖（renderBack）；正面拼字輸入不帶圖
+  if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
+  const wid = session?.current?.word?.id;
+  if (wid) mountWordImages([wid]).catch(() => {});
   setTimeout(() => {
     const el = document.getElementById('spellInput');
     el?.focus();
