@@ -1823,6 +1823,23 @@ pub fn run() {
             sql: "ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            // IMG1: 單字圖片（Anki media-in-collection 語意的 DB 版——圖隨 teno.db 走）
+            // 懶載入：state.words 不帶圖，渲染點以 word_id 查此表
+            version: 12,
+            description: "create word_images table (IMG1 word images, lazy-loaded)",
+            sql: "
+                CREATE TABLE IF NOT EXISTS word_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+                    filename TEXT NOT NULL DEFAULT '',
+                    data TEXT NOT NULL,
+                    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_word_images_word ON word_images(word_id);
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)

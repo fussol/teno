@@ -102,6 +102,17 @@ async function migrate(d) {
   }
   // DW1: 字本新卡抽卡權重（與 lib.rs migration v11 對應的雙保險；已存在則靜默跳過）
   try { await d.execute('ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1'); } catch (_) {}
+  // IMG1: 單字圖片表（與 lib.rs migration v12 對應；IF NOT EXISTS 天生 idempotent）
+  try {
+    await d.execute(`CREATE TABLE IF NOT EXISTS word_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      word_id TEXT NOT NULL REFERENCES words(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL DEFAULT '',
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )`);
+    await d.execute('CREATE INDEX IF NOT EXISTS idx_word_images_word ON word_images(word_id)');
+  } catch (_) {}
   // v5.2: review_log 記錄複習後的狀態 (fsrs-report 轉移分析不用 replay)
   try { await d.execute('ALTER TABLE review_log ADD COLUMN new_state INTEGER'); } catch (_) {}
   // v5.2: 審計日誌 (設定變更/匯入匯出/CLI 寫入)
@@ -216,6 +227,43 @@ export async function saveWordsInTx(words) {
   }
 }
 
+// ─── Word images (IMG1 — lazy-loaded, base64 data URL in DB) ─────
+
+/** 取單字圖片（渲染點懶載入用；ORDER BY id = 新增序） */
+export async function getImagesForWord(wordId) {
+  const rows = await requireDB().select('SELECT filename, data FROM word_images WHERE word_id = $1 ORDER BY id', [wordId]);
+  return rows.map(r => ({ filename: r.filename || '', data: r.data || '' }));
+}
+
+/** 批量取圖（渲染層一次 IN query；wordId → images[]） */
+export async function getImagesForWords(wordIds) {
+  if (!wordIds || !wordIds.length) return new Map();
+  const ids = [...new Set(wordIds)];
+  const ph = ids.map((_, i) => `$${i + 1}`).join(', ');
+  const rows = await requireDB().select(`SELECT word_id, filename, data FROM word_images WHERE word_id IN (${ph}) ORDER BY word_id, id`, ids);
+  const m = new Map();
+  for (const r of rows) {
+    if (!m.has(r.word_id)) m.set(r.word_id, []);
+    m.get(r.word_id).push({ filename: r.filename || '', data: r.data || '' });
+  }
+  return m;
+}
+
+/** 新增一張圖（data = data: URL base64 字串） */
+export async function addWordImage(wordId, filename, data) {
+  await requireDB().execute('INSERT INTO word_images (word_id, filename, data) VALUES ($1, $2, $3)', [wordId, filename || '', data]);
+}
+
+/** 刪一張圖（by row id） */
+export async function deleteWordImage(imageId) {
+  await requireDB().execute('DELETE FROM word_images WHERE id = $1', [imageId]);
+}
+
+/** 清單字全部圖（編輯器全量替換用；冪等） */
+export async function deleteWordImagesForWord(wordId) {
+  await requireDB().execute('DELETE FROM word_images WHERE word_id = $1', [wordId]);
+}
+
 export async function deleteWord(id) {
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
@@ -225,6 +273,8 @@ export async function deleteWord(id) {
     const wordText = wr[0]?.word;
     await d.execute('DELETE FROM cards WHERE word_id = $1', [id]);
     await d.execute('DELETE FROM review_log WHERE word_id = $1', [id]);   // D14: 清孤兒複習紀錄
+    // IMG1: 刪字連刪圖（FK off 實錘，CASCADE 不生效——R2 席裁決落 db 層事務）
+    try { await d.execute('DELETE FROM word_images WHERE word_id = $1', [id]); } catch (_) {}
     await d.execute('DELETE FROM exam_history WHERE word = $1', [String(id)]);  // D20-SR1: B4 後之 word_id 世代
     if (wordText) await d.execute('DELETE FROM exam_history WHERE word = $1', [wordText]);  // D14: B4 前 legacy 文字世代(存文字)
     await d.execute('DELETE FROM words WHERE id = $1', [id]);
@@ -240,6 +290,8 @@ export async function bulkSaveWords(words) {
   await d.execute('BEGIN TRANSACTION');
   try {
     await d.execute('DELETE FROM words');
+    // IMG1: 整表覆寫前清圖（words 刪光 → word_images 全為孤兒；R2 席裁決落 db 層）
+    try { await d.execute('DELETE FROM word_images'); } catch (_) {}
     for (const w of words) await saveWord(w);
     await d.execute('COMMIT');
     await addAudit('import-words', `匯入 ${words.length} 詞 (整表覆寫)`);
@@ -369,6 +421,8 @@ export async function deleteWordsByDeck(deckName) {
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
+    // IMG1: 刪字本連刪圖（words DELETE 之前——IN 子查詢需 words 還在；R2 席裁決）
+    try { await d.execute('DELETE FROM word_images WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', [deckName]); } catch (_) {}
     await d.execute('DELETE FROM review_log WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', [deckName]);
     // D20-SR1: exam_history.word 雙世代（B4 後 word_id／B4 前 legacy 文字）兩族皆刪（對齊 CLI cmdDeleteDeck）
     await d.execute('DELETE FROM exam_history WHERE word IN (SELECT id FROM words WHERE deck = $1)', [deckName]);   // B4 後 id 世代
@@ -674,6 +728,8 @@ export async function clearAll() {
   try {
     await d.execute('BEGIN TRANSACTION');
     await d.execute('DELETE FROM words');
+    // IMG1: 重設清單補 word_images（R2 席抓的第 12 表——漏了會孤兒常駐）
+    try { await d.execute('DELETE FROM word_images'); } catch (_) {}
     await d.execute('DELETE FROM cards');
     await d.execute('DELETE FROM decks');
     await d.execute('DELETE FROM folders');

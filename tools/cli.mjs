@@ -493,6 +493,8 @@ function cmdDelete() {
   const w = dbw();
   w.prepare('DELETE FROM cards WHERE word_id=?').run(existing.id);
   w.prepare('DELETE FROM review_log WHERE word_id=?').run(existing.id);
+  // IMG1: 刪字連刪圖（words DELETE 前；FK off 同 GUI db.js 裁決）
+  try { w.prepare('DELETE FROM word_images WHERE word_id=?').run(existing.id); } catch (_) {}
   w.prepare('DELETE FROM words WHERE id=?').run(existing.id);
   w.close();
   log('WRITE', `delete ${existing.word} (${existing.id}) deck=${existing.deck}`);
@@ -781,6 +783,8 @@ function cmdDeleteDeck() {
     // 顯式刪（schema 無關：CASCADE 只在新建 DB 存在，舊世代無 FK 約束則孤兒直入）
     w.prepare('DELETE FROM review_log WHERE word_id IN (SELECT id FROM words WHERE deck=?)').run(deck);
     w.prepare('DELETE FROM cards WHERE word_id IN (SELECT id FROM words WHERE deck=?)').run(deck);
+    // IMG1: 刪字本連刪圖（words DELETE 前——IN 子查詢需 words 在場）
+    try { w.prepare('DELETE FROM word_images WHERE word_id IN (SELECT id FROM words WHERE deck=?)').run(deck); } catch (_) {}
     w.prepare('DELETE FROM words WHERE deck=?').run(deck);
     if (rec) {
       w.prepare('DELETE FROM decks WHERE id=?').run(rec.id);
