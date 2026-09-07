@@ -22,6 +22,18 @@ clarify 三選一 → 「網頁版內建幾十個假單字，所有頁面都有�
 - 純展示層：Rust／migrate／SQLite 語意一行未動；Pure SQLite 家規不變
   （demo 不寫 localStorage，純記憶體）。
 
+## 真資料快照（2026-09-08 使用者追問「資料連上嗎」後加）
+- `tools/export-web-snapshot.py`：本機 `~/.config/com.teno.app/teno.db`
+  → `public/real-data.json`（4921 詞／2052 卡／16 字本／近 3000 筆複習紀錄＋
+  streak＋exam 全倒，圖片單張 >200KB 留空，約 6MB）。
+- `public/real-data.json` 已進 `.gitignore`：真資料不出本機、不上 GitHub。
+- 為何放 public/：vite build 會清空 dist/，直寫 dist 會被洗掉（實測 MISSING）。
+  放 public/ 讓 build 自動拷進 dist/，隧道照服。
+- `demo-data.js seed()`：優先 `fetch('real-data.json')` → 真資料；
+  無快照（fresh clone）→ 回退 36 詞種子。快照是唯讀時間點，
+  網頁寫入只改記憶體、不回寫 DB（refresh 重置）。
+- 快照更新：本機 DB 變了就重跑一次腳本＋（dist 已重 build 會自動帶入）。
+
 ## 不展示的東西（先天缺後端）
 - 自動補齊／字典查詢／OCR／匯入匯出（要 Rust 或 key，按鈕照按會 toast 報錯，不炸頁）
 - 圖片（IMG1 base64，種子無圖）

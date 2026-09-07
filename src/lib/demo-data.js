@@ -49,6 +49,26 @@ function mkCard(dueIso, lastIso, extra = {}) {
 
 /** 重置並填入種子資料（initDB demo 分支呼叫；clearAll 後不清、直接倒空） */
 export async function seed() {
+  // 真資料快照優先（export-web-snapshot.py 產物；public/real-data.json，
+  // .gitignore 不進 git，vite 拷進 dist/）。
+  // 有快照＝看真資料；無快照（brand-new clone）＝回退 36 詞種子。
+  try {
+    const r = await fetch('real-data.json', { cache: 'no-store' });
+    if (r.ok) {
+      const j = await r.json();
+      if (j && Array.isArray(j.words) && j.words.length) {
+        words = j.words;
+        cards = new Map(Object.entries(j.cards || {}));
+        decks = j.decks || [];
+        reviewLogs = j.reviewLogs || [];
+        examHistory = j.examHistory || [];
+        goalStreak = j.goalStreak || null;
+        wordSeq = 1; logSeq = reviewLogs.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
+        console.log(`[demo] 📦 真資料快照：${words.length} 詞 / ${cards.size} 卡 / ${decks.length} 字本`);
+        return;
+      }
+    }
+  } catch { /* 無快照 → 種子回退 */ }
   words = [
     // ── GRE 核心 ──
     mk('w001', 'abate', '減弱；緩和', 'verb', 'əˈbeɪt',
