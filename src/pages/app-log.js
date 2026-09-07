@@ -2,7 +2,10 @@
 // 操作日誌 — 查看操作記錄 + 模擬歷史 (隔離 DB: app-log.db)
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
-import { fetchLogs, fetchSimRuns, countLogs, getRetentionDays } from '../lib/app-log.js';
+import { fetchLogs, fetchSimRuns, countLogs, getRetentionDays, checkpointAppLog } from '../lib/app-log.js';
+import { exportAppLogText, exportDbBundleData, exportBundleDialog } from '../lib/api.js';
+import { isAndroid, downloadBlobFromArray } from '../lib/platform.js';
+import { toast } from '../lib/toast.js';
 
 const PAGE = 200;
 let _logs = [];
@@ -61,6 +64,15 @@ export function render(s) {
     <div class="page-subtitle">隔離 DB (app-log.db) · 保留 ${retention > 0 ? retention + ' 天' : '停用'}</div>
 
     <div class="section">
+      <div class="card" style="padding:var(--s4);display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm" id="applogExportTxtBtn">${icon('list')} 匯出操作日誌 (.txt)</button>
+        <span style="font-size:11px;color:var(--text-tertiary)">文字檔（app_log＋模擬歷史）</span>
+        <button class="btn btn-sm" id="applogExportBundleBtn">${icon('save')} 匯出完整備份 (.db)</button>
+        <span style="font-size:11px;color:var(--text-tertiary)">捆包（teno.db＋app-log.db，匯入可吃）</span>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">${icon('chart')} 模擬歷史</div>
       <div class="card" style="padding:var(--s4)">${_sims.length ? renderSims(_sims) : '<div style="font-size:12px;color:var(--text-tertiary)">載入中...</div>'}</div>
     </div>
@@ -89,6 +101,49 @@ export function render(s) {
 let _logGen = 0;   // G29: 併發 guard — 互斥 refresh/load-more，舊請求結果不覆蓋後續操作
 
 export function onMount(s) {
+  // A段搬家（自 settings.js runExportAppLog 原樣遷入）：WAL 先合併再讀，
+  // Rust 直讀 app-log.db 不走 IPC 大陣列。
+  document.getElementById('applogExportTxtBtn')?.addEventListener('click', async () => {
+    try {
+      await checkpointAppLog().catch(() => {});
+      const bytes = await exportAppLogText();
+      const fname = `teno-applog-${new Date().toISOString().slice(0, 10)}.txt`;
+      if (isAndroid) {
+        downloadBlobFromArray(bytes, fname, 'text/plain');
+      } else {
+        const blob = new Blob([new Uint8Array(bytes)], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fname; a.click();
+        URL.revokeObjectURL(url);
+      }
+      toast('操作日誌已匯出（文字檔）', 'toast-success');
+    } catch (e) {
+      toast('操作日誌匯出失敗: ' + e, 'toast-error');
+    }
+  });
+  // B段：捆包匯出（TENOC 容器；雙 checkpoint＋50MB 守門；匯入走既有
+  // importDbDialog，本來就吃容器，零改動）。
+  document.getElementById('applogExportBundleBtn')?.addEventListener('click', async () => {
+    try {
+      const { checkpoint } = await import('../lib/db.js');
+      await checkpoint().catch(() => {});
+      await checkpointAppLog().catch(() => {});
+      if (isAndroid) {
+        const bytes = await exportDbBundleData();
+        const mb = bytes.length / 1048576;
+        if (mb > 50 && !confirm(`完整備份約 ${mb.toFixed(1)}MB，超過 50MB 在手機上可能記憶體不足，確定繼續？`)) return;
+        const fname = `teno-full-backup-${new Date().toISOString().slice(0, 10)}.db`;
+        downloadBlobFromArray(bytes, fname, 'application/octet-stream');
+        toast('完整備份已匯出（含操作日誌）', 'toast-success');
+      } else {
+        const path = await exportBundleDialog();
+        toast(`完整備份已匯出 → ${path}`, 'toast-success');
+      }
+    } catch (e) {
+      if (e !== '使用者取消') toast('完整備份匯出失敗: ' + e, 'toast-error');
+    }
+  });
   const refresh = async () => {
     const myGen = ++_logGen;
     _search = document.getElementById('logSearch')?.value || '';

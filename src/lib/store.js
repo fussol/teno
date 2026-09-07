@@ -112,6 +112,8 @@ export function createStore() {
     graylist: [],                            // OCR 灰名單：使用者 OCR「取消勾選淘汰」的字，同黑名單排除，devMode 可增刪＋CSV 匯入
     ocrMode: 'scan',                       // OCR 模式：scan（全掃描·一般辨識）/ highlight（螢光筆·高信心）
     ocrRestoreModel: '',                      // 可選 AI 還原模型（進階/devMode；空=純離線 edit-distance 還原，不呼叫 LLM）
+    mwDictKey: '',                             // D段：韋氏 Collegiate Dictionary key（自備，dictionaryapi.com）
+    mwThesKey: '',                             // D段：韋氏 Collegiate Thesaurus key（自備）
     ocrCambridgeVerify: true,  // OCR 錄入 Cambridge 查證開關（查得到才入；devMode 可關）
     buried: new Set(),
     suspended: new Set(),
@@ -438,6 +440,8 @@ export function createStore() {
     )).map(normalizeBlackWord);
     state.ocrMode = (typeof settings.ocrMode === 'string' && ['scan', 'highlight'].includes(settings.ocrMode)) ? settings.ocrMode : 'scan';
     state.ocrRestoreModel = typeof settings.ocrRestoreModel === 'string' ? settings.ocrRestoreModel : '';
+    state.mwDictKey = typeof settings.mwDictKey === 'string' ? settings.mwDictKey : '';
+    state.mwThesKey = typeof settings.mwThesKey === 'string' ? settings.mwThesKey : '';
     state.ocrCambridgeVerify = typeof settings.ocrCambridgeVerify === 'boolean'
       ? settings.ocrCambridgeVerify : true;
     try {
@@ -1239,6 +1243,9 @@ export function createStore() {
         synonym: wordData.synonym || '',
         antonym: wordData.antonym || '',
         derivative: wordData.derivative || '',
+        etymology: wordData.etymology || '',
+        syllables: wordData.syllables || '',
+        phrases: wordData.phrases || '',
         examples: wordData.examples || [],
         createdAt: new Date().toISOString(),
       };
@@ -1434,6 +1441,9 @@ export function createStore() {
           forms: src.forms || [],
           synonym: src.synonym || '',
           antonym: src.antonym || '',
+          etymology: src.etymology || '',
+          syllables: src.syllables || '',
+          phrases: src.phrases || '',
           derivative: src.derivative || '',
           examples: src.examples || [],
           createdAt: now,

@@ -19,6 +19,10 @@ export const fetchGet = (url) =>
 export const lookupCambridge = (word, lang) =>
   invoke('lookup_cambridge', { word, lang })
 
+// D段：韋氏官方 JSON API（collegiate＋thesaurus；key 自備存設定頁）
+export const lookupMerriam = (word, dictKey, thesKey) =>
+  invoke('lookup_merriam', { word, dictKey, thesKey })
+
 export const scrapeQuizlet = (url) =>
   invoke('scrape_quizlet', { url })
 
@@ -110,6 +114,13 @@ export const exportCsvDialog = (csv, filename) =>
 // ─── Android export (returns data for Blob download) ──
 export const exportDbData = () =>
   invoke('export_db_data')
+
+// B段：捆包匯出（teno.db＋app-log.db TENOC 容器；呼叫端先雙 checkpoint＋大小守門）
+export const exportDbBundleData = () =>
+  invoke('export_db_bundle_data')
+
+export const exportBundleDialog = () =>
+  invoke('export_bundle_dialog')
 
 // devMode 限定：操作日誌 → 文字檔（ts ISO | level | message）
 export const exportAppLogText = () =>

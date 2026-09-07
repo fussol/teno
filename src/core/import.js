@@ -109,6 +109,8 @@ const FIELD_MAP = {
   '標記': 'tags', '標籤': 'tags',
   '描述': 'description',
   '例句們': 'examples', '範例': 'examples',
+  '字源': 'etymology', '音節': 'syllables', '片語': 'phrases',
+  etymology: 'etymology', syllables: 'syllables', phrases: 'phrases',
   // Single-letter abbrev codes used in the Era seed
   w: 'word', m: 'definition', p: 'pron', e: 'example',
   der: 'derivative', sim: 'synonym', a: 'antonym', i: 'image',
@@ -120,6 +122,7 @@ export const CANONICAL_FIELDS = [
   'synonym', 'antonym', 'derivative', 'deck', 'image', 'description',
   'tags', 'examples',
   'related', 'forms',
+  'etymology', 'syllables', 'phrases',
 ];
 
 /** Human-readable label for each canonical field (zh-TW). */
@@ -129,6 +132,7 @@ export const FIELD_LABELS = {
   derivative: '衍生物', deck: '字本', image: '影像',
   description: '描述', examples: '例句們', tags: '標記',
   related: '相關詞', forms: '詞形變化',
+  etymology: '字源', syllables: '音節', phrases: '片語',
 };
 
 /**
@@ -183,6 +187,7 @@ export function mapWords(headers, rows, fields, defaults = {}) {
     const w = {
       word: '', definition: '', pos: '', pron: '', example: '',
       synonym: '', antonym: '', derivative: '',
+      etymology: '', syllables: '', phrases: '',
       deck: defaults.deck || 'Default',
       image: '', description: '', examples: [], tags: [],
       related: [], forms: [],
@@ -231,7 +236,7 @@ export function parseCSV(text) {
  * @returns {string}
  */
 export function buildCSV(words) {
-  const header = ['word', 'definition', 'pos', 'pron', 'example', 'deck', 'image', 'description', 'tags', 'related', 'forms', 'synonym', 'antonym', 'derivative', 'examples'];
+  const header = ['word', 'definition', 'pos', 'pron', 'example', 'deck', 'image', 'description', 'tags', 'related', 'forms', 'synonym', 'antonym', 'derivative', 'examples', 'etymology', 'syllables', 'phrases'];
   const arrayKeys = new Set(['tags', 'related', 'forms', 'examples']);
   const lines = [header.join(',')];
   for (const w of words) {

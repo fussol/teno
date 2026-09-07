@@ -995,6 +995,18 @@ function openEditModal(s, id) {
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditDerivativeChips"></div>
         </div>
         <div class="form-group">
+          <label class="form-label">音節</label>
+          <input class="form-input" id="deckEditSyllables" placeholder="例：dict·io·nary" value="${escapeAttr(w.syllables || '')}" style="flex:1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">字源</label>
+          <textarea class="form-input" id="deckEditEtymology" rows="2" style="resize:vertical">${escapeHtml(w.etymology || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">片語</label>
+          <textarea class="form-input" id="deckEditPhrases" rows="2" style="resize:vertical">${escapeHtml(w.phrases || '')}</textarea>
+        </div>
+        <div class="form-group">
           <label class="form-label">相關詞</label>
           <div style="display:flex;gap:4px"><input class="form-input" id="deckEditRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.related || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillRelated" type="button">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditRelatedChips"></div>
@@ -1356,6 +1368,9 @@ function openEditModal(s, id) {
       synonym: editSynChips.getVal(),
       antonym: editAntChips.getVal(),
       derivative: editDerivChips.getVal(),
+      etymology: document.getElementById('deckEditEtymology')?.value.trim() || '',
+      syllables: document.getElementById('deckEditSyllables')?.value.trim() || '',
+      phrases: document.getElementById('deckEditPhrases')?.value.trim() || '',
       related: editRelChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       forms: editFormsChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       deck: document.getElementById('deckEditDeck')?.value || 'Default',
@@ -1523,6 +1538,9 @@ function cardBodyHTML(w, s, st) {
     ${w.description ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
     ${w.related && w.related.length ? `<div class="card-panel-desc" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
     ${w.forms && w.forms.length ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
+    ${w.syllables ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
+    ${w.etymology ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
+    ${w.phrases ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">片語 </span>${escapeHtml(w.phrases)}</div>` : ''}
     ${(w.tags || []).length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
       const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
       return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;

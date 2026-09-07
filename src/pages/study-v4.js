@@ -1,5 +1,6 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts } from '../engine/session-utils.js';
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { extraFieldsHtml } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
@@ -76,6 +77,7 @@ function renderCard(s) {
       ${isAns && w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
       ${isAns && w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${isAns && w.forms?.length ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
+      ${isAns ? extraFieldsHtml(w, e) : ''}
       ${isAns && w.description ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${e(w.description)}</div>` : ''}
     </div>
     ${!isAns

@@ -1,6 +1,7 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts, lastCorrect, userInput, submitAnswer } from '../engine/session-spell-utils.js';
 
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { extraFieldsHtml } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 let _ssVvHandler = null;   // G11: visualViewport resize（常駐節點累積）
@@ -108,6 +109,7 @@ function renderBack(w, cnt) {
       ${w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
       ${w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${w.forms?.length ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
+      ${extraFieldsHtml(w, e)}
       <div class="study-user-input">你的輸入：<span class="study-user-word">${e(userInput)}</span></div>
     </div>
     <div class="study-buttons">

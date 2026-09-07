@@ -127,12 +127,16 @@ export function render(s) {
     <div class="section">
       <div class="section-title">${icon('sparkle')} 自動補齊</div>
       <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音與相關詞</div>
+      <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
+        <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
+        <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位（開＝整欄取代＋無視門檻；關＝只補缺失）</span>
+      </div>
       <div class="grid grid-2 tool-grid">
         <div class="card">
           <div class="card-title">${icon('hash')} 自動產生詞性</div>
           <div class="card-desc">為缺少詞性的單字自動補上</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('posMethod', [['Cambridge 字典','cambridge'],['本地 LLM','llm']], 'cambridge')}
+          ${_selHtml('posMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}
           <button class="btn" onclick="window.__genPos()">${icon('hash')} 開始產生</button>
         </div>
           <div class="tool-output" id="posResult" style="margin-top:var(--s3);display:none"></div>
@@ -143,7 +147,7 @@ export function render(s) {
           <div class="card-title">${icon('sparkle')} 自動產生例句</div>
           <div class="card-desc">為沒有例句的單字產生例句，或翻譯現有例句為中文</div>
           <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2);flex-wrap:wrap">
-          ${_selHtml('exampleMethod', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}
+          ${_selHtml('exampleMethod', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}
           <button class="btn" onclick="window.__genExamples()">${icon('sparkle')} 開始產生</button>
         </div>
         <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2);align-items:center;flex-wrap:wrap">
@@ -174,7 +178,7 @@ export function render(s) {
           <div class="card-title">${icon('mic')} 自動抓取發音</div>
           <div class="card-desc">為缺少音標的單字自動補上</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('pronMethod', [['Cambridge 字典','cambridge']], 'cambridge')}
+          ${_selHtml('pronMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam']], 'cambridge')}
           <button class="btn" onclick="window.__genPronunciations()">${icon('mic')} 開始抓取</button>
         </div>
         <div class="tool-output" id="pronResult" style="margin-top:var(--s3);display:none"></div>
@@ -183,8 +187,11 @@ export function render(s) {
     <!-- Generate Related Words -->
         <div class="card">
           <div class="card-title">${icon('sparkle')} 自動產生相關詞</div>
-          <div class="card-desc">用 LLM 為缺少相關詞（同義詞、近似詞）的單字自動生成</div>
-        <button class="btn" onclick="window.__genRelatedLLM()">${icon('sparkle')} 開始產生</button>
+          <div class="card-desc">為缺少相關詞（同義詞、近似詞）的單字自動生成（LLM 或韋氏同義庫）</div>
+        <div class="tool-row" style="margin-bottom:var(--s2)">
+          ${_selHtml('relatedMethod', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}
+          <button class="btn" onclick="window.__genRelated()">${icon('sparkle')} 開始產生</button>
+        </div>
         <div class="tool-output" id="relatedResult" style="margin-top:var(--s3);display:none"></div>
         </div>
 
@@ -204,6 +211,10 @@ export function render(s) {
       <div class="card">
         <div class="card-title">${icon('book')} Cambridge 字典查詢</div>
         <div class="card-desc">從 Cambridge Dictionary 查詢單字定義、IPA、例句</div>
+        <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2)">
+          <button class="btn" id="mwFullFillBtn">${icon('book')} 韋氏完整補齊（字義/字源/音節/片語/同反義）</button>
+        </div>
+        <div class="card-desc" id="mwFullFillHint">用韋氏填 definition、etymology、syllables、phrases、synonym、antonym；覆寫開關同樣生效</div>
          <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2)">
            ${_selHtml('cambridgeDict', [['英英','en'],['英中','zh']], 'en')}
             <input id="cambridgeWord" type="text" placeholder="輸入英文單字"
@@ -380,10 +391,33 @@ export function onMount(s) {
     }
   };
 
+  // ─── C段：自動補齊全域覆寫開關（db setting autofillOverwrite，預設關）───
+  // 開＝整欄取代＋無視門檻；關＝現行只補缺失。五路生成函式經 _ow() 讀取。
+  let _autofillOverwrite = false;
+  const _ow = () => _autofillOverwrite;
+  const _owTag = () => (_autofillOverwrite ? '（覆寫模式）' : '');
+  import('../lib/db.js').then(m => m.getSetting('autofillOverwrite')).then(v => {
+    _autofillOverwrite = v === '1' || v === true;
+    const sw = document.getElementById('autofillOverwriteSwitch');
+    if (sw) { sw.classList.toggle('on', _autofillOverwrite); sw.setAttribute('aria-checked', String(_autofillOverwrite)); }
+  }).catch(() => {});
+  document.getElementById('autofillOverwriteSwitch')?.addEventListener('click', async () => {
+    _autofillOverwrite = !_autofillOverwrite;
+    const sw = document.getElementById('autofillOverwriteSwitch');
+    if (sw) { sw.classList.toggle('on', _autofillOverwrite); sw.setAttribute('aria-checked', String(_autofillOverwrite)); }
+    try {
+      const { setSetting } = await import('../lib/db.js');
+      await setSetting('autofillOverwrite', _autofillOverwrite ? '1' : '0');
+    } catch (_) {}
+    toast(_autofillOverwrite ? '覆寫模式開：自動補齊將取代已有欄位' : '覆寫模式關：只補缺失欄位', '');
+  });
+
   // ─── Part of Speech Generator ────────────────
   window.__genPos = async () => {
     const method = _getMethod('posMethod', 'cambridge');
-    if (method === 'llm') {
+    if (method === 'merriam') {
+      await genPosViaMerriam(s);
+    } else if (method === 'llm') {
       const llm = await detectModel('posResult');
       if (!llm) return;
       await genPosViaLLM(s, llm);
@@ -409,11 +443,18 @@ export function onMount(s) {
           const data = JSON.parse(json);
           const newRaw = [...new Set((data.senses || []).flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
           const existing = new Set((w.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean));
-          const toAdd = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(p => !existing.has(p));
-          if (toAdd.length) {
-            const merged = [...existing, ...toAdd].filter(Boolean).join(', ');
-            await s.actions.editWord(w.id, { pos: merged }); count++;
-          } else { fail++; }
+          // C段覆寫：開＝整欄取代（無視已有），關＝合併補缺
+          if (_ow()) {
+            const replaced = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            if (replaced) { await s.actions.editWord(w.id, { pos: replaced }); count++; }
+            else { fail++; }
+          } else {
+            const toAdd = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(p => !existing.has(p));
+            if (toAdd.length) {
+              const merged = [...existing, ...toAdd].filter(Boolean).join(', ');
+              await s.actions.editWord(w.id, { pos: merged }); count++;
+            } else { fail++; }
+          }
         } catch (e) { fail++; }
         await new Promise(r => setTimeout(r, 500));
         s.actions.updateBackgroundTask(taskId, count + fail, words.length);
@@ -431,7 +472,8 @@ export function onMount(s) {
   async function genPosViaLLM(s, llm) {
     const { baseUrl, model } = llm;
     const words = s.state.words;
-    const noPos = words.filter(w => !w.pos || !w.pos.trim());
+    // C段覆寫：開＝全量重跑，關＝只做缺失
+    const noPos = _ow() ? [...words] : words.filter(w => !w.pos || !w.pos.trim());
     if (noPos.length === 0) {
       const c = document.getElementById('posResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">所有單字都有詞性了！</div>`; }
       return;
@@ -487,6 +529,8 @@ export function onMount(s) {
       const llm = await detectModel('examplesResult');
       if (!llm) return;
       await genExamplesViaLLM(s, llm, count);
+    } else if (method === 'merriam') {
+      await genExamplesViaMerriam(s, threshold);
     } else if (method === 'cambridge') {
       await genExamplesViaCambridge(s, threshold);
     } else if (method === 'tatoeba') {
@@ -499,7 +543,8 @@ export function onMount(s) {
   async function genExamplesViaDictApi(s, threshold) {
     hideLlmRow();
     const words = s.state.words;
-    const need = words.filter(w => _countSentences(w.example) < threshold);
+    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
+    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
     if (need.length === 0) {
       const container = document.getElementById('examplesResult');
       if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
@@ -525,9 +570,11 @@ export function onMount(s) {
                 }
               }
             }
-            const unique = _dedupSentences(w.example, fresh);
+            // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
+            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
             if (unique.length) {
-              const merged = [(w.example || '').trim(), ...unique].filter(Boolean).join('\n');
+              // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
+            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
               await s.actions.editWord(w.id, { example: merged }); ok++;
             } else { fail++; }
           } else { fail++; }
@@ -548,7 +595,8 @@ export function onMount(s) {
   async function genExamplesViaTatoeba(s, threshold) {
     hideLlmRow();
     const words = s.state.words;
-    const need = words.filter(w => _countSentences(w.example) < threshold);
+    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
+    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
     if (need.length === 0) {
       const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
       return;
@@ -566,9 +614,11 @@ export function onMount(s) {
           if (res.ok) {
             const body = await res.json();
             const fresh = (body.data || []).map(s => s.text).filter(Boolean);
-            const unique = _dedupSentences(w.example, fresh);
+            // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
+            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
             if (unique.length) {
-              const merged = [(w.example || '').trim(), ...unique].filter(Boolean).join('\n');
+              // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
+            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
               await s.actions.editWord(w.id, { example: merged }); ok++;
             } else { fail++; }
           } else { fail++; }
@@ -589,7 +639,8 @@ export function onMount(s) {
   async function genExamplesViaCambridge(s, threshold) {
     hideLlmRow();
     const words = s.state.words;
-    const need = words.filter(w => _countSentences(w.example) < threshold);
+    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
+    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
     if (need.length === 0) {
       const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
       return;
@@ -611,9 +662,11 @@ export function onMount(s) {
               if (ex) fresh.push(ex.trim());
             }
           }
-          const unique = _dedupSentences(w.example, fresh);
+          // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
+          const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
           if (unique.length) {
-            const merged = [(w.example || '').trim(), ...unique].filter(Boolean).join('\n');
+            // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
+            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
             await s.actions.editWord(w.id, { example: merged }); ok++;
           } else { fail++; }
         } catch (e) { fail++; }
@@ -637,7 +690,7 @@ export function onMount(s) {
     const queue = [];
     for (const w of words) {
       const n = _countSentences(w.example);
-      if (n < count) {
+      if (_ow() || n < count) {
         queue.push(w);
         existing.push(w.example || '');
       }
@@ -660,9 +713,10 @@ export function onMount(s) {
           const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
           const lines = text.split('\n').filter(Boolean).map(l => l.trim()).filter(l => l.length > 5).slice(0, count);
           if (lines.length) {
-            const unique = _dedupSentences(existing, lines);
+            // C段覆寫：開＝整批取用（不對舊例句去重），關＝去重後接續
+            const unique = _ow() ? [...new Set(lines)] : _dedupSentences(existing, lines);
             if (unique.length) {
-              const merged = [(existing || '').trim(), ...unique].filter(Boolean).join('\n');
+              const merged = (_ow() ? unique : [(existing || '').trim(), ...unique]).filter(Boolean).join('\n');
               await s.actions.editWord(w.id, { example: merged }); ok++;
             } else { fail++; }
           } else { fail++; }
@@ -758,7 +812,9 @@ export function onMount(s) {
 
   window.__genPronunciations = async () => {
     const method = _getMethod('pronMethod', 'cambridge');
-    if (method === 'llm') {
+    if (method === 'merriam') {
+      await genPronViaMerriam(s);
+    } else if (method === 'llm') {
       const llm = await detectModel('pronResult');
       if (!llm) return;
       await genPronViaLLM(s, llm);
@@ -770,7 +826,8 @@ export function onMount(s) {
   async function genPronViaCambridge(s) {
     hideLlmRow();
     const words = s.state.words;
-    const noPron = words.filter(w => !w.pron || !w.pron.trim());
+    // C段覆寫：開＝全量重跑，關＝只做缺失
+    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
     if (noPron.length === 0) {
       const container = document.getElementById('pronResult');
       if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
@@ -807,7 +864,8 @@ export function onMount(s) {
   async function genPronViaLLM(s, llm) {
     const { baseUrl, model } = llm;
     const words = s.state.words;
-    const noPron = words.filter(w => !w.pron || !w.pron.trim());
+    // C段覆寫：開＝全量重跑，關＝只做缺失
+    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
     if (noPron.length === 0) {
       const c = document.getElementById('pronResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
       return;
@@ -841,9 +899,197 @@ export function onMount(s) {
     toast(`LLM 音標完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
   }
 
+  // ─── D段：韋氏來源四路（key 自備；查無字回 suggest 提示；401/429 明示）───
+  // 共用：讀 key→空則 toast 回設定；解析走 lib/merriam.js。
+  async function _mwLookup(word) {
+    const { lookupMerriam } = await import('../lib/api.js');
+    const { merriamToFields } = await import('../lib/merriam.js');
+    const raw = await lookupMerriam(word, s.state.mwDictKey || '', s.state.mwThesKey || '');
+    const payload = JSON.parse(raw);
+    return merriamToFields(payload, word);
+  }
+  function _mwKeyMissing() {
+    if (!((s.state.mwDictKey || '').trim() || (s.state.mwThesKey || '').trim())) {
+      toast('請先在設定 → 韋氏字典填入 API Key', 'toast-error');
+      return true;
+    }
+    return false;
+  }
+  function _mwErr(e) {
+    const m = String(e?.message || e || '');
+    if (/401/.test(m)) return 'Key 無效（401），請檢查設定 → 韋氏字典';
+    if (/429/.test(m)) return '超過每日免費額度（429），明天再試';
+    if (/請先在設定填入/.test(m)) return m;
+    if (/timed out/.test(m)) return '韋氏請求逾時，請重試';
+    return `韋氏查詢失敗：${m.slice(0, 80)}`;
+  }
+
+  async function genPosViaMerriam(s) {
+    hideLlmRow();
+    if (_mwKeyMissing()) return;
+    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.pos || !w.pos.trim());
+    if (!words.length) {
+      const c = document.getElementById('posResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">所有單字都有詞性了！</div>`; }
+      return;
+    }
+    const taskId = 'gen-pos-mw-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏查詢詞性' + _owTag(), words.length);
+    let count = 0, fail = 0, nosug = 0;
+    const CON = 2;
+    const queue = [...words.entries()];
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const [, w] = queue.shift();
+        try {
+          const f = await _mwLookup(w.word);
+          if (f.suggest.length) { nosug++; fail++; }
+          else if (f.pos) {
+            const pos = f.pos.split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            if (pos) { await s.actions.editWord(w.id, { pos }); count++; }
+            else { fail++; }
+          } else { fail++; }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已更新詞性${fail ? `，${fail} 詞失敗${nosug ? '（含查無字）' : ''}` : ''}` });
+    const container = document.getElementById('posResult');
+    if (container) {
+      container.style.display = 'block';
+      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已更新詞性${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏詞性完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  }
+
+  async function genExamplesViaMerriam(s, threshold) {
+    hideLlmRow();
+    if (_mwKeyMissing()) return;
+    const words = s.state.words;
+    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
+    if (need.length === 0) {
+      const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
+      return;
+    }
+    const taskId = 'gen-examples-mw-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏抓取例句' + _owTag(), need.length);
+    let ok = 0, fail = 0;
+    const CON = 2;
+    const queue = [...need.entries()];
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const [, w] = queue.shift();
+        try {
+          const f = await _mwLookup(w.word);
+          const fresh = String(f.example || '').split('\n').map(x => x.trim()).filter(Boolean);
+          const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
+          if (unique.length) {
+            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
+            await s.actions.editWord(w.id, { example: merged }); ok++;
+          } else { fail++; }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}` });
+    const container = document.getElementById('examplesResult');
+    if (container) {
+      container.style.display = 'block';
+      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏例句完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  }
+
+  async function genPronViaMerriam(s) {
+    hideLlmRow();
+    if (_mwKeyMissing()) return;
+    const words = s.state.words;
+    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
+    if (noPron.length === 0) {
+      const container = document.getElementById('pronResult');
+      if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
+      return;
+    }
+    const taskId = 'pron-mw-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏抓取發音' + _owTag(), noPron.length);
+    let count = 0, fail = 0;
+    const CON = 2;
+    const queue = noPron.map(w => ({ w }));
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const { w } = queue.shift();
+        try {
+          const f = await _mwLookup(w.word);
+          if (f.pron) { await s.actions.editWord(w.id, { pron: `/${f.pron.replace(/^\/+|\/+$/g, '')}/` }); count++; }
+          else { fail++; }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, count + fail, noPron.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加發音${fail ? `，${fail} 詞查無發音` : ''}` });
+    const container = document.getElementById('pronResult');
+    if (container) {
+      container.style.display = 'block';
+      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加發音${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏發音完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  }
+
+  window.__genRelated = async () => {
+    const method = _getMethod('relatedMethod', 'llm');
+    if (method === 'merriam') {
+      await genRelatedViaMerriam(s);
+    } else {
+      await window.__genRelatedLLM();
+    }
+  };
+
+  async function genRelatedViaMerriam(s) {
+    hideLlmRow();
+    if (_mwKeyMissing()) return;
+    const words = s.state.words;
+    const noRel = _ow() ? [...words] : words.filter(w => !w.related || !Array.isArray(w.related) || w.related.length === 0);
+    if (noRel.length === 0) {
+      const c = document.getElementById('relatedResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有相關詞了！</div>`; }
+      return;
+    }
+    const taskId = 'gen-related-mw-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏抓取相關詞' + _owTag(), noRel.length);
+    let count = 0, fail = 0;
+    const CON = 2;
+    const queue = [...noRel.entries()];
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const [, w] = queue.shift();
+        try {
+          const { lookupMerriam } = await import('../lib/api.js');
+          const { parseThesaurusEntries } = await import('../lib/merriam.js');
+          const raw = await lookupMerriam(w.word, s.state.mwDictKey || '', s.state.mwThesKey || '');
+          const payload = JSON.parse(raw);
+          const t = parseThesaurusEntries(payload.thesaurus);
+          const rel = [...new Set([...t.synonyms, ...t.related])].slice(0, 12);
+          if (rel.length) { await s.actions.editWord(w.id, { related: rel }); count++; }
+          else { fail++; }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, count + fail, noRel.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}` });
+    const container = document.getElementById('relatedResult');
+    if (container) {
+      container.style.display = 'block';
+      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏相關詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  }
+
   window.__genRelatedLLM = async () => {
     const words = s.state.words;
-    const noRel = words.filter(w => !w.related || !Array.isArray(w.related) || w.related.length === 0);
+    // C段覆寫：開＝全量重跑，關＝只做缺失
+    const noRel = _ow() ? [...words] : words.filter(w => !w.related || !Array.isArray(w.related) || w.related.length === 0);
     const llm = await detectModel('relatedResult');
     if (!llm) return;
     const { baseUrl, model } = llm;
@@ -888,7 +1134,8 @@ export function onMount(s) {
 
   window.__genFormsLLM = async () => {
     const words = s.state.words;
-    const noForms = words.filter(w => !w.forms || !Array.isArray(w.forms) || w.forms.length === 0);
+    // C段覆寫：開＝全量重跑，關＝只做缺失
+    const noForms = _ow() ? [...words] : words.filter(w => !w.forms || !Array.isArray(w.forms) || w.forms.length === 0);
     const llm = await detectModel('formsResult');
     if (!llm) return;
     const { baseUrl, model } = llm;
@@ -930,6 +1177,58 @@ export function onMount(s) {
     }
     toast(`LLM 詞形變化完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
   };
+
+  // D段：韋氏完整補齊（definition/etymology/syllables/phrases/synonym/antonym）
+  // 缺失才填；覆寫開＝整欄換新。pron 不在此（發音卡管）。
+  document.getElementById('mwFullFillBtn')?.addEventListener('click', async () => {
+    if (_mwKeyMissing()) return;
+    const words = s.state.words;
+    const need = _ow() ? [...words] : words.filter(w =>
+      !w.definition?.trim() || !w.etymology?.trim() || !w.syllables?.trim() ||
+      !w.phrases?.trim() || !w.synonym?.trim() || !w.antonym?.trim());
+    const el = document.getElementById('cambridgeResult');
+    if (!need.length) {
+      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 韋氏欄位都齊了！</div>`; }
+      return;
+    }
+    const taskId = 'mw-full-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏完整補齊' + _owTag(), need.length);
+    let ok = 0, fail = 0;
+    const CON = 2;
+    const queue = [...need.entries()];
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const [, w] = queue.shift();
+        try {
+          const f = await _mwLookup(w.word);
+          if (f.suggest.length) { fail++; }
+          else {
+            const patch = {};
+            const put = (k, v, cur) => {
+              if (!v) return;
+              if (_ow() || !String(cur || '').trim()) patch[k] = v;
+            };
+            put('definition', f.definition, w.definition);
+            put('etymology', f.etymology, w.etymology);
+            put('syllables', f.syllables, w.syllables);
+            put('phrases', f.phrases, w.phrases);
+            put('synonym', f.synonym, w.synonym);
+            put('antonym', f.antonym, w.antonym);
+            if (Object.keys(patch).length) { await s.actions.editWord(w.id, patch); ok++; }
+            else { fail++; }
+          }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已補齊${fail ? `，${fail} 詞失敗` : ''}` });
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已補齊${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏補齊完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  });
 
   window.__lookupCambridge = async () => {
     const word = document.getElementById('cambridgeWord')?.value?.trim();

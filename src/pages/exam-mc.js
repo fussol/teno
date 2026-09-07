@@ -1,4 +1,5 @@
 import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { extraFieldsHtml } from '../lib/word-extra.js';
 import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
@@ -159,6 +160,7 @@ function renderExam(s) {
           ${w.pron ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
           ${w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}
           ${w.forms?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${esc(f)}</span>`).join('')}</div>` : ''}
+          ${extraFieldsHtml(w, esc)}
           ${w.description ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
         </div>
         ${!e.settings.autoNext ? `

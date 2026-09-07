@@ -79,6 +79,7 @@ async function runExport(s) {
     example: w.example, deck: w.deck, image: w.image, tags: w.tags,
     description: w.description, related: w.related, forms: w.forms,
     synonym: w.synonym, antonym: w.antonym, derivative: w.derivative, examples: w.examples,
+    etymology: w.etymology, syllables: w.syllables, phrases: w.phrases,
   })));
 
   const stamp = new Date().toISOString().slice(0, 10);

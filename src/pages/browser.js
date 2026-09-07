@@ -323,6 +323,9 @@ function cardBodyHTML(w, s, st) {
     ${w.description ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
     ${w.related && w.related.length ? `<div class="card-panel-desc" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
     ${w.forms && w.forms.length ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
+    ${w.syllables ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
+    ${w.etymology ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
+    ${w.phrases ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">片語 </span>${escapeHtml(w.phrases)}</div>` : ''}
     ${(w.tags || []).length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
       const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
       return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;
@@ -919,6 +922,18 @@ function openModal(s, word) {
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fDerivativeChips"></div>
         </div>
         <div class="form-group">
+          <label class="form-label">音節</label>
+          <input class="form-input" id="fSyllables" placeholder="例：dict·io·nary" value="${escapeAttr((word?.syllables || ''))}" style="flex:1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">字源</label>
+          <textarea class="form-input" id="fEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用">${escapeHtml(word?.etymology || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">片語</label>
+          <textarea class="form-input" id="fPhrases" rows="2" style="resize:vertical" placeholder="片語與習語（一行一筆）">${escapeHtml(word?.phrases || '')}</textarea>
+        </div>
+        <div class="form-group">
           <label class="form-label">字本</label>
           <select class="form-input" id="fDeck">
             ${decks.length > 0 ? decks.map(d => `<option value="${escapeAttr(d.name)}" ${word?.deck === d.name ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('') : ''}
@@ -1110,6 +1125,9 @@ function openModal(s, word) {
       synonym: synChips.getVal(),
       antonym: antChips.getVal(),
       derivative: derivChips.getVal(),
+      etymology: document.getElementById('fEtymology')?.value.trim() || '',
+      syllables: document.getElementById('fSyllables')?.value.trim() || '',
+      phrases: document.getElementById('fPhrases')?.value.trim() || '',
       deck: document.getElementById('fDeck')?.value || 'Default',
       tags: Array.from(tagCbs).map(cb => cb.value),
     };

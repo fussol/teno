@@ -96,7 +96,9 @@ export async function getDbVersion(d) {
 
 /** Run schema migrations. */
 async function migrate(d) {
-  const cols = ['synonym', 'antonym', 'derivative', 'examples', 'related', 'forms'];
+  const cols = ['synonym', 'antonym', 'derivative', 'examples', 'related', 'forms',
+    // LOG-MW D段 v13（與 lib.rs migration v13 對應；已存在則靜默跳過）
+    'etymology', 'syllables', 'phrases'];
   for (const col of cols) {
     try { await d.execute(`ALTER TABLE words ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`); } catch (_) {}
   }
@@ -171,6 +173,9 @@ export async function getAllWords() {
     antonym: r.antonym || '',
     derivative: r.derivative || '',
     examples: parseJSON(r.examples, []),
+    etymology: r.etymology || '',
+    syllables: r.syllables || '',
+    phrases: r.phrases || '',
     createdAt: normalizeUtcTimestamp(r.created_at),   // E2: 統一正規化（dashboard/filterEngine 兩消費點）
   }));
 }
@@ -182,8 +187,8 @@ export async function getWordCount() {
 
 export async function saveWord(word) {
   await requireDB().execute(
-    `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+    `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      ON CONFLICT(id) DO UPDATE SET
       word=excluded.word, definition=excluded.definition,
       part_of_speech=excluded.part_of_speech, pronunciation=excluded.pronunciation,
@@ -191,7 +196,8 @@ export async function saveWord(word) {
       tags=excluded.tags, image=excluded.image, description=excluded.description,
       related=excluded.related, forms=excluded.forms,
       synonym=excluded.synonym, antonym=excluded.antonym,
-      derivative=excluded.derivative, examples=excluded.examples`,
+      derivative=excluded.derivative, examples=excluded.examples,
+      etymology=excluded.etymology, syllables=excluded.syllables, phrases=excluded.phrases`,
     [   // E2: ON CONFLICT 不加 created_at — 編輯/改標籤不重置建立時間
       word.id,
       word.word || '',
@@ -209,6 +215,9 @@ export async function saveWord(word) {
       word.antonym || '',
       word.derivative || '',
       JSON.stringify(word.examples || []),
+      word.etymology || '',
+      word.syllables || '',
+      word.phrases || '',
       word.createdAt ?? new Date().toISOString(),   // E2: created_at ISO 帶 Z
     ]
   );

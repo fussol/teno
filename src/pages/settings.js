@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportAppLogText, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -409,14 +409,6 @@ function renderSettingsContent(s) {
           <button class="btn btn-sm" id="dangerExportBtn">${icon('save')} 匯出 .db 備份</button>
           <button class="btn btn-sm" id="dangerImportBtn">${icon('upload')} 匯入 .db 備份</button>
         </div>
-        ${s.state.devMode ? `
-        <div style="border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
-          <div class="muted" style="font-size:11px;margin-bottom:var(--s2)">開發者模式專區</div>
-          <div style="display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center">
-            <button class="btn btn-sm" id="exportAppLogBtn">${icon('list')} 匯出操作日誌 (.txt)</button>
-          </div>
-        </div>
-        ` : ''}
         <div style="border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
           <button class="btn btn-sm" id="dangerBackupBtn">${icon('clock')} 自動備份管理</button>
           <div id="backupList" style="margin-top:var(--s2);display:none;font-size:12px;color:var(--text-tertiary)"></div>
@@ -484,6 +476,23 @@ function renderSettingsContent(s) {
         </div>
         ` : ''}
 
+        <!-- D段：韋氏字典 API Key（自備；dictionaryapi.com 註冊，Dictionary＋Thesaurus 各一把，各 1000 次/天免費） -->
+        <div class="section">
+          <div class="section-title">${icon('book')} 韋氏字典</div>
+          <div class="config-section">
+            <div class="muted" style="font-size:11px;margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。</div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
+              <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Dictionary key</span>
+              <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
+              <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Thesaurus key</span>
+              <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus key" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+            </div>
+            <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
+          </div>
+        </div>
+
         <!-- About / Version (tap version 10× → developer mode) -->
         <div class="section">
           <div class="section-title">${icon('info')} 關於</div>
@@ -545,28 +554,6 @@ async function runExportDb() {
     }
   } catch (e) {
     if (e !== '使用者取消') toast('匯出失敗: ' + e, 'toast-error');
-  }
-}
-
-// devMode 限定：操作日誌 → 文字檔（Rust 直讀 app-log.db，不走 IPC 大陣列）
-async function runExportAppLog() {
-  try {
-    const { checkpointAppLog } = await import('../lib/app-log.js');
-    await checkpointAppLog().catch(() => {});
-    const bytes = await exportAppLogText();
-    const fname = `teno-applog-${new Date().toISOString().slice(0, 10)}.txt`;
-    if (isAndroid) {
-      downloadBlobFromArray(bytes, fname, 'text/plain');
-    } else {
-      const blob = new Blob([new Uint8Array(bytes)], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = fname; a.click();
-      URL.revokeObjectURL(url);
-    }
-    toast('操作日誌已匯出（文字檔）', 'toast-success');
-  } catch (e) {
-    toast('操作日誌匯出失敗: ' + e, 'toast-error');
   }
 }
 
@@ -901,6 +888,16 @@ export function onMount(s) {
   document.getElementById('ocrCambVerifyToggle')?.addEventListener('click', async () => {
     const v = await s.actions.toggleOcrCambridgeVerify();
     toast(v ? 'Cambridge 查證已開啟' : 'Cambridge 查證已關閉', v ? 'toast-success' : '');
+    renderInPlace(s);
+  });
+  // D段：韋氏 Key 存檔（寫 DB＋同步回 state，免重啟即用）
+  document.getElementById('mwKeysSaveBtn')?.addEventListener('click', async () => {
+    const dk = (document.getElementById('mwDictKeyInput')?.value || '').trim();
+    const tk = (document.getElementById('mwThesKeyInput')?.value || '').trim();
+    const { setSetting } = await import('../lib/db.js');
+    try { await setSetting('mwDictKey', dk); await setSetting('mwThesKey', tk); } catch (_) {}
+    s.state.mwDictKey = dk; s.state.mwThesKey = tk;
+    toast(dk || tk ? '韋氏 Key 已儲存' : '韋氏 Key 已清除', 'toast-success');
     renderInPlace(s);
   });
   // AI 還原模型（可選進階；留空＝關閉純離線）
@@ -1249,8 +1246,6 @@ export function onMount(s) {
   document.getElementById('dangerExportBtn')?.addEventListener('click', runExportDb);
   document.getElementById('dangerImportBtn')?.addEventListener('click', runImportDb);
   document.getElementById('dangerBackupBtn')?.addEventListener('click', showBackups);
-  // devMode：操作日誌文字檔匯出 + 自動備份設定
-  document.getElementById('exportAppLogBtn')?.addEventListener('click', runExportAppLog);
   const biEl = document.getElementById('backupIntervalH');
   const bkEl = document.getElementById('backupKeepMax');
   const applyBackupCfg = async () => {

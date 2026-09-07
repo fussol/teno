@@ -1,6 +1,7 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts, lastCorrect, mcOptions } from '../engine/session-mc-utils.js';
 
 import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { extraFieldsHtml } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
@@ -109,6 +110,7 @@ function renderBack(w, cnt) {
       ${w.pron ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${w.forms?.length ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
+      ${extraFieldsHtml(w, e)}
     </div>
     <div class="study-buttons">
       ${[[0,'Again','var(--red)'],[1,'Hard','var(--orange)'],[2,'Good','var(--green)'],[3,'Easy','var(--cyan)']].map(([r,lbl,c])=>`

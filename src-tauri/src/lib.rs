@@ -387,6 +387,60 @@ async fn lookup_cambridge(word: String, lang: Option<String>) -> Result<String, 
 
 
 #[tauri::command]
+async fn lookup_merriam(word: String, dict_key: Option<String>, thes_key: Option<String>) -> Result<String, String> {
+    // D段：韋氏官方 JSON API（參考 HannoZ/MerriamWebster.NET Configuration：
+    // 基址 https://www.dictionaryapi.com/api/v3/references/＋產品 collegiate/
+    // thesaurus；fluencer/dictionary-cli-app 同 endpoint 形狀）。
+    // key 自備（dictionaryapi.com 註冊，各產品各一把，各 1000 次/天免費）。
+    // 查無字時 API 回 suggest 字串陣列（非 entries），呼叫端以 meta 有無判別。
+    fn mw_url(product: &str, word: &str, key: &str) -> Result<String, String> {
+        let mut u = url::Url::parse(&format!(
+            "https://www.dictionaryapi.com/api/v3/references/{}/json/x", product
+        )).map_err(|e| e.to_string())?;
+        u.path_segments_mut().map_err(|_| "URL 錯誤".to_string())?.pop().push(word);
+        u.query_pairs_mut().append_pair("key", key);
+        Ok(u.to_string())
+    }
+    fn fetch_one(url: String) -> Result<Option<serde_json::Value>, String> {
+        let resp = ureq::get(&url)
+            .set("User-Agent", "Teno/5 (dictionary lookup)")
+            .call()
+            .map_err(|e| format!("HTTP error: {}", e))?;
+        let text = resp.into_string().map_err(|e| format!("body error: {}", e))?;
+        let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("JSON 解析失敗: {}", e))?;
+        Ok(Some(v))
+    }
+    let w = word.trim().to_string();
+    if w.is_empty() { return Err("請輸入單字".to_string()); }
+    let dk = dict_key.unwrap_or_default().trim().to_string();
+    let tk = thes_key.unwrap_or_default().trim().to_string();
+    if dk.is_empty() && tk.is_empty() { return Err("請先在設定填入韋氏 API Key".to_string()); }
+    let handle = tokio::task::spawn_blocking(move || {
+        let dictionary = if dk.is_empty() { None } else {
+            match fetch_one(mw_url("collegiate", &w, &dk)?) {
+                Ok(v) => v,
+                Err(e) => return Err(e),
+            }
+        };
+        let thesaurus = if tk.is_empty() { None } else {
+            match fetch_one(mw_url("thesaurus", &w, &tk)?) {
+                Ok(v) => v,
+                Err(e) => return Err(e),
+            }
+        };
+        serde_json::to_string(&serde_json::json!({
+            "word": w,
+            "dictionary": dictionary,
+            "thesaurus": thesaurus,
+        })).map_err(|e| format!("JSON 序列化失敗: {}", e))
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(20), handle).await
+        .map_err(|_| "lookup_merriam request timed out".to_string())?
+        .map_err(|e| format!("task failed: {}", e))?
+}
+
+
+#[tauri::command]
 async fn speak_text(text: String, voice: Option<String>, length_scale: Option<f64>, noise_scale: Option<f64>, app_handle: tauri::AppHandle) -> Result<(), String> {
     if TTS_PLAYING.swap(true, Ordering::Acquire) {
         return Err("已有語音正在播放".to_string());
@@ -1301,6 +1355,42 @@ async fn export_db_dialog(app_handle: tauri::AppHandle) -> Result<String, String
     }
 }
 
+// B段：捆包存檔對話框（teno.db＋app-log.db；export_db_dialog 的 include_log 版）。
+#[tauri::command]
+async fn export_bundle_dialog(app_handle: tauri::AppHandle) -> Result<String, String> {
+    use tokio::sync::oneshot;
+    let (tx, rx) = oneshot::channel();
+    app_handle.dialog()
+        .file()
+        .add_filter("Teno 完整備份", &["db", "tenoc"])
+        .set_file_name("teno-full-backup.db")
+        .save_file(move |file| { let _ = tx.send(file); });
+    let file = rx.await.map_err(|_| "對話框錯誤".to_string())?
+        .ok_or_else(|| {
+            log::info!("export_bundle_dialog cancelled");
+            "使用者取消".to_string()
+        })?;
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let data = pack_db_container(&app_dir, true)?;
+    match file {
+        FilePath::Path(dest) => {
+            log::info!("export_bundle_dialog dst={:?} data_len={}", dest, data.len());
+            std::fs::write(&dest, &data)
+                .map_err(|e| format!("寫入匯出檔失敗: {}", e))?;
+            log::info!("export_bundle_dialog OK");
+            Ok(format!("{}", dest.display()))
+        }
+        FilePath::Url(_url) => {
+            let exports = app_dir.join("exports");
+            std::fs::create_dir_all(&exports).map_err(|e| e.to_string())?;
+            let fallback = exports.join("teno-full-backup.db");
+            std::fs::write(&fallback, &data).map_err(|e| format!("寫入失敗: {}", e))?;
+            log::info!("export_bundle_dialog fallback to {:?}", fallback);
+            Ok(format!("{}", fallback.display()))
+        }
+    }
+}
+
 #[tauri::command]
 async fn export_csv_dialog(app_handle: tauri::AppHandle, csv: String, filename: String) -> Result<String, String> {
     use tokio::sync::oneshot;
@@ -1540,9 +1630,19 @@ fn delete_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), S
 async fn export_db_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
     // 2026-09-04: 匯出永遠只帶 teno.db（含 log 的 15MB+ 容器在 Android WebView
     // IPC/btoa 炸 OOM，且使用者已裁示 app-log 永不綁匯出）。操作日誌另走
-    // devMode 文字檔匯出（export_app_log_text）。
+    // devMode 文字檔匯出（export_app_log_text）。捆包需求走 export_db_bundle_data。
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     pack_db_container(&app_dir, false)
+}
+
+// B段：捆包匯出（teno.db＋app-log.db TENOC 容器；呼叫端先做雙 checkpoint＋
+// 大小守門，Android 大檔走 chunked base64 既有路徑）。
+#[tauri::command]
+async fn export_db_bundle_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let data = pack_db_container(&app_dir, true)?;
+    log::info!("export_db_bundle_data OK data_len={}", data.len());
+    Ok(data)
 }
 
 #[tauri::command]
@@ -1840,6 +1940,20 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            // LOG-MW D段：韋氏三新欄（etymology/syllables/phrases）＋單數
+            // synonym/antonym 對齊（JS 層早有欄位＋編輯器＋匯出，Rust 表補上）。
+            version: 13,
+            description: "add etymology/syllables/phrases/synonym/antonym columns to words (LOG-MW)",
+            sql: "
+                ALTER TABLE words ADD COLUMN etymology TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN syllables TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN phrases TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN synonym TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN antonym TEXT DEFAULT '';
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)
@@ -1887,7 +2001,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_bundle_data, export_bundle_dialog, export_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {
