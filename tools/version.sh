@@ -18,9 +18,9 @@ if [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
   IFS='.' read -r major minor patch <<< "$OLD"
   case "$1" in
-    major) ((major++)); minor=0; patch=0 ;;
-    minor) ((minor++)); patch=0 ;;
-    patch) ((patch++)) ;;
+    major) ((++major)); minor=0; patch=0 ;;
+    minor) ((++minor)); patch=0 ;;
+    patch) ((++patch)) ;;
     *) echo "Invalid: $1"; exit 1 ;;
   esac
   NEW="$major.$minor.$patch"

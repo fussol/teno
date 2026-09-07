@@ -113,11 +113,13 @@ a{color:var(--accent);text-decoration:none}
 /* 全域強制隱藏所有 scrollbar（含 overflow-x 與 textarea/select/pre 內建），滾動功能不變 */
 textarea::-webkit-scrollbar,select::-webkit-scrollbar,pre::-webkit-scrollbar{display:none;width:0;height:0}
 pre,code{scrollbar-width:none;-ms-overflow-style:none}
-/* 觸控全域：div/li/span 偽按鈕也要關 tap highlight（否則 Android WebView 深色下白 flash）+ 禁雙擊縮放延遲 */
-*{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-button{cursor:pointer;font-family:inherit;border:none;background:none;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+/* 觸控全域：div/li/span 偽按鈕也要關 tap highlight（否則 Android WebView 深色下白 flash）+ 禁雙擊縮放延遲。
+   touch-action 用 pan-x pan-y（不用 manipulation）：manipulation 語義含 pinch-zoom，
+   pan-x pan-y 才把雙指縮放也鎖死。OCR 裁切區另有 touch-action:none（更嚴格，不受影響）。 */
+*{-webkit-tap-highlight-color:transparent;touch-action:pan-x pan-y}
+button{cursor:pointer;font-family:inherit;border:none;background:none;color:inherit;touch-action:pan-x pan-y;-webkit-tap-highlight-color:transparent}
 /* 可點擊元素全域：移除雙擊縮放延遲 + 觸控高亮（Vercel guidelines） */
-a,input,select,textarea,label,summary{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+a,input,select,textarea,label,summary{touch-action:pan-x pan-y;-webkit-tap-highlight-color:transparent}
 /* 鍵盤 focus 可見（:focus-visible，永不無替代 outline:none） */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
 /* 數字一律 tabular-nums（Vercel：數字不跳動） */
@@ -153,7 +155,10 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   border-right:1px solid var(--border-subtle);
   display:flex;flex-direction:column;height:100vh;height:100dvh;
   transition:margin var(--t-med),opacity var(--t-med);
-  position:relative;z-index:40;
+  /* 桌面版置頂（z90）：壓過作答底欄(.study-buttons z55)/scroll-top(z60)，作答時側欄底部不再被蓋。
+     modal(100)/toast(200)/dropdown(500)/card-panel(1000) 刻意維持在上——側欄若蓋過對話框，
+     窄視窗下 modal 左緣會被側欄切掉。手機版另有 z45 規則（下方 @media 覆寫，不受影響）。 */
+  position:relative;z-index:90;
 }
 .sidebar.hidden{margin-left:-264px;opacity:0;pointer-events:none}
 

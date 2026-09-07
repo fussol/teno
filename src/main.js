@@ -506,6 +506,18 @@ document.addEventListener('keydown', async (e) => {
   }
 });
 
+// ─── 禁縮放：全端鎖死頁面 zoom（viewport user-scalable=no 為主，這裡補缺口）───
+// 缺口：①桌面版 Ctrl+滾輪 / Ctrl+加減號/0（WebKitGTK/Chromium 桌面不認 viewport）；
+// ②iOS Safari pinch 手勢（gesturestart）。只攔縮放組合鍵，一般輸入零影響。
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('gesturechange', (e) => e.preventDefault());
+document.addEventListener('wheel', (e) => {
+  if (e.ctrlKey) e.preventDefault();
+}, { passive: false });
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && ['=', '+', '-', '_', '0'].includes(e.key)) e.preventDefault();
+});
+
 // ─── A5: 跨天自動 unbury — Android 背景化過夜 resume 的補檢查（guard 一天一次）───
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
