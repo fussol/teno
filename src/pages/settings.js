@@ -149,11 +149,11 @@ function renderSettingsContent(s) {
             <button id="modeLightBtn" class="btn-sm ${s.state.themeMode === 'light' ? 'btn-primary' : 'btn-secondary'}" data-mode="light">${icon('sun')} 淺色</button>
           </div>
         </div>
-        <div class="config-field">
+        <div class="config-field config-field-stack">
           <div class="config-field-info">
             <div class="config-field-label">${icon('layers')} 強調色</div>
           </div>
-          <div style="display:flex;flex-direction:column;gap:var(--s3)">
+          <div style="display:flex;flex-direction:column;gap:var(--s2)">
             ${ACCENT_GROUPS.map(g => `
               <div>
                 <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);margin-bottom:var(--s1);letter-spacing:0.5px">${g.label}</div>
@@ -177,7 +177,7 @@ function renderSettingsContent(s) {
             <span class="tnum" id="accentIntensityLabel" style="font-size:12px;min-width:4ch;flex-shrink:0;color:var(--text-tertiary)">${Math.round(s.state.themeAccentIntensity * 100)}%</span>
           </div>
         </div>
-        <div class="config-field">
+        <div class="config-field config-field-stack">
           <div class="config-field-info">
             <div class="config-field-label">${icon('appWindow')} App 圖示</div>
           </div>

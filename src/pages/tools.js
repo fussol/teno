@@ -35,35 +35,46 @@ export function render(s) {
     <div class="page-title">${icon('tools')} 工具</div>
     <div class="page-subtitle">輔助工具，幫你整理單字庫</div>
 
+    <!-- A套：快速入口（三卡橫排；手機自動塌單欄） -->
     <div class="section">
-      <div class="section-title">${icon('chart')} 學習分析</div>
-      <div class="card card-interactive" id="toolsGoSimulator" style="cursor:pointer">
-        <div style="display:flex;align-items:center;gap:var(--s3)">
-          <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-container);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0">${icon('chart')}</div>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text-primary)">學習分析</div>
-            <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">成熟度、複習統計、評分分布、模擬圖表</div>
+      <div class="grid grid-3">
+        <div class="card card-interactive" id="toolsGoSimulator" style="cursor:pointer">
+          <div style="display:flex;align-items:center;gap:var(--s3)">
+            <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-container);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0">${icon('chart')}</div>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--text-primary)">學習分析</div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">成熟度、複習統計、模擬圖表</div>
+            </div>
           </div>
-          <span style="margin-left:auto;color:var(--text-tertiary);font-size:18px">${icon('chevron-right')}</span>
         </div>
-      </div>
-      ${s.state.devMode ? `
-      <div class="card card-interactive" id="toolsGoAppLog" style="cursor:pointer;margin-top:var(--s3)">
-        <div style="display:flex;align-items:center;gap:var(--s3)">
-          <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--green-container, var(--accent-container));display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--green, var(--accent));flex-shrink:0">${icon('list')}</div>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text-primary)">操作日誌</div>
-            <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">操作記錄與模擬歷史 (隔離 DB)</div>
+        <!-- OCR Recognize → 獨立工具頁入口 -->
+        <div class="card card-interactive" id="toolsGoOcr" style="cursor:pointer">
+          <div style="display:flex;align-items:center;gap:var(--s3)">
+            <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-container);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0">${icon('camera')}</div>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--text-primary)">OCR 辨識字卡</div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">拍照或選圖，圈選辨識入字本</div>
+            </div>
           </div>
-          <span style="margin-left:auto;color:var(--text-tertiary);font-size:18px">${icon('chevron-right')}</span>
         </div>
+        ${s.state.devMode ? `
+        <div class="card card-interactive" id="toolsGoAppLog" style="cursor:pointer">
+          <div style="display:flex;align-items:center;gap:var(--s3)">
+            <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--green-container, var(--accent-container));display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--green, var(--accent));flex-shrink:0">${icon('list')}</div>
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--text-primary)">操作日誌</div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">操作記錄與模擬歷史 (隔離 DB)</div>
+            </div>
+          </div>
+        </div>
+        ` : ''}
       </div>
-      ` : ''}
     </div>
 
     <div class="section" id="bgTaskSection">
       <div class="section-title">${icon('activity')} 背景任務</div>
-      <div class="config-section" id="bgTaskConfig">
+      <div class="card">
+      <div id="bgTaskConfig">
         ${running.map(t => `
           <div class="task-item" data-task-id="${t.id}">
             <span class="task-label">${t.label}</span>
@@ -89,52 +100,48 @@ export function render(s) {
           <div style="padding:6px 8px;margin:4px 0 4px 24px;background:var(--bg-base);border-radius:var(--r1);font-size:12px;color:var(--text-secondary)">${t.result.message}</div>
           ` : ''}
         `).join('')}
-      </div>
+      </div><!-- /bgTaskConfig -->
+      </div><!-- /card -->
     </div>
 
-    <!-- Duplicate Finder -->
+    <!-- A套：檢查與清理家族（兩卡並排） -->
     <div class="section">
-      <div class="section-title">${icon('search')} 尋找重複</div>
-      <div class="config-section">
-        <button class="btn" onclick="window.__findIssues()">${icon('search')} 開始掃描</button>
-        <div class="tool-output" id="issuesResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
-
-    <!-- Spell Check -->
-    <div class="section">
-      <div class="section-title">${icon('edit')} 拼字檢查</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          用 LLM 檢查單字拼字是否正確
+      <div class="section-title">${icon('search')} 檢查與清理</div>
+      <div class="grid grid-2 tool-grid">
+        <div class="card">
+          <div class="card-title">${icon('search')} 尋找重複</div>
+          <div class="card-desc">掃描字庫中的重複單字</div>
+          <div><button class="btn" onclick="window.__findIssues()">${icon('search')} 開始掃描</button></div>
+          <div class="tool-output" id="issuesResult" style="margin-top:var(--s3);display:none"></div>
         </div>
-        <button class="btn" onclick="window.__spellCheckLLM()">${icon('edit')} 開始檢查</button>
-        <div class="tool-output" id="spellResult" style="margin-top:var(--s3);display:none"></div>
+        <div class="card">
+          <div class="card-title">${icon('edit')} 拼字檢查</div>
+          <div class="card-desc">用 LLM 檢查單字拼字是否正確</div>
+          <div><button class="btn" onclick="window.__spellCheckLLM()">${icon('edit')} 開始檢查</button></div>
+          <div class="tool-output" id="spellResult" style="margin-top:var(--s3);display:none"></div>
+        </div>
       </div>
     </div>
 
-    <!-- Generate Part of Speech -->
+    <!-- A套：自動補齊家族（五卡網格；手機塌單欄） -->
     <div class="section">
-      <div class="section-title">${icon('hash')} 自動產生詞性</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          為缺少詞性的單字自動補上
-        </div>
+      <div class="section-title">${icon('sparkle')} 自動補齊</div>
+      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音與相關詞</div>
+      <div class="grid grid-2 tool-grid">
+        <div class="card">
+          <div class="card-title">${icon('hash')} 自動產生詞性</div>
+          <div class="card-desc">為缺少詞性的單字自動補上</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           ${_selHtml('posMethod', [['Cambridge 字典','cambridge'],['本地 LLM','llm']], 'cambridge')}
           <button class="btn" onclick="window.__genPos()">${icon('hash')} 開始產生</button>
         </div>
-        <div class="tool-output" id="posResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
+          <div class="tool-output" id="posResult" style="margin-top:var(--s3);display:none"></div>
+        </div>
 
     <!-- Generate Examples -->
-    <div class="section">
-      <div class="section-title">${icon('sparkle')} 自動產生例句</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          為沒有例句的單字產生例句，或翻譯現有例句為中文
-        </div>
+        <div class="card">
+          <div class="card-title">${icon('sparkle')} 自動產生例句</div>
+          <div class="card-desc">為沒有例句的單字產生例句，或翻譯現有例句為中文</div>
           <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2);flex-wrap:wrap">
           ${_selHtml('exampleMethod', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}
           <button class="btn" onclick="window.__genExamples()">${icon('sparkle')} 開始產生</button>
@@ -160,69 +167,43 @@ export function render(s) {
           </div>
         </div>
         <div class="tool-output" id="examplesResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
+        </div>
 
     <!-- Fetch Pronunciation -->
-    <div class="section">
-      <div class="section-title">${icon('mic')} 自動抓取發音</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          為缺少音標的單字自動補上
-        </div>
+        <div class="card">
+          <div class="card-title">${icon('mic')} 自動抓取發音</div>
+          <div class="card-desc">為缺少音標的單字自動補上</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           ${_selHtml('pronMethod', [['Cambridge 字典','cambridge']], 'cambridge')}
           <button class="btn" onclick="window.__genPronunciations()">${icon('mic')} 開始抓取</button>
         </div>
         <div class="tool-output" id="pronResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
+        </div>
 
     <!-- Generate Related Words -->
-    <div class="section">
-      <div class="section-title">${icon('sparkle')} 自動產生相關詞</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          用 LLM 為缺少相關詞（同義詞、近似詞）的單字自動生成
-        </div>
+        <div class="card">
+          <div class="card-title">${icon('sparkle')} 自動產生相關詞</div>
+          <div class="card-desc">用 LLM 為缺少相關詞（同義詞、近似詞）的單字自動生成</div>
         <button class="btn" onclick="window.__genRelatedLLM()">${icon('sparkle')} 開始產生</button>
         <div class="tool-output" id="relatedResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
+        </div>
 
     <!-- Generate Forms -->
-    <div class="section">
-      <div class="section-title">${icon('sparkle')} 自動產生詞形變化</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          用 LLM 為缺少詞形變化（過去式、-ing、-ed、派生名詞等）的單字自動生成
-        </div>
+        <div class="card">
+          <div class="card-title">${icon('sparkle')} 自動產生詞形變化</div>
+          <div class="card-desc">用 LLM 為缺少詞形變化（過去式、-ing、-ed、派生名詞等）的單字自動生成</div>
         <button class="btn" onclick="window.__genFormsLLM()">${icon('sparkle')} 開始產生</button>
         <div class="tool-output" id="formsResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-    </div>
-
-    <!-- OCR Recognize → 獨立工具頁入口 -->
-    <div class="section">
-      <div class="card card-interactive" id="toolsGoOcr" style="cursor:pointer">
-        <div style="display:flex;align-items:center;gap:var(--s3)">
-          <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-container);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0">${icon('camera')}</div>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text-primary)">OCR 辨識字卡</div>
-            <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">拍照或選圖、圈選範圍，自動辨識並加入字本</div>
-          </div>
-          <span style="margin-left:auto;color:var(--text-tertiary);font-size:18px">${icon('chevronR')}</span>
         </div>
-      </div>
-    </div>
+      </div><!-- /自動補齊 grid -->
+    </div><!-- /自動補齊 section -->
 
-    <!-- Cambridge Dictionary -->
+    <!-- A套：字典查詢家族 -->
     <div class="section">
-      <div class="section-title">${icon('book')} Cambridge 字典查詢</div>
-      <div class="config-section">
-        <div style="margin-bottom:var(--s2);font-size:13px;color:var(--text-tertiary)">
-          從 Cambridge Dictionary 查詢單字定義、IPA、例句
-        </div>
+      <div class="section-title">${icon('book')} 字典查詢</div>
+      <div class="card">
+        <div class="card-title">${icon('book')} Cambridge 字典查詢</div>
+        <div class="card-desc">從 Cambridge Dictionary 查詢單字定義、IPA、例句</div>
          <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2)">
            ${_selHtml('cambridgeDict', [['英英','en'],['英中','zh']], 'en')}
             <input id="cambridgeWord" type="text" placeholder="輸入英文單字"

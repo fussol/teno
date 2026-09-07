@@ -1324,15 +1324,17 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .theme-chip.selected { border-color: var(--accent); background: var(--accent-container); color: var(--accent); font-weight: 600; }
 
 /* ═══ Compact color swatch (accent / icon pickers) ═══ */
+/* 橫向排列（flex-wrap）：群組標籤在上、色點在下一橫排。
+   不用 grid auto-fill——flex 在各 WebKit/Chromium 行為一致，保證橫排。 */
 .swatch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 34px);
-  gap: var(--s2);
-  justify-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
-  justify-content: start;
+  justify-content: flex-start;
 }
 .swatch {
+  flex: 0 0 auto;
   width: 26px; height: 26px; border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-surface); cursor: pointer;
@@ -1343,6 +1345,23 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .swatch.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-container); }
 .swatch .swatch-dot { display: block; border-radius: 3px; }
 .swatch .swatch-inner { display: block; border-radius: 2px; }
+
+/* ═══ A套排版規則：分區卡片網格 ═══ */
+/* grid 內的 .section 不帶下邊距（間距由 grid gap 統一） */
+.grid > .section { margin-bottom: 0; }
+/* config-field 的縱排變體：標籤在上、控制區滿寬在下（主題色/圖示列用） */
+.config-field-stack { flex-direction: column; align-items: stretch; gap: var(--s2); }
+/* 工具卡片標題＋說明（section-title 的卡片內版本） */
+.card-title {
+  font-size: 14px; font-weight: 700; color: var(--text-primary);
+  display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s1);
+  letter-spacing: -.01em;
+}
+.card-title .ic { font-size: 17px; color: var(--accent); }
+.card-desc { font-size: 12px; color: var(--text-tertiary); margin-bottom: var(--s3); line-height: 1.5; }
+/* 工具卡片等高：同行卡片底部對齊 */
+.tool-grid { align-items: stretch; }
+.tool-grid > .card { display: flex; flex-direction: column; }
 
 /* ═══ Accent intensity range (outside config-field) ═══ */
 .accent-range {
