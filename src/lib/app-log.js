@@ -13,6 +13,22 @@ let db = null;
 let resetCount = 0;   // G25: 損壞重建次數（上限防死循環；非永真布林 → 二次損壞仍能重建）
 const MAX_BATCH = 200;
 
+// ─── WEB-DEMO（2026-09-08 使用者裁示：網頁版內建示範資料）───
+// 無 Tauri 後端時：寫入走記憶體、查詢回種子，不碰 plugin-sql。實機零影響。
+const noBackend = () => typeof window !== 'undefined' && typeof window.__TAURI__?.core !== 'object';
+let demoLogSeq = -1;
+const demoLogs = [
+  { id: -1, ts: Date.now() - 5 * 60000, level: 'log', message: '展示模式啟動：載入 36 個示範單字' },
+  { id: -2, ts: Date.now() - 42 * 60000, level: 'log', message: '複習完成：GRE 核心 8 張（Good 6 / Again 2）' },
+  { id: -3, ts: Date.now() - 3 * 3600000, level: 'log', message: '自動補齊：pos-Cambridge 為 3 個單字補上詞性' },
+  { id: -4, ts: Date.now() - 5 * 3600000, level: 'log', message: '匯入示範字庫：托福 12 詞' },
+  { id: -5, ts: Date.now() - 26 * 3600000, level: 'warn', message: 'OCR 引擎忙碌中，重試第 1 次' },
+  { id: -6, ts: Date.now() - 30 * 3600000, level: 'log', message: '測驗完成：拼寫 10 題答對 7 題' },
+];
+const demoSimRuns = [
+  { id: 1, ts: Date.now() - 2 * 86400000, kind: 'simulate', days: 30, target_pct: 90, seed: 42, from_zero: 0, total_reviews: 512, mature_cards: 28, mature_pct: 77.8, summary: '示範模擬：30 天後成熟度 77.8%' },
+];
+
 async function getDb() {
   if (!db) {
     const { default: Database } = await import('@tauri-apps/plugin-sql');
@@ -62,6 +78,11 @@ export function isLogEnabled() { return ready && enabled; }
 
 export function logToDb(level, msg) {
   if (!ready || !enabled) return;
+  if (noBackend()) {   // WEB-DEMO：直接進記憶體，不經 flush/DB
+    demoLogs.unshift({ id: demoLogSeq--, ts: Date.now(), level: String(level || 'log'), message: String(msg || '') });
+    if (demoLogs.length > 200) demoLogs.length = 200;
+    return;
+  }
   queue.push([Date.now(), String(level || 'log'), String(msg || '')]);
   if (queue.length >= MAX_BATCH) { flush(); return; }
   if (!timer) timer = setTimeout(flush, 2000);
@@ -69,6 +90,12 @@ export function logToDb(level, msg) {
 
 async function flush() {
   timer = null;
+  if (noBackend()) {   // WEB-DEMO：佇列直接併入記憶體日誌
+    const batch = queue.splice(0, queue.length);
+    for (const [ts, level, message] of batch) demoLogs.unshift({ id: demoLogSeq--, ts, level, message });
+    if (demoLogs.length > 200) demoLogs.length = 200;
+    return;
+  }
   if (!enabled) return;
   const batch = queue.splice(0, queue.length);
   if (!batch.length) return;
@@ -117,6 +144,7 @@ async function resetAndReload() {
 
 /** 刪除超過保留天數的記錄。 */
 export async function pruneLogs() {
+  if (noBackend()) return 0;   // WEB-DEMO：記憶體日誌不清理
   if (!enabled || retentionDays <= 0) return 0;
   try {
     const d = await getDb();
@@ -133,6 +161,12 @@ export async function pruneLogs() {
 // ─── 操作日誌查詢 ───
 
 export async function fetchLogs({ limit = 200, offset = 0, level = null, search = null } = {}) {
+  if (noBackend()) {   // WEB-DEMO：記憶體過濾（level/search/limit/offset 語意對齊 SQL 版）
+    let rows = demoLogs;
+    if (level) rows = rows.filter((r) => r.level === level);
+    if (search) rows = rows.filter((r) => String(r.message).includes(search));
+    return rows.slice(offset, offset + limit).map((r) => ({ ...r }));
+  }
   try {
     const d = await getDb();
     let sql = 'SELECT id, ts, level, message FROM app_log';
@@ -151,6 +185,7 @@ export async function fetchLogs({ limit = 200, offset = 0, level = null, search 
 }
 
 export async function countLogs() {
+  if (noBackend()) return demoLogs.length;   // WEB-DEMO
   try {
     const d = await getDb();
     const r = await d.select('SELECT count(*) n FROM app_log');
@@ -161,6 +196,17 @@ export async function countLogs() {
 // ─── 模擬歷史 (CLI 每次模擬結束寫入; 下次模擬不會刪除) ───
 
 export async function addSimRun(entry) {
+  if (noBackend()) {   // WEB-DEMO：只保留最新一筆（對齊 SQL 版先 DELETE 語意）
+    demoSimRuns.length = 0;
+    demoSimRuns.push({
+      id: 1, ts: Date.now(), kind: entry.kind || 'simulate',
+      days: entry.days ?? null, target_pct: entry.targetPct ?? null,
+      seed: entry.seed ?? null, from_zero: entry.fromZero ? 1 : 0,
+      total_reviews: entry.totalReviews ?? null, mature_cards: entry.matureCards ?? null,
+      mature_pct: entry.maturePct ?? null, summary: entry.summary ?? null,
+    });
+    return;
+  }
   if (!enabled || retentionDays <= 0) return;
   try {
     const d = await getDb();
@@ -178,6 +224,7 @@ export async function addSimRun(entry) {
 }
 
 export async function fetchSimRuns({ limit = 100 } = {}) {
+  if (noBackend()) return demoSimRuns.slice(0, limit).map((r) => ({ ...r }));   // WEB-DEMO
   try {
     const d = await getDb();
     return await d.select('SELECT id, ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary FROM sim_runs ORDER BY id DESC LIMIT ?', [limit]);

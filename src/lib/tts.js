@@ -89,6 +89,10 @@ if (isAndroid) {
 export function speak(text, speed, voice, pitch) {
   if (!text) return Promise.resolve();
   if (isAndroid) return speakAndroidTts(text, speed ?? 0.9, voice || '', pitch ?? 50);
+  // WEB-DEMO（2026-09-08）：無 Tauri 後端 → 瀏覽器 speechSynthesis；實機路徑不動
+  if (typeof window !== 'undefined' && typeof window.__TAURI__?.core !== 'object' && typeof speechSynthesis !== 'undefined') {
+    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50);
+  }
   // 2026-09-05 方案 C（使用者裁示）：Windows 走 WebView2 speechSynthesis（Edge/Microsoft
   // 自然語音，免 piper 免安裝）；Linux 維持 piper。speechSynthesis 不可用或零語音時
   // fallback piper（speakAsync，Windows 無 piper 會失敗並反映在 ttsAvailable）。

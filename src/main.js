@@ -491,7 +491,11 @@ store.subscribe((state) => {
   applyTheme(store.state.themeMode, store.state.themeAccent, store.state.themeAccentIntensity);
 
   // Show a non-blocking toast if DB isn't available
-  if (!(await import('./lib/db.js')).isReady()) {
+  // WEB-DEMO（2026-09-08）：展示模式給中性提示，不報錯
+  const dbMod = await import('./lib/db.js');
+  if (dbMod.isDemoMode && dbMod.isDemoMode()) {
+    toast('網頁展示模式：內建示範資料（重整重置，不影響實機資料）');
+  } else if (!dbMod.isReady()) {
     toast('資料庫無法連線，部分功能可能受限', 'toast-error');
   }
 })();

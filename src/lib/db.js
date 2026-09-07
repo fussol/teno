@@ -6,8 +6,24 @@
 /** @type {import('@tauri-apps/plugin-sql').default | null} */
 let db = null;
 
+// ─── WEB-DEMO 展示模式（2026-09-08 使用者裁示：網頁版內建示範資料）───
+// dist 被當純靜態頁開（無 window.__TAURI__）時啟用：記憶體資料、
+// refresh 重置。實機 SQLite 路徑一行未動，Tauri 內 demoMode 永遠 false。
+import * as Demo from './demo-data.js';
+
+let demoMode = false;
+/** 是否為網頁展示模式（main.js 開機提示用） */
+export function isDemoMode() { return demoMode; }
+
 /** Initialize DB connection. Call once at startup. */
 export async function initDB(retries = 3) {
+  // WEB-DEMO: 無 Tauri 後端 → 不碰 plugin-sql，直接記憶體種子資料
+  if (typeof window !== 'undefined' && typeof window.__TAURI__?.core !== 'object') {
+    demoMode = true;
+    await Demo.seed();
+    console.log('[db] 🌐 demo 展示模式：記憶體示範資料（refresh 重置，不影響實機）');
+    return { demo: true };
+  }
   for (let i = 0; i < retries; i++) {
     try {
       const { default: Database } = await import('@tauri-apps/plugin-sql');
@@ -27,6 +43,7 @@ export async function initDB(retries = 3) {
 
 /** Close DB connection. Use before import. */
 export async function closeDB() {
+  if (demoMode) return Demo.closeDB(...arguments);  // WEB-DEMO 分流
   if (db) {
     try { await db.close(); } catch (e) { console.warn('[db] close error:', e); }
     db = null;
@@ -135,6 +152,7 @@ async function migrate(d) {
 
 /** Checkpoint WAL so the main db file is fully up to date. */
 export async function checkpoint() {
+  if (demoMode) return Demo.checkpoint(...arguments);  // WEB-DEMO 分流
   if (db) {
     try { await db.execute("PRAGMA wal_checkpoint(TRUNCATE)"); } catch (e) { console.warn('[db] checkpoint failed:', e); }
   }
@@ -142,7 +160,7 @@ export async function checkpoint() {
 
 /** Check if DB is available. */
 export function isReady() {
-  return db !== null;
+  return db !== null || demoMode;
 }
 
 function requireDB() {
@@ -153,6 +171,7 @@ function requireDB() {
 // ─── Words ─────────────────────────────────────
 
 export async function getAllWords() {
+  if (demoMode) return Demo.getAllWords(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select(
     'SELECT id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, created_at, related, forms, synonym, antonym, derivative, examples FROM words ORDER BY created_at'
   );
@@ -181,11 +200,13 @@ export async function getAllWords() {
 }
 
 export async function getWordCount() {
+  if (demoMode) return Demo.getWordCount(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT COUNT(*) AS count FROM words');
   return rows[0]?.count ?? 0;
 }
 
 export async function saveWord(word) {
+  if (demoMode) return Demo.saveWord(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
@@ -225,6 +246,7 @@ export async function saveWord(word) {
 
 // G18: 批次存多個 words 於單一事務（tag 改動/批次編輯用 — 避免萬級詞庫逐詞 round-trip）
 export async function saveWordsInTx(words) {
+  if (demoMode) return Demo.saveWordsInTx(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -240,12 +262,14 @@ export async function saveWordsInTx(words) {
 
 /** 取單字圖片（渲染點懶載入用；ORDER BY id = 新增序） */
 export async function getImagesForWord(wordId) {
+  if (demoMode) return Demo.getImagesForWord(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT filename, data FROM word_images WHERE word_id = $1 ORDER BY id', [wordId]);
   return rows.map(r => ({ filename: r.filename || '', data: r.data || '' }));
 }
 
 /** 批量取圖（渲染層一次 IN query；wordId → images[]） */
 export async function getImagesForWords(wordIds) {
+  if (demoMode) return Demo.getImagesForWords(...arguments);  // WEB-DEMO 分流
   if (!wordIds || !wordIds.length) return new Map();
   const ids = [...new Set(wordIds)];
   const ph = ids.map((_, i) => `$${i + 1}`).join(', ');
@@ -260,20 +284,24 @@ export async function getImagesForWords(wordIds) {
 
 /** 新增一張圖（data = data: URL base64 字串） */
 export async function addWordImage(wordId, filename, data) {
+  if (demoMode) return Demo.addWordImage(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('INSERT INTO word_images (word_id, filename, data) VALUES ($1, $2, $3)', [wordId, filename || '', data]);
 }
 
 /** 刪一張圖（by row id） */
 export async function deleteWordImage(imageId) {
+  if (demoMode) return Demo.deleteWordImage(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM word_images WHERE id = $1', [imageId]);
 }
 
 /** 清單字全部圖（編輯器全量替換用；冪等） */
 export async function deleteWordImagesForWord(wordId) {
+  if (demoMode) return Demo.deleteWordImagesForWord(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM word_images WHERE word_id = $1', [wordId]);
 }
 
 export async function deleteWord(id) {
+  if (demoMode) return Demo.deleteWord(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -295,6 +323,7 @@ export async function deleteWord(id) {
 }
 
 export async function bulkSaveWords(words) {
+  if (demoMode) return Demo.bulkSaveWords(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -313,6 +342,7 @@ export async function bulkSaveWords(words) {
 // ─── Cards ─────────────────────────────────────
 
 export async function getAllCards() {
+  if (demoMode) return Demo.getAllCards(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select(
     'SELECT word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data FROM cards'
   );
@@ -340,6 +370,7 @@ export async function getAllCards() {
 }
 
 export async function getCard(wordId) {
+  if (demoMode) return Demo.getCard(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select(
     'SELECT word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data FROM cards WHERE word_id = $1',
     [wordId]
@@ -366,6 +397,7 @@ export async function getCard(wordId) {
 }
 
 export async function saveCard(wordId, card) {
+  if (demoMode) return Demo.saveCard(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     `INSERT INTO cards (word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -397,6 +429,7 @@ export async function saveCard(wordId, card) {
 }
 
 export async function bulkSaveCards(cards) {
+  if (demoMode) return Demo.bulkSaveCards(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -411,11 +444,13 @@ export async function bulkSaveCards(cards) {
 // ─── Decks ─────────────────────────────────────
 
 export async function getAllDecks() {
+  if (demoMode) return Demo.getAllDecks(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT id, name, color, new_weight FROM decks ORDER BY name');
   return rows.map(r => ({ id: r.id, name: r.name, color: r.color, newWeight: r.new_weight ?? 1 }));
 }
 
 export async function saveDeck(deck) {
+  if (demoMode) return Demo.saveDeck(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     'INSERT INTO decks (id, name, color, new_weight) VALUES ($1, $2, $3, $4) ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color, new_weight=excluded.new_weight',
     [deck.id, deck.name, deck.color || '#5e6ad2', deck.newWeight ?? 1]
@@ -423,10 +458,12 @@ export async function saveDeck(deck) {
 }
 
 export async function deleteDeck(id) {
+  if (demoMode) return Demo.deleteDeck(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM decks WHERE id = $1', [id]);
 }
 
 export async function deleteWordsByDeck(deckName) {
+  if (demoMode) return Demo.deleteWordsByDeck(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -448,6 +485,7 @@ export async function deleteWordsByDeck(deckName) {
 // ─── Folders ────────────────────────────────────
 
 export async function getAllFolders() {
+  if (demoMode) return Demo.getAllFolders(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT name, decks FROM folders');
   const map = {};
   for (const r of rows) map[r.name] = parseJSON(r.decks, []);
@@ -455,6 +493,7 @@ export async function getAllFolders() {
 }
 
 export async function saveFolders(folders) {
+  if (demoMode) return Demo.saveFolders(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -475,6 +514,7 @@ export async function saveFolders(folders) {
 // ─── Additions ──────────────────────────────────
 
 export async function getAllAdditions() {
+  if (demoMode) return Demo.getAllAdditions(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT * FROM additions ORDER BY added_at');
   return rows.map(r => ({
     id: r.id,
@@ -488,6 +528,7 @@ export async function getAllAdditions() {
 }
 
 export async function bulkSaveAdditions(additions) {
+  if (demoMode) return Demo.bulkSaveAdditions(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   await d.execute('BEGIN TRANSACTION');
   try {
@@ -508,12 +549,14 @@ export async function bulkSaveAdditions(additions) {
 // ─── Settings (KV) ──────────────────────────────
 
 export async function getSetting(key) {
+  if (demoMode) return Demo.getSetting(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT value FROM settings WHERE key = $1', [key]);
   if (rows.length === 0) return null;
   try { return JSON.parse(rows[0].value); } catch { return rows[0].value; }
 }
 
 export async function setSetting(key, value) {
+  if (demoMode) return Demo.setSetting(...arguments);  // WEB-DEMO 分流
   const str = typeof value === 'string' ? value : JSON.stringify(value);
   await requireDB().execute(
     'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
@@ -525,6 +568,7 @@ export async function setSetting(key, value) {
 
 /** 審計日誌 — 記錄任何寫入動作 (GUI/CLI 共用, 存 teno.db) */
 export async function addAudit(action, detail = '') {
+  if (demoMode) return Demo.addAudit(...arguments);  // WEB-DEMO 分流
   try {
     await requireDB().execute(
       'INSERT INTO audit_log (ts, action, detail) VALUES ($1, $2, $3)',
@@ -538,18 +582,21 @@ export async function addAudit(action, detail = '') {
 // ─── Tags ────────────────────────────────────────
 
 export async function getAllTags() {
+  if (demoMode) return Demo.getAllTags(...arguments);  // WEB-DEMO 分流
   const raw = await getSetting('tags');
   if (!Array.isArray(raw)) return [];
   return raw;
 }
 
 export async function setAllTags(tags) {
+  if (demoMode) return Demo.setAllTags(...arguments);  // WEB-DEMO 分流
   await setSetting('tags', tags);
 }
 
 // ─── Review Log ─────────────────────────────────
 
 export async function addReviewLog(entry) {
+  if (demoMode) return Demo.addReviewLog(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     `INSERT INTO review_log (word_id, rating, duration, elapsed_days, scheduled_days, stability, difficulty, mode, card_state, new_state, reviewed_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
@@ -558,6 +605,7 @@ export async function addReviewLog(entry) {
 }
 
 export async function getAllReviewLogs() {
+  if (demoMode) return Demo.getAllReviewLogs(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT * FROM review_log ORDER BY reviewed_at, id');   // C1: id 次鍵消除同刻 timestamp tie 順序不確定性
   return rows.map(r => ({
     id: r.id,
@@ -596,6 +644,7 @@ function normalizeUtcTimestamp(ts) {
 /** Count today's new-card reviews for a given mode from revlog.
  *  reviewed_at is stored in UTC; convert the local todayStart + cutoff into a UTC boundary. */
 export async function getNewRatedToday(mode, todayStart, dayCutoff = 0, tzOffset = null) {
+  if (demoMode) return Demo.getNewRatedToday(...arguments);  // WEB-DEMO 分流
   const offset = tzOffset ?? -(new Date().getTimezoneOffset());
   const [y, m, d] = todayStart.split('-').map(Number);
   const boundaryUtc = new Date(Date.UTC(y, m - 1, d, 0, dayCutoff || 0) - offset * 60000)
@@ -614,6 +663,7 @@ export async function getNewRatedToday(mode, todayStart, dayCutoff = 0, tzOffset
  * `mode = $1` equality queries (db.js:536 semantics preserved).
  */
 export async function getNewRatedTodayAll(todayStart, dayCutoff = 0, tzOffset = null) {
+  if (demoMode) return Demo.getNewRatedTodayAll(...arguments);  // WEB-DEMO 分流
   const offset = tzOffset ?? -(new Date().getTimezoneOffset());
   const [y, m, d] = todayStart.split('-').map(Number);
   const boundaryUtc = new Date(Date.UTC(y, m - 1, d, 0, dayCutoff || 0) - offset * 60000)
@@ -628,15 +678,18 @@ export async function getNewRatedTodayAll(todayStart, dayCutoff = 0, tzOffset = 
 }
 
 export async function clearReviewLogs() {
+  if (demoMode) return Demo.clearReviewLogs(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM review_log');
 }
 
 export async function getMaxReviewLogId() {
+  if (demoMode) return Demo.getMaxReviewLogId(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT MAX(id) AS m FROM review_log');
   return rows[0]?.m ?? 0;
 }
 
 export async function deleteReviewLogsAfter(id, mode) {
+  if (demoMode) return Demo.deleteReviewLogsAfter(...arguments);  // WEB-DEMO 分流
   // C1: mode 過濾 — COALESCE(mode, 'flip') 內固定字面量（NULL 舊資料視為 flip，僅 flip undo 會刪）；
   //     右側 $2 為目標 mode（比較參數化）
   const m = mode || 'flip';   // 防 undefined 參數（呼叫端已窮舉，純保險）
@@ -647,16 +700,19 @@ export async function deleteReviewLogsAfter(id, mode) {
 }
 
 export async function deleteLastReviewLog() {
+  if (demoMode) return Demo.deleteLastReviewLog(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM review_log WHERE id = (SELECT MAX(id) FROM review_log)');
 }
 
 export async function deleteCard(wordId) {
+  if (demoMode) return Demo.deleteCard(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM cards WHERE word_id = $1', [wordId]);
 }
 
 // ─── Exam History ───────────────────────────────
 
 export async function addExamEntry(entry) {
+  if (demoMode) return Demo.addExamEntry(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     'INSERT INTO exam_history (word, correct, question_type, examined_at) VALUES ($1, $2, $3, $4)',
     [entry.word, entry.correct ? 1 : 0, entry.questionType || null, entry.examinedAt ?? new Date().toISOString()]   // E2: examined_at ISO 帶 Z（不再靠 DEFAULT naive）
@@ -664,12 +720,14 @@ export async function addExamEntry(entry) {
 }
 
 export async function getAllExamHistory() {
+  if (demoMode) return Demo.getAllExamHistory(...arguments);  // WEB-DEMO 分流
   return await requireDB().select('SELECT * FROM exam_history ORDER BY examined_at');
 }
 
 // ─── Goal Streak ────────────────────────────────
 
 export async function getGoalStreak() {
+  if (demoMode) return Demo.getGoalStreak(...arguments);  // WEB-DEMO 分流
   const rows = await requireDB().select('SELECT daily_goal, current, best, dates FROM goal_streak WHERE id = 1');
   if (rows.length === 0) return { dailyGoal: 20, current: 0, best: 0, dates: { flip: [], mc: [], spell: [] } };
   const r = rows[0];
@@ -686,6 +744,7 @@ export async function getGoalStreak() {
 }
 
 export async function saveGoalStreak(data) {
+  if (demoMode) return Demo.saveGoalStreak(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     `INSERT INTO goal_streak (id, daily_goal, current, best, dates)
      VALUES (1, $1, $2, $3, $4)
@@ -699,12 +758,14 @@ export async function saveGoalStreak(data) {
 // ─── Filtered Decks ─────────────────────────────
 
 export async function getAllFilteredDecks() {
+  if (demoMode) return Demo.getAllFilteredDecks(...arguments);  // WEB-DEMO 分流
   return await requireDB().select(
     'SELECT id, name, search_query, max_cards, order_by, color, created_at, last_used FROM filtered_decks ORDER BY name'
   );
 }
 
 export async function saveFilteredDeck(deck) {
+  if (demoMode) return Demo.saveFilteredDeck(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     `INSERT INTO filtered_decks (id, name, search_query, max_cards, order_by, color)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -716,6 +777,7 @@ export async function saveFilteredDeck(deck) {
 }
 
 export async function updateFilteredDeckLastUsed(id) {
+  if (demoMode) return Demo.updateFilteredDeckLastUsed(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(
     'UPDATE filtered_decks SET last_used = $2 WHERE id = $1',
     [id, new Date().toISOString()]   // E2: ISO 帶 Z
@@ -723,16 +785,19 @@ export async function updateFilteredDeckLastUsed(id) {
 }
 
 export async function deleteFilteredDeck(id) {
+  if (demoMode) return Demo.deleteFilteredDeck(...arguments);  // WEB-DEMO 分流
   await requireDB().execute('DELETE FROM filtered_decks WHERE id = $1', [id]);
 }
 
 // ─── Clear All Data ────────────────────────────
 
 export async function executeSQL(sql, params = []) {
+  if (demoMode) return Demo.executeSQL(...arguments);  // WEB-DEMO 分流
   await requireDB().execute(sql, params);
 }
 
 export async function clearAll() {
+  if (demoMode) return Demo.clearAll(...arguments);  // WEB-DEMO 分流
   const d = requireDB();
   try {
     await d.execute('BEGIN TRANSACTION');
