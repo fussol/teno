@@ -24,8 +24,9 @@ import { getSetting } from '../db.js';
  * @typedef {Object} OcrEngine
  * @property {string} id                        如 'tesseract' | 'paddle'
  * @property {() => Promise<boolean>} available 環境能力偵測（不throw）
- * @property {(file: File, opts?: {langTags?: string[]}) => Promise<OcrResult>} recognize
- *            辨識失敗一律 reject Error（訊息供 UI 呈現）；不自定義錯誤碼
+ * @property {(file: File, opts?: {langTags?: string[], psm?: number, dpi?: number}) => Promise<OcrResult>} recognize
+ *            辨識失敗一律 reject Error（訊息供 UI 呈現）；不自定義錯誤碼。
+ *            opts.psm/dpi 由 tesseract-adapter 消費（OCR3；vision/paddle 忽略多餘參數）。
  */
 
 const DEFAULT_ENGINE_ID = 'tesseract';

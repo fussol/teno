@@ -17,7 +17,7 @@ const SUBPAGE_PARENT = {
   'study-v4': 'study', 'study-mc': 'study', 'study-spell': 'study',
   'exam-flip': 'exam', 'exam-mc': 'exam', 'exam-spell': 'exam',
   'deck-browser': 'browser', 'tag-manager': 'browser',
-  'import': 'tools', 'export': 'tools', 'ocr': 'tools', 'simulator': 'tools', 'crop': 'tools',
+  'import': 'tools', 'export': 'tools', 'ocr': 'tools', 'simulator': 'tools',
   'app-log': 'settings',
 };
 const resolveNavPage = (p) => (SUBPAGE_PARENT[p] || p);

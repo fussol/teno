@@ -103,6 +103,21 @@ export function render(s) {
       .ocr-img-wrap.cutting{-webkit-user-select:none;user-select:none;touch-action:none}
       .ocr-crop-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
       .ocr-crop-handle{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45);pointer-events:auto;z-index:4;cursor:grab;touch-action:none;transform:translate(-50%,-50%)}
+      /* OCR3 全螢幕切割 overlay：圖區鎖 touch-action，外層可滑說明 */
+      .ocr-ov{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.92);display:flex;flex-direction:column}
+      .ocr-ov-head{display:flex;align-items:center;gap:8px;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top,0));background:var(--bg-surface);border-bottom:1px solid var(--border)}
+      .ocr-ov-title{font-size:14px;font-weight:700;color:var(--text-primary);flex:1}
+      .ocr-ov-dims{font-size:11px;color:var(--text-tertiary);font-family:var(--mono,monospace)}
+      .ocr-ov-zoom{display:flex;gap:4px;align-items:center}
+      .ocr-ov-zoom button{min-width:36px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text-primary);font-size:13px;font-weight:700;cursor:pointer}
+      .ocr-ov-zoom button.on{border-color:var(--accent);color:var(--accent)}
+      .ocr-ov-stage{flex:1;overflow:auto;position:relative;display:flex;align-items:center;justify-content:center;padding:12px;touch-action:pan-x pan-y}
+      .ocr-ov-imgbox{position:relative;touch-action:none;flex-shrink:0}
+      .ocr-ov-img{display:block;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+      .ocr-ov-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+      .ocr-ov-handle{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 0 8px rgba(182,157,255,.18);pointer-events:auto;z-index:4;cursor:grab;touch-action:none;transform:translate(-50%,-50%)}
+      .ocr-ov-foot{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom,0));background:var(--bg-surface);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .ocr-ov-hint{font-size:11px;color:var(--text-tertiary);flex:1;min-width:140px}
       .ocr-img{display:block;width:100%;height:auto}
       .ocr-hl-row{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap;margin:-6px 0 var(--s3)}
       .ocr-hl-row .hl-tag{font-size:12px;color:var(--text-secondary);white-space:nowrap}
@@ -185,10 +200,39 @@ export function render(s) {
           <button class="btn" id="ocrCutCancelBtn" style="display:none;flex:0">${icon('x')} 取消</button>
           <button class="btn" id="ocrClearCropBtn" style="display:none">${icon('x')} 清除</button>
           <button class="btn" id="ocrConfirmBtn" style="flex:1">${icon('check')} 辨識已選取範圍</button>
-          <button class="btn" id="ocrTileScanBtn" style="flex:1" title="自動切割成 3×3 重疊局部並放大掃描（小字成功率大增，跨片投票去雜訊）">${icon('grid3x3')} 局部掃描</button>
           <span class="ocr-dim-label" id="ocrDimLabel"></span>
         </div>
-        <div class="ocr-hint" id="ocrHint">預覽圖可直接下滑瀏覽；按「切割」拖四角框選要辨識的區域</div>
+        <div class="ocr-hint" id="ocrHint">預覽圖可直接下滑瀏覽；按「切割」進全螢幕切割畫面（字太小會自動局部掃描補第二槍）</div>
+      </div>
+
+      <!-- OCR3 全螢幕切割畫面（overlay；預覽頁保持純瀏覽可滑動） -->
+      <div class="ocr-ov" id="ocrCropOverlay" style="display:none">
+        <div class="ocr-ov-head">
+          <span class="ocr-ov-title">切割照片</span>
+          <span class="ocr-ov-dims" id="ocrOvDims"></span>
+          <div class="ocr-ov-zoom" id="ocrOvZoom">
+            <button data-zoom="1" class="on">1x</button>
+            <button data-zoom="1.5">1.5x</button>
+            <button data-zoom="2">2x</button>
+          </div>
+        </div>
+        <div class="ocr-ov-stage" id="ocrOvStage">
+          <div class="ocr-ov-imgbox" id="ocrOvImgBox">
+            <img id="ocrOvImg" class="ocr-ov-img" alt="待切割影像">
+            <svg class="ocr-ov-svg" id="ocrOvSvg" preserveAspectRatio="none">
+              <polygon id="ocrOvPoly" fill="rgba(59,130,246,.16)" stroke="var(--accent)" stroke-width="2" />
+            </svg>
+            <div class="ocr-ov-handle" id="ocrOvHandle0" style="display:none"></div>
+            <div class="ocr-ov-handle" id="ocrOvHandle1" style="display:none"></div>
+            <div class="ocr-ov-handle" id="ocrOvHandle2" style="display:none"></div>
+            <div class="ocr-ov-handle" id="ocrOvHandle3" style="display:none"></div>
+          </div>
+        </div>
+        <div class="ocr-ov-foot">
+          <button class="btn" id="ocrOvCancel">${icon('x')} 取消</button>
+          <span class="ocr-ov-hint">拖曳四個圓點框選；可放大微調；完成後回預覽辨識</span>
+          <button class="btn" id="ocrOvDone" style="flex:1">${icon('check')} 完成</button>
+        </div>
       </div>
 
       <!-- 結果 -->
@@ -240,7 +284,9 @@ export function onMount(s) {
   const area      = $('ocrResultArea');
   const loadEl    = $('ocrLoading');
   const candC     = $('ocrCandidatesContainer');
-  const candL     = $('ocrCandidatesList');
+  // 註：舊單清單 #ocrCandidatesList 已隨三頁籤 UI（ocrListNew/Dup/Noise，
+  // 元首令 2026-09-01 v2）退役，此處不再綁定。候選渲染一律走
+  // appendCandidates()（classifyTokens＋renderTabs）；容器級查詢用 candC。
 
   if (!capBtn || !impBtn || !engSel) return;
 
@@ -547,18 +593,10 @@ export function onMount(s) {
           loadEl.textContent = '文字檔未抽到有效單字';
         } else {
           loadEl.style.display = 'none';
-          candL.innerHTML = tokens.map(t => {
-            const bl = s.actions.isBlacklisted?.(t);
-            const grey = !bl && s.actions.isGraylisted?.(t);
-            const masked = !!bl || !!grey;
-            const badge = masked ? (bl ? ' <span class="ocr-mask-badge">🔒 黑名單</span>' : ' <span class="ocr-mask-badge">🔒 灰名單</span>') : '';
-            const checked = masked ? '' : 'checked';
-            return `
-            <label class="ocr-cand">
-              <input type="checkbox" class="ocr-cand-cb" data-w="${t}" ${checked}>
-              <span>${t} <em style="color:var(--accent);font-style:normal;font-size:10px">⇠ 文字檔</em>${badge}</span>
-            </label>`;
-          }).join('');
+          // 三頁籤走 appendCandidates（classifyTokens：新字→全新頁籤預設勾、
+          // 已有→重複頁籤、黑灰→雜訊頁籤帶 🔒 badge 可勾 override），
+          // 與圖片辨識路徑同渲染（F′ 文字檔 fast-path 修：舊 candL 已退役）。
+          appendCandidates(tokens, {}, s);
           const maskedCount = tokens.filter(t => s.actions.isBlacklisted?.(t) || s.actions.isGraylisted?.(t)).length;
           const summaryEl = $('ocrMaskSummary');
           if (summaryEl) {
@@ -630,8 +668,146 @@ export function onMount(s) {
     if (commit) { collapseCrop(); hint.textContent = '已框選；可按「切割」再調整，或直接辨識'; }
     else { _corners = null; _crop = _savedCrop; _savedCrop = null; hint.textContent = '已取消切割；預覽圖可直接下滑瀏覽'; }
   }
-  // 切割入口 → 獨立切割頁（2026-09-01 元首令：專門頁面處理切割，OCR 主頁預覽保持純瀏覽）
-  cutStartBtn?.addEventListener('click', () => s.actions.navigate('crop'));
+  // ─── OCR3 全螢幕切割 overlay（專門切割畫面；預覽頁保持純瀏覽可滑）───
+  // 狀態：_ovCorners（overlay 顯示座標四角）、_ovZoom、_ovOpen。
+  // 完成時換算回預覽座標 → _crop（collapseCrop 沿用預覽 dispW/H）。
+  const ovEl      = $('ocrCropOverlay');
+  const ovStage   = $('ocrOvStage');
+  const ovImgBox  = $('ocrOvImgBox');
+  const ovImg     = $('ocrOvImg');
+  const ovSvg     = $('ocrOvSvg');
+  const ovPoly    = $('ocrOvPoly');
+  const ovHandles = [0, 1, 2, 3].map(i => $('ocrOvHandle' + i));
+  const ovDims    = $('ocrOvDims');
+  let _ovOpen = false;
+  let _ovCorners = null;
+  let _ovZoom = 1;
+  let _ovDragIdx = null;
+  let _ovBaseW = 0, _ovBaseH = 0;   // zoom=1 時圖顯示尺寸
+  const _ovZoomBtns = () => Array.from(document.querySelectorAll('#ocrOvZoom button'));
+  function _ovApplyZoom() {
+    if (!_ovBaseW) return;
+    ovImg.style.width = Math.round(_ovBaseW * _ovZoom) + 'px';
+    ovImg.style.height = Math.round(_ovBaseH * _ovZoom) + 'px';
+    _ovLayout();
+  }
+  function _ovLayout() {
+    if (!_ovOpen || !_ovCorners) return;
+    const W = _ovBaseW * _ovZoom, H = _ovBaseH * _ovZoom;
+    ovImgBox.style.width = W + 'px';
+    ovImgBox.style.height = H + 'px';
+    ovSvg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    ovPoly.setAttribute('points', _ovCorners.map(c => `${c.x * _ovZoom},${c.y * _ovZoom}`).join(' '));
+    ovHandles.forEach((hh, i) => {
+      hh.style.display = 'block';
+      hh.style.left = (_ovCorners[i].x * _ovZoom) + 'px';
+      hh.style.top = (_ovCorners[i].y * _ovZoom) + 'px';
+    });
+    // 尺寸（原圖 px）
+    const r = cornersToRect(_ovCorners);
+    if (r && _imgW && _ovBaseW) {
+      const k = _imgW / _ovBaseW;
+      if (ovDims) ovDims.textContent = `${Math.max(1, Math.round(r.w * k))} × ${Math.max(1, Math.round(r.h * k))} px`;
+    }
+  }
+  function _ovPos(ev) {
+    const r = ovImgBox.getBoundingClientRect();
+    const cx = (ev.touches?.[0] || ev).clientX;
+    const cy = (ev.touches?.[0] || ev).clientY;
+    return {
+      x: Math.max(0, Math.min(_ovBaseW, (cx - r.left) / _ovZoom)),
+      y: Math.max(0, Math.min(_ovBaseH, (cy - r.top) / _ovZoom)),
+    };
+  }
+  function openCropOverlay() {
+    if (_busy || !_file) { if (!_file) toast('請先拍照或匯入圖片', 'toast-error'); return; }
+    _savedCrop = _crop ? { ..._crop } : null;
+    // overlay 圖源：沿用預覽 imgEl 的 data: URL（WebKitGTK 安全）
+    ovImg.src = imgEl.src;
+    _ovOpen = true;
+    _ovZoom = 1;
+    _ovZoomBtns().forEach(b => b.classList.toggle('on', b.dataset.zoom === '1'));
+    ovEl.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    document.getElementById('contentArea')?.style.setProperty('overflow', 'hidden');
+    // 等一幀讓 stage 有尺寸，再量 base
+    requestAnimationFrame(() => {
+      const maxW = ovStage.clientWidth - 24, maxH = ovStage.clientHeight - 24;
+      const iw = _imgW || 1, ih = _imgH || 1;
+      const fit = Math.min(maxW / iw, maxH / ih, 1);
+      // 小圖放大到至少可操作（短邊≥320），大圖縮到塞入
+      const boost = Math.min(iw, ih) * fit < 320 ? 320 / (Math.min(iw, ih) * fit) : 1;
+      const k = fit * Math.min(boost, 3);
+      _ovBaseW = Math.max(1, Math.round(iw * k));
+      _ovBaseH = Math.max(1, Math.round(ih * k));
+      // 初角：有舊框→映射到 overlay 座標；否則中央 60%
+      if (_crop && dispW > 0) {
+        const sx = _ovBaseW / dispW, sy = _ovBaseH / dispH;
+        _ovCorners = [
+          { x: _crop.x * sx, y: _crop.y * sy },
+          { x: (_crop.x + _crop.w) * sx, y: _crop.y * sy },
+          { x: (_crop.x + _crop.w) * sx, y: (_crop.y + _crop.h) * sy },
+          { x: _crop.x * sx, y: (_crop.y + _crop.h) * sy },
+        ];
+      } else {
+        _ovCorners = defaultCorners(_ovBaseW, _ovBaseH);
+      }
+      _ovApplyZoom();
+      hint.textContent = '切割畫面中；完成後回預覽辨識';
+    });
+  }
+  function closeCropOverlay(commit) {
+    _ovOpen = false;
+    ovEl.style.display = 'none';
+    document.body.style.overflow = '';
+    document.getElementById('contentArea')?.style.removeProperty('overflow');
+    ovHandles.forEach(hh => { hh.style.display = 'none'; });
+    if (commit && _ovCorners) {
+      // overlay 座標 → 預覽座標 → _crop
+      if (dispW > 0 && _ovBaseW > 0) {
+        const kx = dispW / _ovBaseW, ky = dispH / _ovBaseH;
+        const prev = _ovCorners.map(c => ({ x: c.x * kx, y: c.y * ky }));
+        const r = cornersToRect(prev);
+        _crop = r;
+        if (_crop) dimLabel.textContent = `${Math.max(1, Math.round(_crop.w * (_imgW / dispW)))} × ${Math.max(1, Math.round(_crop.h * (_imgH / dispH)))} px`;
+        clearBtn.style.display = '';
+        hint.textContent = '已框選；可再按「切割」調整，或直接辨識';
+      }
+    } else {
+      _ovCorners = null;
+      _crop = _savedCrop; _savedCrop = null;
+      hint.textContent = '已取消切割；預覽圖可直接下滑瀏覽';
+    }
+  }
+  $('ocrOvZoom')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-zoom]');
+    if (!b) return;
+    _ovZoom = parseFloat(b.dataset.zoom) || 1;
+    _ovZoomBtns().forEach(x => x.classList.toggle('on', x === b));
+    _ovApplyZoom();
+  });
+  ovHandles.forEach((hh, i) => {
+    hh.addEventListener('pointerdown', (ev) => {
+      if (_busy || !_ovOpen) return;
+      ev.preventDefault(); ev.stopPropagation();
+      _ovDragIdx = i;
+      if (hh.setPointerCapture) { try { hh.setPointerCapture(ev.pointerId); } catch (_) {} }
+    });
+    hh.addEventListener('pointermove', (ev) => {
+      if (_ovDragIdx !== i || !_ovOpen) return;
+      ev.preventDefault();
+      const p = _ovPos(ev);
+      _ovCorners = untangleCorners(moveCorner(_ovCorners, i, p.x, p.y, _ovBaseW, _ovBaseH), _ovBaseW, _ovBaseH);
+      _ovLayout();
+    });
+    const _endOv = () => { if (_ovDragIdx === i) _ovDragIdx = null; };
+    hh.addEventListener('pointerup', _endOv);
+    hh.addEventListener('pointercancel', _endOv);
+  });
+  $('ocrOvDone')?.addEventListener('click', () => closeCropOverlay(true));
+  $('ocrOvCancel')?.addEventListener('click', () => closeCropOverlay(false));
+  // 切割入口 → 全螢幕 overlay（OCR3；獨立 crop 頁已刪除併入）
+  cutStartBtn?.addEventListener('click', openCropOverlay);
   cutDoneBtn?.addEventListener('click', () => leaveCutting(true));
   cutCancelBtn?.addEventListener('click', () => leaveCutting(false));
 
@@ -729,19 +905,26 @@ export function onMount(s) {
           loadEl.textContent = '未偵測到螢光區域，改為辨識整張圖';
         }
       }
-      // 小字增強（OCR-SMALLTEXT）：行高 <30px 自動放大 2~3x＋Otsu 二值化。
-      // 行高足夠（>=30px）時 enhanceSmallText 回 null，原圖直送零成本。
+      // OCR3 自動前處理：灰階拉伸→暗底反白→行高放大→條件二值化
+      // （不均→局部自適應，乾淨→全域 Otsu）→去噪→白邊。全自動條件式，
+      // loadEl 顯示實際分支（使用者看得到自動化在幹嘛）。
       try {
-        const { enhanceSmallText } = await import('../lib/ocr/upscale.js');
-        const en = await enhanceSmallText(cropFile);
+        const { autoEnhanceSmallText } = await import('../lib/ocr/auto-preprocess.js');
+        const en = await autoEnhanceSmallText(cropFile);
         if (en.file) {
           cropFile = en.file;
-          loadEl.textContent = `小字增強中（${en.note}）...`;
+          loadEl.textContent = `自動前處理（${en.note}）...`;
         }
-      } catch (e) { console.warn('[ocr] 小字增強失敗（回退原圖）', e.message || e); }
+      } catch (e) { console.warn('[ocr] 自動前處理失敗（回退原圖）', e.message || e); }
       const { getActiveEngine } = await import('../lib/ocr/engine.js');
       const { engine } = await getActiveEngine();
-      const res = await engine.recognize(cropFile);
+      // OCR3 PSM 情境選擇：有框選或 highlight 聚焦→6，整頁 scan→3；DPI 預設 300
+      let _psm = 3;
+      try {
+        const { selectPsm } = await import('../lib/ocr/tesseract-adapter.js');
+        _psm = selectPsm({ hasCrop: !!(_crop && _crop.w > 2 && _crop.h > 2), mode: _mode });
+      } catch (_) {}
+      const res = await engine.recognize(cropFile, { psm: _psm, dpi: 300 });
       const seen = new Set();
       let tokens = [];
       const tokConf = {};      // token → 最高 confidence(0..100)
@@ -807,13 +990,32 @@ export function onMount(s) {
         }
       }
       // 收斂最終候選：已還原 → 用還原字；還原不出（歧義/非英文字）→ 淘汰
-      const finalTokens = [];
+      let finalTokens = [];
       for (const t of tokens) {
         const r = restored[t];
         if (!r) continue;                        // 還原不出 → 刪
         if (!finalTokens.includes(r)) finalTokens.push(r);
         if (r !== t) restoreMap[r] = t;          // 有變 → 標「還原」
       }
+      // OCR3 自動第二槍：主辨識 <3 字 → 同一 cropFile 跑 tile 局部掃描補槍
+      // （shouldSecondShot 主判據用字數；tesseract confidence 灌水不採信）
+      try {
+        const { shouldSecondShot } = await import('../lib/ocr/auto-preprocess.js');
+        if (shouldSecondShot({ finalCount: finalTokens.length })) {
+          const second = await autoTileSecondShot(cropFile, engine, _psm);
+          if (!second.skipped && second.tokens.length) {
+            // tile 的 token 也要過字典還原（與主流程同語義），還原不出淘汰
+            for (const tk of second.tokens) {
+              if (finalTokens.includes(tk)) continue;
+              const rr = restoreFromDictionary(tk);
+              if (!rr || finalTokens.includes(rr)) continue;
+              finalTokens.push(rr);
+              if (rr !== tk) restoreMap[rr] = tk;
+            }
+            loadEl.textContent = `自動局部掃描補了 ${second.tokens.length} 字（剔除 ${second.dropped} 碎片）...`;
+          }
+        }
+      } catch (e) { console.warn('[ocr] 自動第二槍失敗（保留主辨識結果）', e.message || e); }
       loadEl.style.display = 'none';
       if (!finalTokens.length) {
         loadEl.style.display = 'block';
@@ -831,96 +1033,65 @@ export function onMount(s) {
     }
   });
 
-  // ─── 局部切割掃描（TILE-SCAN 2026-09-01）：大圖 → 3×3 重疊網格 → 逐片 2x 放大辨識 → 跨片投票去雜訊 ───
-  // 實測：局部放大掃描小字成功率大增，但切割邊緣切半的字成碎片雜訊；
-  // 重疊 25% 讓邊緣字在鄰片完整出現 → 投票（多片或核心區 = 保留，單片貼緣 = 碎片丟棄）。
-  $('ocrTileScanBtn')?.addEventListener('click', async () => {
-    if (_busy) return;
-    if (!_file) { toast('請先拍照或匯入圖片', 'toast-error'); return; }
-    _setBusy(true);
-    _resetResult();
-    area.style.display = 'block';
+  // ─── OCR3 自動第二槍（TILE-SCAN 收編）：主流程 finalTokens<3 時自動觸發 ───
+  // 同一 cropFile 切 3×3 重疊網格 → 逐片 auto 前處理 → recognize → 跨片投票。
+  // 小圖（短邊<600）跳過（tile 無意義）。呼叫端在 confBtn 內。
+  async function autoTileSecondShot(feedFile, engine, psm) {
+    const bitmap = await createImageBitmap(feedFile);
+    const FW = bitmap.width, FH = bitmap.height;
+    if (Math.min(FW, FH) < 600) { bitmap.close?.(); return { tokens: [], dropped: 0, skipped: true }; }
     const { tileGrid, crossTileVote, tileUpscaleFactor } = await import('../lib/ocr/tile-scan.js');
-    try {
-      const tiles = tileGrid({ width: _imgW, height: _imgH }, 3, 3);
-      const bitmap = await createImageBitmap(_file);
-      const perTile = [];
-      const { getActiveEngine } = await import('../lib/ocr/engine.js');
-      const { engine } = await getActiveEngine();
-      for (let i = 0; i < tiles.length; i++) {
-        const t = tiles[i];
-        loadEl.style.display = 'block';
-        loadEl.textContent = `局部掃描中 ${i + 1}/${tiles.length}（片 ${t.w}×${t.h}${tileUpscaleFactor(t.w) === 2 ? ' → 2x 放大' : ''}）...`;
-        // 片裁切 + 放大
-        const f = tileUpscaleFactor(t.w);
-        const cv = document.createElement('canvas');
-        cv.width = t.w * f; cv.height = t.h * f;
-        const ctx = cv.getContext('2d');
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(bitmap, t.x, t.y, t.w, t.h, 0, 0, cv.width, cv.height);
-        const pieceBlob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('片轉存失敗')), 'image/png'));
-        const pieceFile = new File([pieceBlob], `tile-${i}.png`, { type: 'image/png' });
-        // 小字增強（每片獨立跑 — 片內行高放大後更準）
-        let feed = pieceFile;
-        try {
-          const { enhanceSmallText } = await import('../lib/ocr/upscale.js');
-          const en = await enhanceSmallText(feed);
-          if (en.file) feed = en.file;
-        } catch (_) {}
-        const res = await engine.recognize(feed);
-        // token 提取（同主流程白名單）+ bbox 中心換算回原圖座標
-        const tokens = [];
-        const seen = new Set();
-        const blocks = Array.isArray(res.blocks) && res.blocks.length ? res.blocks : [{ text: res.text || '', confidence: 1 }];
-        for (const block of blocks) {
-          for (const raw of String(block.text || '').split(/\s+/)) {
-            const tk = raw.toLowerCase().replace(/^[^\w'-]+/, '').replace(/[^\w'-]+$/, '');
-            if (!_OCR_TOKEN_RE.test(tk) || seen.has(tk)) continue;
-            seen.add(tk);
-            // bbox 中心（引擎座標=片座標）→ 原圖座標
-            const bb = block.bbox || [0, 0, 0, 0];
-            const cx = bb[0] + bb[2] / 2 >= 0 ? t.x + (bb[0] + bb[2] / 2) / f : undefined;
-            const cy = bb[1] + bb[3] / 2 >= 0 ? t.y + (bb[1] + bb[3] / 2) / f : undefined;
-            tokens.push({ t: tk, cx, cy });
-          }
+    const { autoEnhanceSmallText } = await import('../lib/ocr/auto-preprocess.js');
+    const tiles = tileGrid({ width: FW, height: FH }, 3, 3);
+    const perTile = [];
+    for (let i = 0; i < tiles.length; i++) {
+      const t = tiles[i];
+      loadEl.textContent = `主辨識字太少，自動局部掃描中 ${i + 1}/${tiles.length}...`;
+      const f = tileUpscaleFactor(t.w);
+      const cv = document.createElement('canvas');
+      cv.width = t.w * f; cv.height = t.h * f;
+      const ctx = cv.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bitmap, t.x, t.y, t.w, t.h, 0, 0, cv.width, cv.height);
+      const pieceBlob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('片轉存失敗')), 'image/png'));
+      let feed = new File([pieceBlob], `tile-${i}.png`, { type: 'image/png' });
+      try {
+        const en = await autoEnhanceSmallText(feed);
+        if (en.file) feed = en.file;
+      } catch (_) {}
+      const r = await engine.recognize(feed, { psm, dpi: 300 });
+      const toks = [];
+      const seen2 = new Set();
+      const blks = Array.isArray(r.blocks) && r.blocks.length ? r.blocks : [{ text: r.text || '', confidence: 1 }];
+      for (const block of blks) {
+        for (const raw of String(block.text || '').split(/\s+/)) {
+          const tk = raw.toLowerCase().replace(/^[^\w'-]+/, '').replace(/[^\w'-]+$/, '');
+          if (!_OCR_TOKEN_RE.test(tk) || seen2.has(tk)) continue;
+          seen2.add(tk);
+          const bb = block.bbox || [0, 0, 0, 0];
+          const cx = bb[0] + bb[2] / 2 >= 0 ? t.x + (bb[0] + bb[2] / 2) / f : undefined;
+          const cy = bb[1] + bb[3] / 2 >= 0 ? t.y + (bb[1] + bb[3] / 2) / f : undefined;
+          toks.push({ t: tk, cx, cy });
         }
-        perTile.push({ tile: i, tokens });
       }
-      bitmap.close?.();
-      // 跨片投票
-      const { keep, dropped } = crossTileVote(perTile, tiles);
-      const finalTokens = [...keep];
-      loadEl.style.display = 'none';
-      if (!finalTokens.length) {
-        loadEl.style.display = 'block';
-        loadEl.textContent = '局部掃描未偵測到有效單字';
-        return;
-      }
-      appendCandidates(finalTokens, {}, s);
-      candC.style.display = 'block';
-      const summaryEl = $('ocrMaskSummary');
-      if (summaryEl) {
-        summaryEl.textContent = `局部掃描完成：保留 ${finalTokens.length} 字（跨片投票剔除 ${dropped.size} 個邊緣碎片）— 連拍下一張會繼續疊加`;
-        summaryEl.style.display = 'block';
-      }
-    } catch (e) {
-      loadEl.style.display = 'block';
-      loadEl.textContent = `局部掃描失敗：${e.message}`;
-    } finally {
-      _setBusy(false);
+      perTile.push({ tile: i, tokens: toks });
     }
-  });
+    bitmap.close?.();
+    const { keep, dropped } = crossTileVote(perTile, tiles);
+    return { tokens: [...keep], dropped: dropped.size, skipped: false };
+  }
 
   allBtn(['ocrSelectAllBtn', 'ocrSelectNoneBtn']).forEach((btn, i) => {
     btn?.addEventListener('click', () => {
-      candL.querySelectorAll('.ocr-cand-cb').forEach(cb => { cb.checked = (i === 0); });
+      // 容器級查詢：三頁籤（ocrListNew/Dup/Noise）全在 candC 內，一次全選/全不選
+      candC.querySelectorAll('.ocr-cand-cb').forEach(cb => { cb.checked = (i === 0); });
     });
   });
 
   // 入庫
   $('ocrConfirmImportBtn')?.addEventListener('click', async () => {
-    const picked = Array.from(candL.querySelectorAll('.ocr-cand-cb:checked')).map(cb => cb.dataset.w);
-    const allCand = Array.from(candL.querySelectorAll('.ocr-cand-cb')).map(cb => cb.dataset.w);
+    const picked = Array.from(candC.querySelectorAll('.ocr-cand-cb:checked')).map(cb => cb.dataset.w);
+    const allCand = Array.from(candC.querySelectorAll('.ocr-cand-cb')).map(cb => cb.dataset.w);
     if (!picked.length) { toast('請先勾選要加入的單字（連拍模式下可再拍繼續疊加）', ''); return; }
     const btn = $('ocrConfirmImportBtn');
     btn.disabled = true;
@@ -936,8 +1107,9 @@ export function onMount(s) {
       const res = await s.actions.importOcrText(picked, undefined, {
         override: new Set(overrideWords),
       });
-      _endBatch();   // 連拍批結束（清 _batchTokens；後續 _resetResult 恢復清候選）
-      candL.innerHTML = '';   // 本批候選清空（下一批從零開始）
+      _endBatch();   // 連拍批結束（清 _batchTokens；後續 _resetResult 恢復清候選行為）
+      // 清三頁籤 token 集＋重繪（本批候選清空，下一批從零開始）
+      _newTokens.clear(); _dupTokens.clear(); _noiseTokens.clear(); renderTabs();
       candC.style.display = 'none';
       loadEl.style.display = 'block';
       // 被擋數（plan C.4 §3）：res.blacklisted 直接顯示既有盲區修復

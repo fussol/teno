@@ -216,20 +216,6 @@ export function render(s) {
       </div>
     </div>
 
-    <!-- 照片切割掃描 → 獨立切割頁入口（2026-09-01 元首令） -->
-    <div class="section">
-      <div class="card card-interactive" id="toolsGoCrop" style="cursor:pointer">
-        <div style="display:flex;align-items:center;gap:var(--s3)">
-          <div style="width:40px;height:40px;border-radius:var(--r-md);background:var(--accent-container);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--accent);flex-shrink:0">${icon('scan')}</div>
-          <div>
-            <div style="font-size:14px;font-weight:700;color:var(--text-primary)">照片切割掃描</div>
-            <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">拖曳畫多個切割框，每塊放大 2x 逐塊辨識，跨張累積一次匯入</div>
-          </div>
-          <span style="margin-left:auto;color:var(--text-tertiary);font-size:18px">${icon('chevronR')}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- Cambridge Dictionary -->
     <div class="section">
       <div class="section-title">${icon('book')} Cambridge 字典查詢</div>
@@ -271,7 +257,6 @@ export function onMount(s) {
   document.getElementById('toolsGoSimulator')?.addEventListener('click', () => s.actions.navigate('simulator'));
   document.getElementById('toolsGoAppLog')?.addEventListener('click', () => s.actions.navigate('app-log'));
   document.getElementById('toolsGoOcr')?.addEventListener('click', () => s.actions.navigate('ocr'));
-  document.getElementById('toolsGoCrop')?.addEventListener('click', () => s.actions.navigate('crop'));
   window.__dismissTask = (id) => s.actions.dismissBackgroundTask(id);
   document.getElementById('bgTaskConfig')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.task-dismiss');

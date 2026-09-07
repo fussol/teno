@@ -20,8 +20,8 @@ function check(name, cond, detail) {
 
 console.log('═ OCR-V2 整合釘 ═');
 
-// T1 未勾選 → 灰名單
-check('T1a 入庫 handler 計算 allCand（未勾選清單來源）', src.includes('const allCand = Array.from(candL.querySelectorAll'), '');
+// T1 未勾選 → 灰名單（OCR3：candL 單清單退役→candC 容器級查詢，三頁籤全覆蓋）
+check('T1a 入庫 handler 計算 allCand（未勾選清單來源）', src.includes('const allCand = Array.from(candC.querySelectorAll'), '');
 check('T1b 計算 dropped（未勾選=全部-勾選）', /const dropped = allCand\.filter\(w => !picked\.includes\(w\)\)/.test(src), '');
 check('T1c 呼叫 isGraylisted 守門', src.includes('!s.actions.isGraylisted?.(w)'), '');
 check('T1d 呼叫 addToGraylist（寫入灰名單）', src.includes('await s.actions.addToGraylist(w)'), '');

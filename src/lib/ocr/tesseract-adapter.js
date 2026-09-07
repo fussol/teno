@@ -15,6 +15,28 @@
 // 本檔只在瀏覽器執行（engine.js lazy factory），node 只准靜態檢查。
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * PSM 頁面分割模式（tesseract.js 官方 API 文件 PSM 枚舉子集）。
+ * 3=AUTO 整頁自動；6=SINGLE_BLOCK 單一文字塊（框選/螢光筆）；
+ * 11=SPARSE_TEXT 稀疏文字。
+ * 參考：naptha/tesseract.js docs/api.md＋index.d.ts PSM enum。
+ */
+export const PSM = { AUTO: 3, SINGLE_BLOCK: 6, SPARSE_TEXT: 11 };
+
+/**
+ * 依情境選 PSM（OCR3）：有框選或 highlight 聚焦→6；整頁 scan→3。
+ * @param {{hasCrop:boolean, mode:string}} a
+ */
+export function selectPsm(a) {
+  if (a?.hasCrop) return PSM.SINGLE_BLOCK;
+  if (a?.mode === 'highlight') return PSM.SINGLE_BLOCK;
+  return PSM.AUTO;
+}
+
+/** @type {number|null} worker 已設 PSM（追蹤，變化才 setParameters） */
+let _workerPsm = null;
+/** @type {number|null} worker 已設 DPI */
+let _workerDpi = null;
 /** @type {Promise<any>|null} window.Tesseract API（UMD 注入） */
 let _apiP = null;
 /** @type {any} worker 單例（tesseract.js worker） */
@@ -94,12 +116,27 @@ async function available() {
 /**
  * 辨識圖片。失敗一律 reject Error（訊息供 UI）。
  * @param {File|Blob} file
- * @param {{langTags?: string[]}} [opts]
+ * @param {{langTags?: string[], psm?: number, dpi?: number}} [opts]
+ *   psm: tesseract PSM（3/6/11；OCR3 情境選擇）；dpi: user_defined_dpi
+ *   （官方建議≥300；手機拍照常無內嵌 DPI，預設 300）。v7 setParameters
+ *   若不存在/改名 → try/catch 回退無參辨識（零炸）。
  * @returns {Promise<import('./engine.js').OcrResult>}
  */
 async function recognize(file, opts = {}) {
   if (!file) throw new Error('OCR: 無影像輸入');
   const worker = await getWorker(opts.langTags);
+  const wantPsm = Number.isFinite(opts.psm) ? opts.psm : null;
+  const wantDpi = Number.isFinite(opts.dpi) ? opts.dpi : 300;
+  try {
+    const params = {};
+    if (wantPsm !== null && wantPsm !== _workerPsm) params.tessedit_pageseg_mode = String(wantPsm);
+    if (wantDpi !== _workerDpi) params.user_defined_dpi = String(wantDpi);
+    if (Object.keys(params).length && typeof worker.setParameters === 'function') {
+      await worker.setParameters(params);
+      if (params.tessedit_pageseg_mode) _workerPsm = wantPsm;
+      if (params.user_defined_dpi) _workerDpi = wantDpi;
+    }
+  } catch (_) { /* 參數透傳失敗 → 回退預設辨識，不炸 */ }
   // blocks 輸出供 bbox/區塊信心（P1 僅留存，UI 只消費 text+confidence）
   const { data } = await worker.recognize(file, {}, { text: true, blocks: true });
   const rawBlocks = Array.isArray(data.blocks) ? data.blocks : [];
