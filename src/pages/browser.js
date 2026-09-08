@@ -422,6 +422,10 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
             `).join('')}
           </div>
           <hr class="card-popover-divider">
+          <div class="card-popover-title">例句顯示</div>
+          <label><span>最多顯示</span><span style="display:flex;align-items:center;gap:4px"><input type="number" id="csExampleMax" min="0" value="${(window.__maxExampleLines || 0)}" style="width:56px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:12px;text-align:center">句</span></label>
+          <div style="font-size:10px;color:var(--text-quaternary);margin:-2px 0 4px">0＝全部顯示（與工具頁同步記憶）</div>
+          <hr class="card-popover-divider">
           <div class="card-popover-title">自動朗讀</div>
           <label><span>自動播放時</span><input type="checkbox" id="csPronAuto" ${st.pronAuto ? 'checked' : ''}></label>
           <label><span>手動跳轉時</span><input type="checkbox" id="csPronManual" ${st.pronManual ? 'checked' : ''}></label>
@@ -491,9 +495,24 @@ function bindCardEvents(s, w, st) {
     document.querySelectorAll('[data-cs-hide]').forEach(cb => {
       cb.addEventListener('change', function() {
         const k = this.dataset.csHide;
-        if (this.checked) { if (!st.hiddenFields.includes(k)) st.hiddenFields.push(k); } else st.hiddenFields = st.hiddenFields.filter(x => x !== k);
+        if (this.checked) {
+          if (!st.hiddenFields.includes(k)) st.hiddenFields.push(k);
+          // 一點即生效：勾選隱藏時自動關掉完整顯示（否則隱藏清單被閘住、看似無效）
+          if (st.showComplete) {
+            st.showComplete = false;
+            const cc = document.getElementById('csComplete'); if (cc) cc.checked = false;
+            const hf = document.getElementById('csHiddenFields'); if (hf) hf.style.display = '';
+          }
+        } else st.hiddenFields = st.hiddenFields.filter(x => x !== k);
         showCard(_cardState.idx);
       });
+    });
+    // 例句顯示數：與工具頁同一設定鍵（exampleDisplayMax）＋window 即時變數；改完即重繪
+    document.getElementById('csExampleMax')?.addEventListener('input', function() {
+      const n = Math.max(0, parseInt(this.value, 10) || 0);
+      window.__maxExampleLines = n;
+      import('../lib/db.js').then(m => m.setSetting('exampleDisplayMax', String(n))).catch(() => {});
+      showCard(_cardState.idx);
     });
     document.getElementById('csPronAuto')?.addEventListener('change', function() { st.pronAuto = this.checked; });
     document.getElementById('csPronManual')?.addEventListener('change', function() { st.pronManual = this.checked; });
