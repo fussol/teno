@@ -3,7 +3,7 @@ import { toast } from '../lib/toast.js';
 import { scrapeQuizlet } from '../lib/api.js';
 import { isMobile } from '../lib/platform.js';
 import {
-  parseCSVTable, parseAnkiTSV, mapAnkiRows, mapWords,
+  parseCSVTable, parseAnkiTSV, mapWords,
   resolveField, CANONICAL_FIELDS, FIELD_LABELS,
 } from '../core/import.js';
 
@@ -169,6 +169,8 @@ function renderImportBar(s) {
 function renderPreview(s, isCsv) {
   const mapped = isCsv ? computeMappedCsv(s) : computeMappedQuizlet(s);
   const shown = mapped.slice(0, PREVIEW_ROWS);
+  const mappedFields = [...new Set((_fields || []).filter(Boolean))];
+  const mappedChips = mappedFields.map(f => `<span class="tag" style="font-size:10px">${escapeHtml(FIELD_LABELS[f] || f)}</span>`).join('');
   if (shown.length === 0) {
     return `<div class="section"><div class="section-title">${icon('eye')} 預覽</div>
       <div class="empty-state" style="padding:var(--s6)">${icon('box')}<h3>沒有可匯入的單字</h3><p>調整欄位對應或選擇其他檔案</p></div></div>`;
@@ -178,6 +180,9 @@ function renderPreview(s, isCsv) {
       <div class="section-header">
         <div class="section-title">${icon('eye')} 預覽</div>
         <span class="muted" style="font-size:12px">前 ${shown.length} 筆</span>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:0 var(--s4) var(--s2);font-size:11px;color:var(--text-tertiary)">
+        <span>本次對應：</span>${mappedChips || '<span class="muted">無</span>'}
       </div>
       <div class="config-section" style="padding:0;overflow:hidden">
         <div class="preview-table">
@@ -238,6 +243,10 @@ function renderQuizletPreview(s) {
       <div class="section-header">
         <div class="section-title">${icon('eye')} 預覽</div>
         <span class="muted" style="font-size:12px">前 ${shown.length} 筆</span>
+      </div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding:0 var(--s4) var(--s2);font-size:11px;color:var(--text-tertiary)">
+        <span>本次對應：</span><span class="tag" style="font-size:10px">單字</span><span class="tag" style="font-size:10px">定義</span>
+        <span>（Quizlet 僅提供這兩欄，其餘欄位可用工具頁自動補齊補上）</span>
       </div>
       <div class="config-section" style="padding:0;overflow:hidden">
         <div class="preview-table">
@@ -354,6 +363,8 @@ function computeMappedQuizlet(s) {
     definition: c.definition || '',
     pos: '', pron: '', example: '',
     synonym: '', antonym: '', derivative: '',
+    etymology: '', syllables: '', phrases: '',
+    related: [], forms: [],
     deck: _targetDeck || 'Default',
     image: '', description: '', examples: [], tags: [],
   }));
