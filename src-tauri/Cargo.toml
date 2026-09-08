@@ -3,7 +3,7 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.16.6"
+version = "5.16.7"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"

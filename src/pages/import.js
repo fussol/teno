@@ -187,7 +187,7 @@ function renderPreview(s, isCsv) {
       <div class="config-section" style="padding:0;overflow:hidden">
         <div class="preview-table">
           <div class="preview-row preview-head">
-            <span>#</span><span>單字</span><span>定義</span><span>詞性</span><span>字本</span>
+            <span>#</span><span>單字</span><span>定義</span><span>詞性</span>
           </div>
           ${shown.map((w, i) => `
             <div class="preview-row">
@@ -195,7 +195,6 @@ function renderPreview(s, isCsv) {
               <span class="preview-word">${escapeHtml(w.word)}</span>
               <span class="preview-def">${escapeHtml(w.definition) || '<span class="muted">-</span>'}</span>
               <span>${escapeHtml(w.pos) || '<span class="muted">-</span>'}</span>
-              <span class="tag tag-accent" style="font-size:10px">${escapeHtml(w.deck)}</span>
             </div>
           `).join('')}
         </div>

@@ -220,7 +220,7 @@ export function fmtExample(ex) {
   let lines = ex.split('\n').filter(Boolean);
   const max = window.__maxExampleLines || 0;
   if (max > 0 && lines.length > max) {
-    lines = lines.sort(() => Math.random() - 0.5).slice(0, max);
+    lines = lines.slice(0, max);
   }
   return lines.map(l => {
     const m = l.match(/^(.+[.!?])\s*[,，]\s*([\u4e00-\u9fff].+)$/);

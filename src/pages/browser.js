@@ -266,6 +266,18 @@ let cardSettings = {
   pauseAfterPron: 1.5,
   pauseBetweenCards: 3,
 };
+// 字卡顯示設定持久化（db 設定鍵 — 換頁/重整不重置；播放狀態不存）
+const CARD_SETTINGS_KEY = 'browserCardSettings';
+function saveCardSettings() {
+  import('../lib/db.js').then(m => m.setSetting(CARD_SETTINGS_KEY, JSON.stringify({
+    showComplete: cardSettings.showComplete,
+    hiddenFields: cardSettings.hiddenFields,
+    pronAuto: cardSettings.pronAuto,
+    pronManual: cardSettings.pronManual,
+    pauseAfterPron: cardSettings.pauseAfterPron,
+    pauseBetweenCards: cardSettings.pauseBetweenCards,
+  }))).catch(() => {});
+}
 
 function openCardPreview(s, wordId) {
   const words = filterWords(s.state.words);
@@ -491,7 +503,7 @@ function bindCardEvents(s, w, st) {
       if (!settingsPop.contains(e.target) && e.target !== settingsBtn) settingsPop.classList.remove('open');
     };
     document.addEventListener('click', _bCardOutside);
-    document.getElementById('csComplete')?.addEventListener('change', function() { st.showComplete = this.checked; document.getElementById('csHiddenFields').style.display = this.checked ? 'none' : ''; showCard(_cardState.idx); });
+    document.getElementById('csComplete')?.addEventListener('change', function() { st.showComplete = this.checked; document.getElementById('csHiddenFields').style.display = this.checked ? 'none' : ''; saveCardSettings(); showCard(_cardState.idx); });
     document.querySelectorAll('[data-cs-hide]').forEach(cb => {
       cb.addEventListener('change', function() {
         const k = this.dataset.csHide;
@@ -504,6 +516,7 @@ function bindCardEvents(s, w, st) {
             const hf = document.getElementById('csHiddenFields'); if (hf) hf.style.display = '';
           }
         } else st.hiddenFields = st.hiddenFields.filter(x => x !== k);
+        saveCardSettings();
         showCard(_cardState.idx);
       });
     });
@@ -514,10 +527,10 @@ function bindCardEvents(s, w, st) {
       import('../lib/db.js').then(m => m.setSetting('exampleDisplayMax', String(n))).catch(() => {});
       showCard(_cardState.idx);
     });
-    document.getElementById('csPronAuto')?.addEventListener('change', function() { st.pronAuto = this.checked; });
-    document.getElementById('csPronManual')?.addEventListener('change', function() { st.pronManual = this.checked; });
-    document.getElementById('csPausePron')?.addEventListener('change', function() { st.pauseAfterPron = parseFloat(this.value); });
-    document.getElementById('csPauseBet')?.addEventListener('change', function() { st.pauseBetweenCards = parseFloat(this.value); });
+    document.getElementById('csPronAuto')?.addEventListener('change', function() { st.pronAuto = this.checked; saveCardSettings(); });
+    document.getElementById('csPronManual')?.addEventListener('change', function() { st.pronManual = this.checked; saveCardSettings(); });
+    document.getElementById('csPausePron')?.addEventListener('change', function() { st.pauseAfterPron = parseFloat(this.value); saveCardSettings(); });
+    document.getElementById('csPauseBet')?.addEventListener('change', function() { st.pauseBetweenCards = parseFloat(this.value); saveCardSettings(); });
   }
   document.getElementById('cardPlayBtn')?.addEventListener('click', (e) => { e.stopPropagation(); st.autoAdvance = !st.autoAdvance; showCard(_cardState.idx); });
   document.getElementById('cardFullBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _cardState.fullscreen = !_cardState.fullscreen; showCard(_cardState.idx); });
@@ -676,6 +689,25 @@ export function onMount(s) {
   import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
     const n = normalizeDisplayLimit(v);
     if (n !== _displayLimit) { _displayLimit = n; renderInPlace(s); }
+  }).catch(() => {});
+  // 例句限數：db 還原（與工具頁同一設定鍵）— 沒這段 window 變數永遠 undefined＝無限
+  import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
+    const n = Math.max(0, parseInt(v, 10) || 0);
+    if (n > 0) window.__maxExampleLines = n;
+  }).catch(() => {});
+  // 字卡顯示設定：db 還原（換頁/重整不再重置回預設）
+  import('../lib/db.js').then(m => m.getSetting(CARD_SETTINGS_KEY)).then(v => {
+    try {
+      const o = JSON.parse(v);
+      if (o && typeof o === 'object') {
+        if (typeof o.showComplete === 'boolean') cardSettings.showComplete = o.showComplete;
+        if (Array.isArray(o.hiddenFields)) cardSettings.hiddenFields = o.hiddenFields;
+        if (typeof o.pronAuto === 'boolean') cardSettings.pronAuto = o.pronAuto;
+        if (typeof o.pronManual === 'boolean') cardSettings.pronManual = o.pronManual;
+        if (typeof o.pauseAfterPron === 'number') cardSettings.pauseAfterPron = o.pauseAfterPron;
+        if (typeof o.pauseBetweenCards === 'number') cardSettings.pauseBetweenCards = o.pauseBetweenCards;
+      }
+    } catch (_) {}
   }).catch(() => {});
   document.getElementById('browserLimitSelect')?.addEventListener('change', async (e) => {
     _displayLimit = normalizeDisplayLimit(e.target.value);
