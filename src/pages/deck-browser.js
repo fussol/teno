@@ -1445,10 +1445,12 @@ function showCard(idx) {
     if (!newBody.dataset._listeners) {
       newBody.dataset._listeners = '1';
       newBody.addEventListener('click', () => { if (!newBody.classList.contains('revealed')) newBody.classList.add('revealed'); });
-      newBody.addEventListener('touchstart', (e) => { _cardState._sx = e.touches[0].clientX; }, { passive: true });
+      newBody.addEventListener('touchstart', (e) => { _cardState._sx = e.touches[0].clientX; _cardState._sy = e.touches[0].clientY; }, { passive: true });
       newBody.addEventListener('touchend', (e) => {
         const dx = _cardState._sx - e.changedTouches[0].clientX;
-        if (Math.abs(dx) > 40) {
+        const dy = (_cardState._sy ?? e.changedTouches[0].clientY) - e.changedTouches[0].clientY;
+        // 左右切換只吃水平主導的手勢：斜著往下滑（dy 大）不再誤觸換字
+        if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
           if (dx > 0 && _cardState.idx < _cardState.words.length - 1) { stopAuto(); showCard(_cardState.idx + 1); }
           else if (dx < 0 && _cardState.idx > 0) { stopAuto(); showCard(_cardState.idx - 1); }
         }
@@ -1651,11 +1653,13 @@ function bindCardEvents(s, w, idx, total, st) {
   scrollRuler(idx);
   if (st.pronManual && w.pron) playCardTTS(s, w.word);
   document.getElementById('deckCardPronBtn')?.addEventListener('click', (e) => { e.stopPropagation(); playCardTTS(s, w.word); });
-  let sx = 0;
-  bodyEl.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; }, { passive: true });
+  let sx = 0, sy = 0;
+  bodyEl.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
   bodyEl.addEventListener('touchend', (e) => {
     const dx = sx - e.changedTouches[0].clientX;
-    if (Math.abs(dx) > 40) {
+    const dy = sy - e.changedTouches[0].clientY;
+    // 左右切換只吃水平主導的手勢：斜著往下滑（dy 大）不再誤觸換字
+    if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
       if (dx > 0 && _cardState.idx < total - 1) { stopAuto(); showCard(_cardState.idx + 1); }
       else if (dx < 0 && _cardState.idx > 0) { stopAuto(); showCard(_cardState.idx - 1); }
     }
