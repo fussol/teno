@@ -1254,8 +1254,18 @@ function openModal(s, word) {
     if (w && w !== _lastAutoFilled) autoFillAll();
   });
 
-  const SOURCE_LABELS = { cambridge: 'Cambridge', 'dict-api': '字典API', tatoeba: 'Tatoeba', llm: 'LLM' };
-  const DEFAULT_CHAIN = ['cambridge', 'dict-api', 'tatoeba', 'llm'];
+  const SOURCE_LABELS = { cambridge: 'Cambridge', merriam: '韋氏字典', 'dict-api': '字典API', tatoeba: 'Tatoeba', llm: 'LLM' };
+  const DEFAULT_CHAIN = ['cambridge', 'merriam', 'dict-api', 'tatoeba', 'llm'];
+  const KNOWN_SRC = new Set(DEFAULT_CHAIN);
+  // 舊存檔只有四步（無 merriam）：過濾未知值＋把缺的 merriam 補到 llm 之前
+  const _normalizeChain = (arr) => {
+    const kept = arr.map(s => s.trim()).filter(s => KNOWN_SRC.has(s));
+    if (!kept.includes('merriam')) {
+      const li = kept.indexOf('llm');
+      if (li === -1) kept.push('merriam'); else kept.splice(li, 0, 'merriam');
+    }
+    return kept.length ? kept : [...DEFAULT_CHAIN];
+  };
   let autoFillChain = [...DEFAULT_CHAIN];
   const renderChips = () => {
     const c = document.getElementById('fAutoOrderChips');
@@ -1265,7 +1275,7 @@ function openModal(s, word) {
     ).join('');
   };
   import('../lib/db.js').then(m => m.getSetting('autoFillOrder').then(v => {
-    if (v) { autoFillChain = v.split(/[,|;]/).map(s => s.trim()).filter(Boolean); renderChips(); }
+    if (v) { autoFillChain = _normalizeChain(v.split(/[,|;]/).map(s => s.trim()).filter(Boolean)); renderChips(); }
   }));
   renderChips();
   container.addEventListener('click', (e) => {
@@ -1334,6 +1344,9 @@ function openModal(s, word) {
         } catch (e) {
           cambridgeFailed = true;
         }
+      } else if (src === 'merriam') {
+        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
+        try { await mwFillExtra(s, g, w); } catch (_) {}
       } else if (src === 'dict-api') {
         try {
           const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
@@ -1383,9 +1396,8 @@ function openModal(s, word) {
                 llmFillRelated('fRelated', w),
                 llmFillForms('fForms', w),
                 llmFillSynAntDeriv(w),
-                mwFillPhrases('fPhrases', w),
                 (async () => {
-                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝）
                   const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
                   const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
                   if (!g('fSyllables')) {
@@ -1402,6 +1414,14 @@ function openModal(s, word) {
                       if (t) s('fEtymology', t.trim());
                     } catch (_) {}
                   }
+                  // 片語 LLM 兜底（只填空欄；韋氏鏈步驟有 key 時走韋氏，此處不搶）
+                  if (!g('fPhrases')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
+                      if (t) s('fPhrases', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
+                    } catch (_) {}
+                  }
                 })()
               ]);
             }
@@ -1410,8 +1430,8 @@ function openModal(s, word) {
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
-    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
-    try { await mwFillExtra(s, g, w); } catch (_) {}
+    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
+    if (!chain.includes('merriam')) { try { await mwFillExtra(s, g, w); } catch (_) {} }
     _lastAutoFilled = w;
   };
 

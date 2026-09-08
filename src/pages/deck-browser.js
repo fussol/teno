@@ -13,6 +13,20 @@ import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capLis
 // 字本瀏覽顯示上限（可調＋記憶：與 browser.js 共享 db settings.browserDisplayLimit）
 let _displayLimit = DISPLAY_LIMIT_DEFAULT;
 
+// 自動填入來源鏈（四 modal 共用；與 browser.js 同步：merriam 預設第二順位）
+// 舊存檔只有四步時 _normalizeAutoChain 把缺的 merriam 補到 llm 之前
+const AUTO_FILL_LABELS = { cambridge: 'Cambridge', merriam: '韋氏字典', 'dict-api': '字典API', tatoeba: 'Tatoeba', llm: 'LLM' };
+const AUTO_FILL_DEFAULT = ['cambridge', 'merriam', 'dict-api', 'tatoeba', 'llm'];
+const _KNOWN_AUTO_SRC = new Set(AUTO_FILL_DEFAULT);
+const _normalizeAutoChain = (arr) => {
+  const kept = (arr || []).map(s => String(s || '').trim()).filter(s => _KNOWN_AUTO_SRC.has(s));
+  if (!kept.includes('merriam')) {
+    const li = kept.indexOf('llm');
+    if (li === -1) kept.push('merriam'); else kept.splice(li, 0, 'merriam');
+  }
+  return kept.length ? kept : [...AUTO_FILL_DEFAULT];
+};
+
 let _deckName = null;
 let _query = '';
 let _tagFilter = null;
@@ -700,12 +714,12 @@ function openAddModal(s) {
   // G19/G20：db.js export 的是裸函式（無 db namespace）→ 原寫 .db.getSetting 恆拋
   // TypeError 被 catch 吞掉＝autoFillOrder 永遠存不進/讀不到（存取路徑全啞）。
   // G20：寫入分隔符統一 '|'（canonical，與 CLI join('|') 對齊；GUI 讀端 split(/[,|;]/) 已容忍）。
-  let autoFillChain = ['cambridge', 'dict-api', 'tatoeba', 'llm'];
+  let autoFillChain = [...AUTO_FILL_DEFAULT];
   (async () => {
     try {
       const { getSetting } = await import('../lib/db.js');
       const saved = await getSetting('autoFillOrder');
-      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) autoFillChain = arr; }
+      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) autoFillChain = _normalizeAutoChain(arr); }
       _renderAutoOrderChips();
     } catch (_) {}
   })();
@@ -714,7 +728,7 @@ function openAddModal(s) {
     const el = document.getElementById('deckAddAutoOrderChips');
     if (!el) return;
     el.innerHTML = autoFillChain.map((s, i) =>
-      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${s}</span>`
+      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${i + 1}. ${AUTO_FILL_LABELS[s] || s} ›</span>`
     ).join('');
     el.querySelectorAll('.auto-order-chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -832,6 +846,9 @@ function openAddModal(s) {
             if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
           }
         } catch (e) { cambridgeFailed = true; }
+      } else if (src === 'merriam') {
+        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
+        try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {}
       } else if (src === 'dict-api') {
         try {
           const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
@@ -881,9 +898,8 @@ function openAddModal(s) {
                 llmFillRelated('deckAddRelated', w),
                 llmFillForms('deckAddForms', w),
                 llmFillSynAntDeriv('deckAdd', w),
-                mwFillPhrases('deckAdd', 'deckAddPhrases', w),
                 (async () => {
-                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  // 音節＋字源＋片語 LLM 兜底（只填空欄；韋氏在鏈內時先寫者勝）
                   const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
                   const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
                   if (!g('deckAddSyllables')) {
@@ -900,6 +916,14 @@ function openAddModal(s) {
                       if (t) s('deckAddEtymology', t.trim());
                     } catch (_) {}
                   }
+                  // 片語 LLM 兜底（只填空欄；韋氏鏈步驟有 key 時走韋氏，此處不搶）
+                  if (!g('deckAddPhrases')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
+                      if (t) s('deckAddPhrases', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
+                    } catch (_) {}
+                  }
                 })()
               ]);
             }
@@ -908,8 +932,8 @@ function openAddModal(s) {
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
-    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
-    try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {}
+    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
+    if (!chain.includes('merriam')) { try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {} }
     if (btn) btn.disabled = false;
     _lastAutoFilled = w;
   };
@@ -1229,12 +1253,12 @@ function openEditModal(s, id) {
   });
 
   // ── Auto-fill ───
-  let editAutoFillChain = ['cambridge', 'dict-api', 'tatoeba', 'llm'];
+  let editAutoFillChain = [...AUTO_FILL_DEFAULT];
   (async () => {
     try {
       const { getSetting } = await import('../lib/db.js');
       const saved = await getSetting('autoFillOrder');
-      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) editAutoFillChain = arr; }
+      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) editAutoFillChain = _normalizeAutoChain(arr); }
       _renderEditAutoOrderChips();
     } catch (_) {}
   })();
@@ -1242,7 +1266,7 @@ function openEditModal(s, id) {
     const el = document.getElementById('deckEditAutoOrderChips');
     if (!el) return;
     el.innerHTML = editAutoFillChain.map((s, i) =>
-      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${s}</span>`
+      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${i + 1}. ${AUTO_FILL_LABELS[s] || s} ›</span>`
     ).join('');
     el.querySelectorAll('.auto-order-chip').forEach(chip => {
       chip.addEventListener('click', () => {
@@ -1295,6 +1319,9 @@ function openEditModal(s, id) {
             if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
           }
         } catch (e) { cambridgeFailed = true; }
+      } else if (src === 'merriam') {
+        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
+        try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {}
       } else if (src === 'dict-api') {
         try {
           const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
@@ -1336,9 +1363,8 @@ function openEditModal(s, id) {
                 llmFillRelated('deckEditRelated', w),
                 llmFillForms('deckEditForms', w),
                 llmFillSynAntDeriv('deckEdit', w),
-                mwFillPhrases('deckEdit', 'deckEditPhrases', w),
                 (async () => {
-                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  // 音節＋字源＋片語 LLM 兜底（只填空欄；韋氏在鏈內時先寫者勝）
                   const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
                   const mdl = store.state.ollamaModel || (model || 'qwen2.5-coder:7b');
                   if (!g('deckEditSyllables')) {
@@ -1355,6 +1381,14 @@ function openEditModal(s, id) {
                       if (t) s('deckEditEtymology', t.trim());
                     } catch (_) {}
                   }
+                  // 片語 LLM 兜底（只填空欄；韋氏鏈步驟有 key 時走韋氏，此處不搶）
+                  if (!g('deckEditPhrases')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
+                      if (t) s('deckEditPhrases', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
+                    } catch (_) {}
+                  }
                 })()
               ]);
             }
@@ -1363,8 +1397,8 @@ function openEditModal(s, id) {
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
-    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
-    try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {}
+    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
+    if (!editAutoFillChain.includes('merriam')) { try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {} }
     if (btn) btn.disabled = false;
     _editLastAutoFilled = w;
   };
