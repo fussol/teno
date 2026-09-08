@@ -1501,6 +1501,7 @@ const deckCardCSS = `<style id="deckCardStyle">
   .card-panel-head-actions button{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:none;border-radius:8px;background:transparent;color:var(--text-tertiary);cursor:pointer;font-size:16px;transition:background-color .15s,border-color .15s,color .15s}
   .card-panel-head-actions button:hover{background:var(--state-hover);color:var(--text-primary)}
   .card-panel-body{flex:1;overflow-y:auto;padding:var(--s8) var(--s6);text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:safe center;gap:var(--s4);cursor:pointer;overflow-wrap:break-word;word-break:break-word}
+  .card-panel-body .card-hidden{display:none}
   .card-panel-body.revealed .card-hidden{display:flex !important}
   .card-panel-word{font-size:40px;font-weight:800;color:var(--text-primary);letter-spacing:-.5px;line-height:1.2;overflow-wrap:break-word;word-break:break-word;hyphens:auto}
   .card-panel-pron{font-size:18px;color:var(--text-tertiary)}
@@ -1533,16 +1534,16 @@ function cardBodyHTML(w, s, st) {
   const ah = !st.showComplete && st.hiddenFields.length > 0;
   return `<div class="card-panel-body${ah ? '' : ' revealed'}" id="deckCardPreviewBody">
     <div class="card-panel-word">${escapeHtml(w.word)}</div>
-    ${wordImageSlotHTML(w.id)}
+    <div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap${fh('image') ? ' card-hidden' : ''}">${wordImageSlotHTML(w.id)}</div>
     ${w.pron ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
     ${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? ' card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}
     ${w.example ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(w.example)}</div>` : ''}
     ${w.description ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
-    ${w.related && w.related.length ? `<div class="card-panel-desc" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
-    ${w.forms && w.forms.length ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
-    ${w.syllables ? `<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
-    ${w.etymology ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
-    ${w.phrases ? `<div class="card-panel-desc" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">片語 </span>${escapeHtml(w.phrases)}</div>` : ''}
+    ${w.related && w.related.length ? `<div class="card-panel-desc${fh('related') ? ' card-hidden' : ''}" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
+    ${w.forms && w.forms.length ? `<div class="card-panel-desc${fh('forms') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
+    ${w.syllables ? `<div class="card-panel-desc${fh('syllables') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
+    ${w.etymology ? `<div class="card-panel-desc${fh('etymology') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
+    ${w.phrases ? `<div class="card-panel-desc${fh('phrases') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">片語 </span>${escapeHtml(w.phrases)}</div>` : ''}
     ${(w.tags || []).length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
       const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
       return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;
@@ -1561,7 +1562,7 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
           <label><span>完整顯示</span><input type="checkbox" id="dcsComplete" ${st.showComplete ? 'checked' : ''}></label>
           <div id="dcsHiddenFields" style="${st.showComplete ? 'display:none' : ''};padding-left:12px;margin-top:4px">
             <div style="font-size:10px;color:var(--text-quaternary);margin-bottom:4px">隱藏（點卡片顯示）</div>
-            ${[['definition','定義'],['example','例句'],['pron','發音'],['description','備註'],['tags','標籤']].map(([k,l]) => `
+            ${[['definition','定義'],['example','例句'],['pron','發音'],['description','備註'],['tags','標籤'],['image','圖片'],['related','相似詞'],['forms','詞形變化'],['syllables','音節'],['etymology','字源'],['phrases','片語']].map(([k,l]) => `
               <label style="justify-content:flex-start;gap:6px"><input type="checkbox" data-dcs-hide="${k}" ${st.hiddenFields.includes(k) ? 'checked' : ''}><span>${l}</span></label>
             `).join('')}
           </div>
