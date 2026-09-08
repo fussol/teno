@@ -123,13 +123,34 @@ export function render(s) {
       </div>
     </div>
 
-    <!-- A套：自動補齊家族（九卡網格；手機塌單欄） -->
+    <!-- A套：自動補齊家族（組合包＋九卡網格；手機塌單欄） -->
     <div class="section">
       <div class="section-title">${icon('sparkle')} 自動補齊</div>
-      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞與片語</div>
+      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞與片語（上面有一鍵全補組合包）</div>
       <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
         <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
         <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位（開＝整欄取代＋無視門檻；關＝只補缺失）</span>
+      </div>
+    <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞九欄一次填滿，各欄來源可調＋記憶＋可收合） -->
+      <div class="card" style="margin-bottom:var(--s3)">
+        <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
+        <div class="card-desc">只挑九欄全空的裸詞（只有單字），按下面選的來源一次填完九個欄位；覆寫開＝全部重跑。來源選擇會記住。</div>
+        <div class="tool-row" style="margin-bottom:var(--s2)">
+          <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
+          <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
+        </div>
+        <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞形</span><span style="font-size:12px;color:var(--text-tertiary)">本地 LLM（固定）</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">片語</span>${_selHtml('comboPhrase', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+        </div>
+        <div class="tool-output" id="comboResult" style="margin-top:var(--s3);display:none"></div>
       </div>
       <div class="grid grid-2 tool-grid">
         <div class="card">
@@ -178,7 +199,7 @@ export function render(s) {
           <div class="card-title">${icon('mic')} 自動抓取發音</div>
           <div class="card-desc">為缺少音標的單字自動補上</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('pronMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam']], 'cambridge')}
+          ${_selHtml('pronMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}
           <button class="btn" onclick="window.__genPronunciations()">${icon('mic')} 開始抓取</button>
         </div>
         <div class="tool-output" id="pronResult" style="margin-top:var(--s3);display:none"></div>
@@ -282,6 +303,35 @@ function renderSpellResult(r) {
 
 // BH-04: module 級 flag 擋重複綁定常駐 document click（仿 lib/custom-select.js G5 _globalDocBound；須在 onMount 外，renderPage 每次導航重跑 onMount 會重生閉包內變數）
 let _toolsCsBound = false;
+
+// ─── 來源記憶（2026-09-08 使用者裁示）：全部來源選單＋組合包收合狀態 ───
+// 存 db setting methodSources（JSON；demo 走記憶體）。恢復時直接讀 DOM 選項
+// 反查 label，不在 JS 另存選項表（render 改選項不用同步這裡）。
+let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool }
+const _SRC_BLOB_KEY = 'methodSources';
+function _saveSrcMem() {
+  const snap = JSON.stringify(_srcMem || {});
+  import('../lib/db.js').then(m => m.setSetting(_SRC_BLOB_KEY, snap)).catch(() => {});
+}
+function _applySrcMem() {
+  if (!_srcMem) return;
+  const sel = _srcMem.selectors || {};
+  for (const [id, val] of Object.entries(sel)) {
+    const p = document.getElementById(id + 'Cs');
+    if (!p) continue;
+    const o = p.querySelector(`.cs-o[data-value="${val}"]`);
+    if (!o) continue;
+    const t = p.querySelector('.cs-t');
+    t.dataset.value = val;
+    if (t.childNodes[0]) t.childNodes[0].textContent = o.textContent;
+    p.querySelectorAll('.cs-o').forEach(c => c.classList.toggle('s', c === o));
+  }
+  if (_srcMem.comboCollapsed) {
+    document.getElementById('comboSrcGrid')?.style.setProperty('display', 'none');
+    const tg = document.getElementById('comboToggle');
+    if (tg) tg.textContent = '展開來源設定 ▸';
+  }
+}
 export function onMount(s) {
   document.getElementById('toolsGoSimulator')?.addEventListener('click', () => s.actions.navigate('simulator'));
   document.getElementById('toolsGoAppLog')?.addEventListener('click', () => s.actions.navigate('app-log'));
@@ -391,6 +441,13 @@ export function onMount(s) {
         t.childNodes[0].textContent = o.textContent;
         p.querySelectorAll('.cs-o').forEach(c => c.classList.toggle('s', c === o));
         p.classList.remove('o');
+        // 來源記憶：任何來源選單（含組合包八組）切換即存
+        if (t.dataset.id) {
+          _srcMem = _srcMem || { selectors: {}, comboCollapsed: false };
+          _srcMem.selectors = _srcMem.selectors || {};
+          _srcMem.selectors[t.dataset.id] = o.dataset.value;
+          _saveSrcMem();
+        }
       }
     });
   }
@@ -447,6 +504,31 @@ export function onMount(s) {
       await setSetting('autofillOverwrite', _autofillOverwrite ? '1' : '0');
     } catch (_) {}
     toast(_autofillOverwrite ? '覆寫模式開：自動補齊將取代已有欄位' : '覆寫模式關：只補缺失欄位', '');
+  });
+
+  // ─── 來源記憶載入＋組合包收合開關（每導航一次跑一次；存檔走 module 級 _srcMem）───
+  import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
+    try {
+      const stored = v ? JSON.parse(v) : null;
+      // 合併：載入完成前使用者已點過選單/收合的話，以手上的為準（防競態洗掉）
+      _srcMem = {
+        selectors: { ...(stored?.selectors || {}), ...(_srcMem?.selectors || {}) },
+        comboCollapsed: _srcMem ? !!_srcMem.comboCollapsed : !!stored?.comboCollapsed,
+      };
+    }
+    catch { _srcMem = _srcMem || { selectors: {}, comboCollapsed: false }; }
+    _applySrcMem();
+  }).catch(() => {});
+  document.getElementById('comboToggle')?.addEventListener('click', () => {
+    const grid = document.getElementById('comboSrcGrid');
+    const tg = document.getElementById('comboToggle');
+    if (!grid || !tg) return;
+    const collapsed = grid.style.display !== 'none';
+    grid.style.display = collapsed ? 'none' : '';
+    tg.textContent = collapsed ? '展開來源設定 ▸' : '收合來源設定 ▾';
+    _srcMem = _srcMem || { selectors: {}, comboCollapsed: false };
+    _srcMem.comboCollapsed = collapsed;
+    _saveSrcMem();
   });
 
   // ─── Part of Speech Generator ────────────────
@@ -1588,6 +1670,288 @@ export function onMount(s) {
     }
     toast(`LLM 片語完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
   }
+
+  // ─── 組合包：一鍵全補（2026-09-08 使用者裁示）───
+  // 只做裸詞（九欄全空；覆寫開＝全量）。每詞各來源最多抓一次（cam英/cam中/
+  // 韋氏/dictapi/tatoeba 快取），九欄拼成一個 patch、一次 editWord。
+  // 各欄單字級寫法照抄同頁九張獨立卡（merge/dedup 語意一致）。
+  function _isBare(w) {
+    const empty = (v) => !v || !String(v).trim();
+    const emptyArr = (a) => !a || !Array.isArray(a) || a.length === 0;
+    return empty(w.pos) && empty(w.definition) && empty(w.pron) && empty(w.example)
+      && emptyArr(w.related) && emptyArr(w.forms)
+      && empty(w.synonym) && empty(w.antonym) && empty(w.phrases);
+  }
+
+  window.__comboFull = async () => {
+    const M = {
+      pos: _getMethod('comboPos', 'cambridge'),
+      example: _getMethod('comboExample', 'dictionary-api'),
+      pron: _getMethod('comboPron', 'cambridge'),
+      related: _getMethod('comboRelated', 'llm'),
+      trans: _getMethod('comboTrans', 'cambridge'),
+      syn: _getMethod('comboSyn', 'merriam'),
+      ant: _getMethod('comboAnt', 'merriam'),
+      phrase: _getMethod('comboPhrase', 'merriam'),
+    };
+    const el = document.getElementById('comboResult');
+    const say = (html) => { if (el) { el.style.display = 'block'; el.innerHTML = html; } };
+    const targets = _ow() ? [...s.state.words] : s.state.words.filter(_isBare);
+    if (!targets.length) {
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() ? '' : '（九欄全空的裸詞）'}！</div>`);
+      return;
+    }
+    const vals = Object.values(M);
+    if (vals.includes('merriam') && _mwKeyMissing()) return;
+    // 詞形固定 LLM → 有 LLM 欄就偵測；連不上則 LLM 欄跳過、其餘照做
+    let llm = null, llmOk = false;
+    if (vals.includes('llm')) {
+      llm = await detectModel('comboResult');
+      llmOk = !!llm;
+      if (!llmOk) toast('連不上 Ollama：LLM 來源的欄位會跳過，其餘照做', '');
+    } else hideLlmRow();
+    const { threshold, count } = _exampleConfig();
+    const CN = { pos: '詞性', example: '例句', pron: '發音', related: '相關詞', forms: '詞形', trans: '翻譯', syn: '同義詞', ant: '反義詞', phrase: '片語' };
+    const stat = {};
+    const bump = (f, k) => { stat[f] = stat[f] || { ok: 0, fail: 0, skip: 0 }; stat[f][k]++; };
+    const taskId = 'combo-full-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '一鍵全補' + _owTag(), targets.length);
+    let doneWords = 0, emptyWords = 0, aborted = false;
+    const queue = [...targets];
+    const quotaHit = (e) => /401|429/.test(String(e?.message || e));
+    const llmJson = async (prompt) => {
+      const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+      const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+      const arr = JSON.parse(cleaned);
+      return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+    };
+    async function fillWord(w) {
+      const patch = {};
+      let usedRemote = false;
+      let camEn = null, camZh = null, mwF = null;
+      const getCamEn = async () => { if (!camEn) { camEn = JSON.parse(await lookupCambridge(w.word)); usedRemote = true; } return camEn; };
+      const getCamZh = async () => { if (!camZh) { camZh = JSON.parse(await lookupCambridge(w.word, 'zh')); usedRemote = true; } return camZh; };
+      const getMw = async () => {
+        if (!mwF) { mwF = await _mwLookup(w.word); usedRemote = true; if (mwF.suggest.length) throw new Error('suggest'); }
+        return mwF;
+      };
+      const abortMw = (e) => { aborted = true; queue.length = 0; toast(_mwErr(e), 'toast-error'); };
+      // ── 詞性 ──
+      try {
+        if (_ow() || !w.pos?.trim()) {
+          if (M.pos === 'merriam') {
+            const f = await getMw();
+            const pos = String(f.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            if (pos) { patch.pos = pos; bump('pos', 'ok'); } else bump('pos', 'fail');
+          } else if (M.pos === 'llm') {
+            if (!llmOk) bump('pos', 'skip');
+            else {
+              const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, `What is/are the part(s) of speech of "${w.word}"? If multiple, list them comma-separated. Return ONLY English POS labels (e.g. noun, verb, adjective, adverb, preposition, conjunction, pronoun, interjection, determiner, article, plural noun), nothing else.`);
+              const pos = _normalizePos(text);
+              if (pos) { patch.pos = pos; bump('pos', 'ok'); } else bump('pos', 'fail');
+            }
+          } else {
+            const data = await getCamEn();
+            const newRaw = [...new Set((data.senses || []).flatMap(x => (x.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
+            const mapped = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean);
+            if (_ow()) {
+              const replaced = mapped.join(', ');
+              if (replaced) { patch.pos = replaced; bump('pos', 'ok'); } else bump('pos', 'fail');
+            } else {
+              const existing = new Set((w.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean));
+              const toAdd = mapped.filter(p => !existing.has(p));
+              if (toAdd.length) { patch.pos = [...existing, ...toAdd].filter(Boolean).join(', '); bump('pos', 'ok'); } else bump('pos', 'fail');
+            }
+          }
+        }
+      } catch (e) { bump('pos', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 例句 ──
+      try {
+        if (_ow() || _countSentences(w.example) < threshold) {
+          let fresh = [];
+          if (M.example === 'merriam') fresh = String((await getMw()).example || '').split('\n').map(x => x.trim()).filter(Boolean);
+          else if (M.example === 'cambridge') {
+            const data = await getCamEn();
+            for (const sense of data.senses || []) for (const ex of sense.examples || []) if (ex) fresh.push(ex.trim());
+          } else if (M.example === 'tatoeba') {
+            const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w.word)}&lang=eng`);
+            if (!res.ok) throw new Error('tatoeba');
+            const body = await res.json();
+            fresh = (body.data || []).map(x => x.text).filter(Boolean);
+          } else if (M.example === 'llm') {
+            if (!llmOk) { bump('example', 'skip'); fresh = null; }
+            else {
+              const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, `Create ${count} short example sentences using the word "${w.word}". Format: one sentence per line, each ending with proper punctuation (. ! ?). Only output the sentences, nothing else.`);
+              fresh = text.split('\n').filter(Boolean).map(l => l.trim()).filter(l => l.length > 5).slice(0, count);
+            }
+          } else {
+            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w.word)}`);
+            if (res.ok) {
+              const data = await res.json();
+              for (const entry of data) for (const m of entry.meanings || []) for (const d of m.definitions || []) if (d.example) fresh.push(d.example.trim());
+            } else throw new Error('dictapi');
+          }
+          if (fresh === null) { /* llm 跳過，已記 skip */ }
+          else {
+            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
+            if (unique.length) {
+              patch.example = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
+              bump('example', 'ok');
+            } else bump('example', 'fail');
+          }
+        }
+      } catch (e) { bump('example', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 發音 ──
+      try {
+        if (_ow() || !w.pron?.trim()) {
+          if (M.pron === 'merriam') {
+            const f = await getMw();
+            if (f.pron) { patch.pron = `/${f.pron.replace(/^\/+|\/+$/g, '')}/`; bump('pron', 'ok'); } else bump('pron', 'fail');
+          } else if (M.pron === 'llm') {
+            if (!llmOk) bump('pron', 'skip');
+            else {
+              const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, `Provide the IPA pronunciation of "${w.word}". Return ONLY the IPA string (e.g. /ˈhɛloʊ/), nothing else.`);
+              const cleaned = (text || '').trim().replace(/^\/+|\/+$/g, '');
+              if (cleaned) { patch.pron = `/${cleaned}/`; bump('pron', 'ok'); } else bump('pron', 'fail');
+            }
+          } else {
+            const data = await getCamEn();
+            const pron = _normalizePron(data.uk_ipa || data.us_ipa);
+            if (pron) { patch.pron = pron; bump('pron', 'ok'); } else bump('pron', 'fail');
+          }
+        }
+      } catch (e) { bump('pron', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 相關詞 ──
+      try {
+        if (_ow() || !w.related?.length) {
+          if (M.related === 'merriam') {
+            const f = await getMw();
+            const rel = [...new Set([...String(f.synonym || '').split(',').map(x => x.trim()).filter(Boolean), ...(f.related || [])])].slice(0, 12);
+            if (rel.length) { patch.related = rel; bump('related', 'ok'); } else bump('related', 'fail');
+          } else {
+            if (!llmOk) bump('related', 'skip');
+            else {
+              const arr = await llmJson(`Return a JSON array of synonyms/similar words for "${w.word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`);
+              if (arr?.length) { patch.related = arr; bump('related', 'ok'); } else bump('related', 'fail');
+            }
+          }
+        }
+      } catch (e) { bump('related', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 詞形（固定 LLM）──
+      try {
+        if (_ow() || !w.forms?.length) {
+          if (!llmOk) bump('forms', 'skip');
+          else {
+            const arr = await llmJson(`Return a JSON array of inflections/derivations (past tense, -ing, -s, past participle) for "${w.word}". Example: ["gets","got","getting"]. Only the JSON array, no markdown.`);
+            if (arr?.length) { patch.forms = arr; bump('forms', 'ok'); } else bump('forms', 'fail');
+          }
+        }
+      } catch (e) { bump('forms', 'fail'); }
+      // ── 翻譯→definition ──
+      try {
+        if (_ow() || !w.definition?.trim()) {
+          if (M.trans === 'llm') {
+            if (!llmOk) bump('trans', 'skip');
+            else {
+              const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, `Give the Traditional Chinese (繁體中文) definition of the English word "${w.word}". Concise, one line. Return ONLY the Chinese definition, nothing else.`);
+              const t = (text || '').trim().split('\n')[0].trim();
+              if (t) { patch.definition = t; bump('trans', 'ok'); } else bump('trans', 'fail');
+            }
+          } else {
+            const data = await getCamZh();
+            const zh = [];
+            for (const sense of data.senses || []) {
+              const t = (sense.translation || '').trim() || (sense.definition || '').trim();
+              if (t && !zh.includes(t)) zh.push(t);
+            }
+            const text = zh.slice(0, 3).join('\n');
+            if (text) { patch.definition = text; bump('trans', 'ok'); } else bump('trans', 'fail');
+          }
+        }
+      } catch (e) { bump('trans', 'fail'); }
+      // ── 同義詞 ──
+      try {
+        if (_ow() || !w.synonym?.trim()) {
+          if (M.syn === 'merriam') {
+            const f = await getMw();
+            const fresh = String(f.synonym || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 12);
+            if (fresh.length) { patch.synonym = _ow() ? fresh.join(', ') : _mergeComma(w.synonym, fresh); bump('syn', 'ok'); } else bump('syn', 'fail');
+          } else {
+            if (!llmOk) bump('syn', 'skip');
+            else {
+              const arr = await llmJson(`Return a JSON array of synonyms for "${w.word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`);
+              if (arr?.length) { patch.synonym = _ow() ? [...new Set(arr)].join(', ') : _mergeComma(w.synonym, arr); bump('syn', 'ok'); } else bump('syn', 'fail');
+            }
+          }
+        }
+      } catch (e) { bump('syn', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 反義詞 ──
+      try {
+        if (_ow() || !w.antonym?.trim()) {
+          if (M.ant === 'merriam') {
+            const f = await getMw();
+            const fresh = String(f.antonym || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 12);
+            if (fresh.length) { patch.antonym = _ow() ? fresh.join(', ') : _mergeComma(w.antonym, fresh); bump('ant', 'ok'); } else bump('ant', 'fail');
+          } else {
+            if (!llmOk) bump('ant', 'skip');
+            else {
+              const arr = await llmJson(`Return a JSON array of antonyms for "${w.word}". Example: ["lose","surrender"]. Only the JSON array, no markdown.`);
+              if (arr?.length) { patch.antonym = _ow() ? [...new Set(arr)].join(', ') : _mergeComma(w.antonym, arr); bump('ant', 'ok'); } else bump('ant', 'fail');
+            }
+          }
+        }
+      } catch (e) { bump('ant', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      // ── 片語 ──
+      try {
+        if (_ow() || !w.phrases?.trim()) {
+          if (M.phrase === 'merriam') {
+            const f = await getMw();
+            const fresh = String(f.phrases || '').split('\n').map(x => x.trim()).filter(Boolean);
+            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.phrases, fresh);
+            if (unique.length) {
+              patch.phrases = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
+              bump('phrase', 'ok');
+            } else bump('phrase', 'fail');
+          } else {
+            if (!llmOk) bump('phrase', 'skip');
+            else {
+              const arr = await llmJson(`Return a JSON array of 3-5 common English phrases or collocations containing the word "${w.word}". Example: ["take advantage of", "make use of"]. Only the JSON array, no markdown.`);
+              if (arr?.length) {
+                const unique = _ow() ? arr : _dedupSentences(w.phrases, arr);
+                if (unique.length) {
+                  patch.phrases = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
+                  bump('phrase', 'ok');
+                } else bump('phrase', 'fail');
+              } else bump('phrase', 'fail');
+            }
+          }
+        }
+      } catch (e) { bump('phrase', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
+      if (usedRemote) await new Promise(r => setTimeout(r, 400));
+      return patch;
+    }
+    const CON = 3;
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0 && !aborted) {
+        const w = queue.shift();
+        try {
+          const patch = await fillWord(w);
+          if (patch === null) continue; // quota 中止
+          if (Object.keys(patch).length) { await s.actions.editWord(w.id, patch); doneWords++; }
+          else emptyWords++;
+        } catch (e) { emptyWords++; }
+        s.actions.updateBackgroundTask(taskId, doneWords + emptyWords, targets.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `一鍵全補完成：${doneWords} 詞已填${emptyWords ? `，${emptyWords} 詞無新內容` : ''}${aborted ? '（額度中止）' : ''}` });
+    const lines = Object.entries(CN).map(([k, label]) => {
+      const st = stat[k];
+      if (!st || (!st.ok && !st.fail && !st.skip)) return `<div>${label}：未執行</div>`;
+      return `<div>${label}：${st.ok} 成功${st.fail ? ` / ${st.fail} 失敗` : ''}${st.skip ? ` / ${st.skip} 跳過（無 LLM）` : ''}</div>`;
+    }).join('');
+    say(`<div style="color:var(--green)">${icon('check')} ${doneWords} 詞已全補${emptyWords ? `，${emptyWords} 詞無新內容` : ''}${aborted ? '（額度中止）' : ''}</div><div style="margin-top:4px;font-size:12px;color:var(--text-secondary)">${lines}</div>`);
+    toast(`一鍵全補完成：${doneWords} 成功${emptyWords ? `，${emptyWords} 無新內容` : ''}`, aborted ? '' : 'toast-success');
+  };
 
   window.__lookupCambridge = async () => {
     const word = document.getElementById('cambridgeWord')?.value?.trim();
