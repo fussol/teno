@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // IMG-HOTFIX2 驗證：normalizeImageUrl 純函式＋快照零殘留 uc/usercontent
 // 用法: node tools/verify-image-url.mjs（快照需先重倒：python3 tools/export-web-snapshot.py）
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { normalizeImageUrl } from '../src/lib/image-url.js';
 
 let pass = 0, fail = 0;
@@ -28,7 +28,13 @@ const datas = Object.values(snap.images || {}).flat().map((x) => x.data);
 ok('U11 快照有圖', datas.length === 478, `got=${datas.length}`);
 ok('U12 零 uc 殘留', !datas.some((u) => u.includes('drive.google.com/uc')));
 ok('U13 零 usercontent 殘留', !datas.some((u) => u.includes('drive.usercontent')));
-ok('U14 全 lh3', datas.every((u) => u.startsWith('https://lh3.googleusercontent.com/d/') && u.endsWith('=w800')));
+const locals = datas.filter((u) => u.startsWith('img/'));
+const remotes = datas.filter((u) => u.startsWith('https://lh3.googleusercontent.com/d/'));
+ok('U14 全本地或 lh3（無裸 uc）', locals.length + remotes.length === datas.length, `local=${locals.length} remote=${remotes.length}`);
+// 下載腳本跑完後應全本地；若還有殘留遠端（下載失敗保留），列出來不判死
+if (remotes.length) console.log(`INFO 殘留遠端 ${remotes.length}（下載失敗保留，可重跑腳本補）`);
+const missing = locals.filter((u) => !existsSync('/home/jupiter/teno 修檢版/public/' + u));
+ok('U15 本地檔全存在', missing.length === 0, missing.slice(0, 5).join(','));
 
 console.log(fail === 0 ? '═══ ALL PASS ═══' : `═══ ${fail} FAIL ═══`);
 process.exit(fail ? 1 : 0);

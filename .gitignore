@@ -10,6 +10,7 @@ src-tauri/target/
 *.sqlite
 # WEB-DEMO 真資料快照（本機私密，不進版本庫；vite 會從 public/ 拷進 dist/）
 public/real-data.json
+public/img/
 .DS_Store
 src-tauri/resources/piper/
 src-tauri/gen/android/app/src/main/assets/
