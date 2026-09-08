@@ -11,7 +11,8 @@ import { toast } from '../lib/toast.js';
 import { speak, stopSpeech } from '../lib/tts.js';
 import { isMobile } from '../lib/platform.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
-import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
+import { fetchGet, fetchLLM, lookupCambridge, lookupMerriam } from '../lib/api.js';
+import { merriamToFields } from '../lib/merriam.js';
 import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capList, limitNote, limitSelectHtml } from '../lib/display-limit.js';
 
 // 字庫顯示上限（可調＋記憶：存 db settings.browserDisplayLimit；0=全部）
@@ -936,7 +937,8 @@ function openModal(s, word) {
         </div>
         <div class="form-group">
           <label class="form-label">片語</label>
-          <textarea class="form-input" id="fPhrases" rows="2" style="resize:vertical" placeholder="片語與習語（一行一筆）">${escapeHtml(word?.phrases || '')}</textarea>
+          <div style="display:flex;gap:4px"><input class="form-input" id="fPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）" style="flex:1"><button class="btn btn-sm" id="btnFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fPhrasesChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">字本</label>
@@ -1072,6 +1074,8 @@ function openModal(s, word) {
   const derivChips = _tagInput('fDerivativeChips', 'fDerivatives', 'pill-chip', word?.derivative || '', ',', ', ', _pillStyleB);
   const relChips = _tagInput('fRelatedChips', 'fRelated', 'pill-chip', (word?.related || []).join(', '), ',', ', ', _pillStyleB);
   const formsChips = _tagInput('fFormsChips', 'fForms', 'pill-chip', (word?.forms || []).join(', '), ',', ', ', _pillStyleB);
+  // 片語膠囊（一行一筆，換行模式同例句；韋氏 phrases 以 \n 分隔天然相容）
+  const phrasesChips = _tagInput('fPhrasesChips', 'fPhrases', 'pill-chip', word?.phrases || '', null, '\n', _pillStyleB);
 
   const close = () => document.getElementById('wordModal')?.remove();
   document.getElementById('modalClose')?.addEventListener('click', close);
@@ -1114,7 +1118,7 @@ function openModal(s, word) {
     if (defEl && defEl.value.trim()) { _defChips.append(defEl.value.trim()); defEl.value = ''; }
     if (exEl && exEl.value.trim()) { exChips.append(exEl.value.trim()); exEl.value = ''; }
     // 統一膠囊：殘留輸入框內容 Enter 同款併入膠囊（防使用者沒按 Enter 就存檔）
-    for (const [el, ch] of [['fSynonyms', synChips], ['fAntonyms', antChips], ['fDerivatives', derivChips], ['fRelated', relChips], ['fForms', formsChips]]) {
+    for (const [el, ch] of [['fSynonyms', synChips], ['fAntonyms', antChips], ['fDerivatives', derivChips], ['fRelated', relChips], ['fForms', formsChips], ['fPhrases', phrasesChips]]) {
       const e2 = document.getElementById(el);
       if (e2 && e2.value.trim()) { ch.append(e2.value.trim()); e2.value = ''; }
     }
@@ -1132,7 +1136,7 @@ function openModal(s, word) {
       derivative: derivChips.getVal(),
       etymology: document.getElementById('fEtymology')?.value.trim() || '',
       syllables: document.getElementById('fSyllables')?.value.trim() || '',
-      phrases: document.getElementById('fPhrases')?.value.trim() || '',
+      phrases: phrasesChips.getVal(),
       deck: document.getElementById('fDeck')?.value || 'Default',
       tags: Array.from(tagCbs).map(cb => cb.value),
     };
@@ -1184,6 +1188,13 @@ function openModal(s, word) {
     const w = document.getElementById('fWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     llmFillForms('fForms', w);
+  });
+
+  // 片語 sparkle：韋氏優先（有 key），無 key 走 LLM
+  document.getElementById('btnFillPhrases')?.addEventListener('click', () => {
+    const w = document.getElementById('fWord')?.value.trim();
+    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
+    mwFillPhrases('fPhrases', w);
   });
 
   document.getElementById('btnFillExample')?.addEventListener('click', async () => {
@@ -1292,12 +1303,14 @@ function openModal(s, word) {
       if (id === 'fPos') return _getPosVal();
       if (id === 'fDefinition') return _defChips.getVal();
       if (id === 'fExample') return exChips.getVal();
+      if (id === 'fPhrases') return phrasesChips.getVal();
       return document.getElementById(id)?.value?.trim() || '';
     };
     const s = (id, val) => {
       if (!val) return;
       if (id === 'fDefinition') { if (!g('fDefinition')) _defChips.setVal(val); }
       else if (id === 'fExample') { if (!g('fExample')) exChips.setVal(val); }
+      else if (id === 'fPhrases') { if (!g('fPhrases')) phrasesChips.setVal(val); }
       else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
     };
     const chain = getChain();
@@ -1340,9 +1353,10 @@ function openModal(s, word) {
           }
         } catch (e) {}
       } else if (src === 'llm') {
-        if (!g('fDefinition') || !g('fPos') || !g('fPron') || !g('fExample') || !g('fRelated') || !g('fForms')) {
+        if (!g('fDefinition') || !g('fPos') || !g('fPron') || !g('fExample') || !g('fRelated') || !g('fForms') || !g('fSyllables') || !g('fEtymology') || !g('fPhrases')) {
           try {
-            const baseUrl = (document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
+            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
+            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
             const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
             const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
             if (models.length) {
@@ -1368,7 +1382,27 @@ function openModal(s, word) {
               await Promise.all([
                 llmFillRelated('fRelated', w),
                 llmFillForms('fForms', w),
-                llmFillSynAntDeriv(w)
+                llmFillSynAntDeriv(w),
+                mwFillPhrases('fPhrases', w),
+                (async () => {
+                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
+                  const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
+                  if (!g('fSyllables')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `Split the English word "${w}" into syllables joined by "·" (e.g. dic·tion·a·ry). Return ONLY the syllabified word, nothing else.`);
+                      if (t) s('fSyllables', t.trim());
+                    } catch (_) {}
+                  }
+                  if (!g('fEtymology')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
+                      if (t) s('fEtymology', t.trim());
+                    } catch (_) {}
+                  }
+                })()
               ]);
             }
           } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
@@ -1376,6 +1410,8 @@ function openModal(s, word) {
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
+    try { await mwFillExtra(s, g, w); } catch (_) {}
     _lastAutoFilled = w;
   };
 
@@ -1390,7 +1426,7 @@ function openModal(s, word) {
     chip.style.borderColor = chip.classList.contains('selected') ? 'var(--accent)' : 'var(--border)';
   });
 
-  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fExample', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fRelated', 'fForms', 'fDeck'];
+  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fExample', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fRelated', 'fForms', 'fSyllables', 'fEtymology', 'fPhrases', 'fDeck'];
 
   document.getElementById('wordModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -1422,6 +1458,57 @@ function openModal(s, word) {
       renderInPlace(s);
     });
   }
+}
+
+/** 韋氏新三欄一鍵（modal 版；韋氏優先、無 key 走 LLM；只填空欄） */
+async function mwFillExtra(s, g, word) {
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      if (f) {
+        if (f.syllables) s('fSyllables', f.syllables);
+        if (f.etymology) s('fEtymology', f.etymology);
+        if (f.phrases) s('fPhrases', f.phrases);
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
+  // 無 key：LLM 補片語（音節/字源已在 llm 分支補過，這裡只補片語）
+  try { await mwFillPhrases('fPhrases', word); } catch (_) {}
+}
+
+/** 片語 sparkle：韋氏優先（有 key），無 key 走 LLM；只填空欄 */
+async function mwFillPhrases(inputId, word) {
+  const host = document.getElementById(inputId + 'Chips');
+  const cur = host?._tagInputApi ? host._tagInputApi.getVal() : (document.getElementById(inputId)?.value.trim() || '');
+  if (cur) return;
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      if (f?.phrases) {
+        if (host && host._tagInputApi) host._tagInputApi.setVal(f.phrases);
+        else document.getElementById(inputId).value = f.phrases;
+        toast('已從韋氏補上片語', 'toast-success');
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
+  try {
+    const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
+    const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
+    const text = await fetchLLM(`${baseUrl}/api/generate`, model,
+      `List 3-5 common English phrases or collocations using the word "${word}", one per line. Return ONLY the phrases, nothing else.`
+    );
+    if (text && text.trim()) {
+      const val = [...new Set(text.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n');
+      if (host && host._tagInputApi) host._tagInputApi.setVal(val);
+      else document.getElementById(inputId).value = val;
+    }
+  } catch (e) { toast('片語產生失敗: ' + e, 'toast-error'); }
 }
 
 // ─── LLM auto-fill for related and forms ───────────────────────

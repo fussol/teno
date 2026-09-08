@@ -5,7 +5,8 @@ import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
 import { speak, stopSpeech } from '../lib/tts.js';
-import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
+import { fetchGet, fetchLLM, lookupCambridge, lookupMerriam } from '../lib/api.js';
+import { merriamToFields } from '../lib/merriam.js';
 import { isMobile } from '../lib/platform.js';
 import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capList, limitNote, limitSelectHtml } from '../lib/display-limit.js';
 
@@ -483,6 +484,16 @@ function openAddModal(s) {
           <textarea class="form-input" id="deckAddDesc" rows="2" placeholder="補充說明、記憶技巧..." style="resize:vertical"></textarea>
         </div>
         <div class="form-group">
+          <label class="form-label">相關詞</label>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckAddRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillRelated" type="button" title="LLM 自動產生相關詞">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddRelatedChips"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">詞形變化</label>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckAddForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillForms" type="button" title="LLM 自動產生詞形變化">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddFormsChips"></div>
+        </div>
+        <div class="form-group">
           <label class="form-label">相似詞</label>
           <div style="display:flex;gap:4px"><input class="form-input" id="deckAddSynonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillSynonym" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddSynonymChips"></div>
@@ -498,14 +509,17 @@ function openAddModal(s) {
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddDerivativeChips"></div>
         </div>
         <div class="form-group">
-          <label class="form-label">相關詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckAddRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillRelated" type="button" title="LLM 自動產生相關詞">${icon('sparkle')}</button></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddRelatedChips"></div>
+          <label class="form-label">音節</label>
+          <input class="form-input" id="deckAddSyllables" placeholder="例：dic·tion·a·ry">
         </div>
         <div class="form-group">
-          <label class="form-label">詞形變化</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckAddForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillForms" type="button" title="LLM 自動產生詞形變化">${icon('sparkle')}</button></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddFormsChips"></div>
+          <label class="form-label">字源</label>
+          <textarea class="form-input" id="deckAddEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用年份"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">片語</label>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckAddPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddPhrasesChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">字本</label>
@@ -655,6 +669,8 @@ function openAddModal(s) {
   const deckDerivChips = _tagInput('deckAddDerivativeChips', 'deckAddDerivative', 'pill-chip', '', ',', ', ', _pillStyle);
   const deckRelChips = _tagInput('deckAddRelatedChips', 'deckAddRelated', 'pill-chip', '', ',', ', ', _pillStyle);
   const deckFormsChips = _tagInput('deckAddFormsChips', 'deckAddForms', 'pill-chip', '', ',', ', ', _pillStyle);
+  // 片語膠囊（一行一筆，換行模式同例句）
+  const deckPhrasesChips = _tagInput('deckAddPhrasesChips', 'deckAddPhrases', 'pill-chip', '', null, '\n', _pillStyle);
 
   // ── POS chips ───
   const _posCN = {noun:'名詞',verb:'動詞',adjective:'形容詞',adverb:'副詞',preposition:'介係詞',conjunction:'連接詞',pronoun:'代名詞',interjection:'感嘆詞',exclamation:'感嘆詞',determiner:'限定詞',article:'冠詞',phrase:'片語',idiom:'慣用語',suffix:'後綴',prefix:'前綴',abbreviation:'縮寫','plural noun':'複數名詞'};
@@ -716,6 +732,13 @@ function openAddModal(s) {
   // ── Save handler ───
   document.getElementById('deckAddSave')?.addEventListener('click', async () => {
     const tagCbs = document.querySelectorAll('#deckAddTagGroup .deck-add-tag-checkbox:checked');
+    // 殘留沖洗：沒按 Enter 的輸入框內容併入膠囊（片語換行模式：整段一切行併入）
+    for (const [el, ch] of [['deckAddSynonym', deckSynChips], ['deckAddAntonym', deckAntChips], ['deckAddDerivative', deckDerivChips], ['deckAddRelated', deckRelChips], ['deckAddForms', deckFormsChips]]) {
+      const e2 = document.getElementById(el);
+      if (e2 && e2.value.trim()) { ch.append(e2.value.trim()); e2.value = ''; }
+    }
+    { const e2 = document.getElementById('deckAddPhrases');
+      if (e2 && e2.value.trim()) { for (const line of e2.value.split('\n').map(x => x.trim()).filter(Boolean)) deckPhrasesChips.append(line); e2.value = ''; } }
     const data = {
       word: document.getElementById('deckAddWord')?.value.trim() || '',
       definition: deckDefChips.getVal() || document.getElementById('deckAddDef')?.value.trim() || '',
@@ -728,6 +751,9 @@ function openAddModal(s) {
       derivative: deckDerivChips.getVal(),
       related: deckRelChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       forms: deckFormsChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
+      etymology: document.getElementById('deckAddEtymology')?.value.trim() || '',
+      syllables: document.getElementById('deckAddSyllables')?.value.trim() || '',
+      phrases: deckPhrasesChips.getVal(),
       deck: document.getElementById('deckAddDeck')?.value || 'Default',
       tags: Array.from(tagCbs).map(cb => cb.value),
     };
@@ -777,12 +803,14 @@ function openAddModal(s) {
       if (id === 'deckAddPos') return _getPosVal();
       if (id === 'deckAddDef') return deckDefChips.getVal() || document.getElementById('deckAddDef')?.value.trim() || '';
       if (id === 'deckAddExample') return deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '';
+      if (id === 'deckAddPhrases') return deckPhrasesChips.getVal();
       return document.getElementById(id)?.value?.trim() || '';
     };
     const s = (id, val) => {
       if (!val) return;
       if (id === 'deckAddDef') { if (!g('deckAddDef')) deckDefChips.setVal(val); }
       else if (id === 'deckAddExample') { if (!g('deckAddExample')) deckExChips.setVal(val); }
+      else if (id === 'deckAddPhrases') { if (!g('deckAddPhrases')) deckPhrasesChips.setVal(val); }
       else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
     };
     const chain = getChain();
@@ -823,9 +851,10 @@ function openAddModal(s) {
           }
         } catch (e) {}
       } else if (src === 'llm') {
-        if (!g('deckAddDef') || !g('deckAddPos') || !g('deckAddPron') || !g('deckAddExample') || !g('deckAddRelated') || !g('deckAddForms')) {
+        if (!g('deckAddDef') || !g('deckAddPos') || !g('deckAddPron') || !g('deckAddExample') || !g('deckAddRelated') || !g('deckAddForms') || !g('deckAddSyllables') || !g('deckAddEtymology') || !g('deckAddPhrases')) {
           try {
-            const baseUrl = (document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
+            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
+            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
             const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
             const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
             if (models.length) {
@@ -851,7 +880,27 @@ function openAddModal(s) {
               await Promise.all([
                 llmFillRelated('deckAddRelated', w),
                 llmFillForms('deckAddForms', w),
-                llmFillSynAntDeriv('deckAdd', w)
+                llmFillSynAntDeriv('deckAdd', w),
+                mwFillPhrases('deckAdd', 'deckAddPhrases', w),
+                (async () => {
+                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
+                  const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
+                  if (!g('deckAddSyllables')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `Split the English word "${w}" into syllables joined by "·" (e.g. dic·tion·a·ry). Return ONLY the syllabified word, nothing else.`);
+                      if (t) s('deckAddSyllables', t.trim());
+                    } catch (_) {}
+                  }
+                  if (!g('deckAddEtymology')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
+                      if (t) s('deckAddEtymology', t.trim());
+                    } catch (_) {}
+                  }
+                })()
               ]);
             }
           } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
@@ -859,6 +908,8 @@ function openAddModal(s) {
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
+    try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {}
     if (btn) btn.disabled = false;
     _lastAutoFilled = w;
   };
@@ -868,7 +919,7 @@ function openAddModal(s) {
     if (w && w !== _lastAutoFilled) autoFillAll();
   });
 
-  const addFieldIds = ['deckAddWord', 'deckAddDef', 'deckAddPron', 'deckAddExample', 'deckAddSynonym', 'deckAddAntonym', 'deckAddDerivative', 'deckAddRelated', 'deckAddForms', 'deckAddDeck'];
+  const addFieldIds = ['deckAddWord', 'deckAddDef', 'deckAddPron', 'deckAddExample', 'deckAddRelated', 'deckAddForms', 'deckAddSynonym', 'deckAddAntonym', 'deckAddDerivative', 'deckAddSyllables', 'deckAddEtymology', 'deckAddPhrases', 'deckAddDeck'];
   document.getElementById('deckAddModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const el = e.target;
@@ -885,17 +936,12 @@ function openAddModal(s) {
     }
   });
 
-  // ── Fill related / forms ───
-  document.getElementById('deckAddFillRelated')?.addEventListener('click', () => {
+  // ── Fill related / forms（deckAddSuggest 段已綁過，此處只綁片語；重複綁定會打兩次 LLM）
+  // 片語 sparkle：韋氏優先（有 key），無 key 走 LLM
+  document.getElementById('deckAddFillPhrases')?.addEventListener('click', () => {
     const w = document.getElementById('deckAddWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
-    llmFillRelated('deckAddRelated', w);
-  });
-
-  document.getElementById('deckAddFillForms')?.addEventListener('click', () => {
-    const w = document.getElementById('deckAddWord')?.value.trim();
-    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
-    llmFillForms('deckAddForms', w);
+    mwFillPhrases('deckAdd', 'deckAddPhrases', w);
   });
 
   // ── Example fill ───
@@ -980,6 +1026,16 @@ function openEditModal(s, id) {
           <textarea class="form-input" id="deckEditDesc" rows="2" style="resize:vertical">${escapeHtml(w.description || '')}</textarea>
         </div>
         <div class="form-group">
+          <label class="form-label">相關詞</label>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.related || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillRelated" type="button">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditRelatedChips"></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">詞形變化</label>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.forms || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillForms" type="button">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditFormsChips"></div>
+        </div>
+        <div class="form-group">
           <label class="form-label">相似詞</label>
           <div style="display:flex;gap:4px"><input class="form-input" id="deckEditSynonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr(w.synonym || '')}" style="flex:1"><button class="btn btn-sm" id="deckEditFillSynonym" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditSynonymChips"></div>
@@ -1004,17 +1060,8 @@ function openEditModal(s, id) {
         </div>
         <div class="form-group">
           <label class="form-label">片語</label>
-          <textarea class="form-input" id="deckEditPhrases" rows="2" style="resize:vertical">${escapeHtml(w.phrases || '')}</textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">相關詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.related || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillRelated" type="button">${icon('sparkle')}</button></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditRelatedChips"></div>
-        </div>
-        <div class="form-group">
-          <label class="form-label">詞形變化</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.forms || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillForms" type="button">${icon('sparkle')}</button></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditFormsChips"></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditPhrasesChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">字本</label>
@@ -1156,6 +1203,8 @@ function openEditModal(s, id) {
   const editDerivChips = _tagInputEdit('deckEditDerivativeChips', 'deckEditDerivative', 'pill-chip', w.derivative || '', ',', ', ', _pillStyleE);
   const editRelChips = _tagInputEdit('deckEditRelatedChips', 'deckEditRelated', 'pill-chip', (w.related || []).join(', '), ',', ', ', _pillStyleE);
   const editFormsChips = _tagInputEdit('deckEditFormsChips', 'deckEditForms', 'pill-chip', (w.forms || []).join(', '), ',', ', ', _pillStyleE);
+  // 片語膠囊（一行一筆，換行模式同例句；既有值預載入）
+  const editPhrasesChips = _tagInputEdit('deckEditPhrasesChips', 'deckEditPhrases', 'pill-chip', w.phrases || '', null, '\n', _pillStyleE);
 
   // ── POS chips ───
   const _getEditPosVal = () => Array.from(document.querySelectorAll('#deckEditPosGroup .pos-chip.selected')).map(el => el.dataset.pos).join(', ');
@@ -1218,12 +1267,14 @@ function openEditModal(s, id) {
       if (id === 'deckEditPos') return _getEditPosVal();
       if (id === 'deckEditDef') return editDefChips.getVal() || document.getElementById('deckEditDef')?.value.trim() || '';
       if (id === 'deckEditExample') return editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '';
+      if (id === 'deckEditPhrases') return editPhrasesChips.getVal();
       return document.getElementById(id)?.value?.trim() || '';
     };
     const s = (id, val) => {
       if (!val) return;
       if (id === 'deckEditDef') { if (!g('deckEditDef')) editDefChips.setVal(val); }
       else if (id === 'deckEditExample') { if (!g('deckEditExample')) editExChips.setVal(val); }
+      else if (id === 'deckEditPhrases') { if (!g('deckEditPhrases')) editPhrasesChips.setVal(val); }
       else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
     };
     let cambridgeFailed = false;
@@ -1261,9 +1312,10 @@ function openEditModal(s, id) {
           }
         } catch (e) {}
       } else if (src === 'llm') {
-        if (!g('deckEditDef') || !g('deckEditPos') || !g('deckEditPron') || !g('deckEditExample') || !g('deckEditRelated') || !g('deckEditForms')) {
+        if (!g('deckEditDef') || !g('deckEditPos') || !g('deckEditPron') || !g('deckEditExample') || !g('deckEditRelated') || !g('deckEditForms') || !g('deckEditSyllables') || !g('deckEditEtymology') || !g('deckEditPhrases')) {
           try {
-            const baseUrl = (document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
+            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
+            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
             const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
             const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
             if (models.length) {
@@ -1280,13 +1332,39 @@ function openEditModal(s, id) {
                 const t = await fetchLLM(`${baseUrl}/api/generate`, model, `Generate a short English example sentence using "${w}". Return ONLY the sentence, nothing else.`);
                 if (t) s('deckEditExample', t.trim());
               }
-              await Promise.all([llmFillRelated('deckEditRelated', w), llmFillForms('deckEditForms', w), llmFillSynAntDeriv('deckEdit', w)]);
+              await Promise.all([
+                llmFillRelated('deckEditRelated', w),
+                llmFillForms('deckEditForms', w),
+                llmFillSynAntDeriv('deckEdit', w),
+                mwFillPhrases('deckEdit', 'deckEditPhrases', w),
+                (async () => {
+                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄，韋氏步驟另行覆蓋更準的值）
+                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
+                  const mdl = store.state.ollamaModel || (model || 'qwen2.5-coder:7b');
+                  if (!g('deckEditSyllables')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `Split the English word "${w}" into syllables joined by "·" (e.g. dic·tion·a·ry). Return ONLY the syllabified word, nothing else.`);
+                      if (t) s('deckEditSyllables', t.trim());
+                    } catch (_) {}
+                  }
+                  if (!g('deckEditEtymology')) {
+                    try {
+                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
+                      if (t) s('deckEditEtymology', t.trim());
+                    } catch (_) {}
+                  }
+                })()
+              ]);
             }
           } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
         }
       }
     }
     if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    // 韋氏新三欄：有 key 就跑（音節/字源/片語只填空欄；LLM 填過的值不覆蓋）
+    try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {}
     if (btn) btn.disabled = false;
     _editLastAutoFilled = w;
   };
@@ -1296,7 +1374,7 @@ function openEditModal(s, id) {
     if (w && w !== _editLastAutoFilled) editAutoFillAll();
   });
 
-  const editFieldIds = ['deckEditWord', 'deckEditDef', 'deckEditPron', 'deckEditExample', 'deckEditSynonym', 'deckEditAntonym', 'deckEditDerivative', 'deckEditRelated', 'deckEditForms', 'deckEditDeck'];
+  const editFieldIds = ['deckEditWord', 'deckEditDef', 'deckEditPron', 'deckEditExample', 'deckEditRelated', 'deckEditForms', 'deckEditSynonym', 'deckEditAntonym', 'deckEditDerivative', 'deckEditSyllables', 'deckEditEtymology', 'deckEditPhrases', 'deckEditDeck'];
   document.getElementById('deckEditModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const el = e.target;
@@ -1341,6 +1419,12 @@ function openEditModal(s, id) {
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     llmFillForms('deckEditForms', w);
   });
+  // 片語 sparkle：韋氏優先（有 key），無 key 走 LLM
+  document.getElementById('deckEditFillPhrases')?.addEventListener('click', () => {
+    const w = document.getElementById('deckEditWord')?.value.trim();
+    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
+    mwFillPhrases('deckEdit', 'deckEditPhrases', w);
+  });
   // 相似/反義/衍生物 sparkle（單鈕觸發 → 三欄空欄一包填入）
   for (const btn of ['deckEditFillSynonym', 'deckEditFillAntonym', 'deckEditFillDerivative']) {
     document.getElementById(btn)?.addEventListener('click', () => {
@@ -1353,6 +1437,13 @@ function openEditModal(s, id) {
   // ── Save handler ───
   document.getElementById('deckEditSave')?.addEventListener('click', async () => {
     const tagCbs = document.querySelectorAll('#deckEditTagGroup .deck-tag-checkbox:checked');
+    // 殘留沖洗：沒按 Enter 的輸入框內容併入膠囊（片語換行模式：整段一切行併入）
+    for (const [el, ch] of [['deckEditSynonym', editSynChips], ['deckEditAntonym', editAntChips], ['deckEditDerivative', editDerivChips], ['deckEditRelated', editRelChips], ['deckEditForms', editFormsChips]]) {
+      const e2 = document.getElementById(el);
+      if (e2 && e2.value.trim()) { ch.append(e2.value.trim()); e2.value = ''; }
+    }
+    { const e2 = document.getElementById('deckEditPhrases');
+      if (e2 && e2.value.trim()) { for (const line of e2.value.split('\n').map(x => x.trim()).filter(Boolean)) editPhrasesChips.append(line); e2.value = ''; } }
     const wordVal = document.getElementById('deckEditWord')?.value.trim() || '';
     if (!wordVal) { toast('請輸入單字', 'toast-error'); return; }
     const lowerWord = wordVal.toLowerCase();
@@ -1370,7 +1461,7 @@ function openEditModal(s, id) {
       derivative: editDerivChips.getVal(),
       etymology: document.getElementById('deckEditEtymology')?.value.trim() || '',
       syllables: document.getElementById('deckEditSyllables')?.value.trim() || '',
-      phrases: document.getElementById('deckEditPhrases')?.value.trim() || '',
+      phrases: editPhrasesChips.getVal(),
       related: editRelChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       forms: editFormsChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       deck: document.getElementById('deckEditDeck')?.value || 'Default',
@@ -1940,6 +2031,58 @@ async function llmFillSynAntDeriv(prefix, word) {
       }
     } catch (e) { /* 單欄失敗不擋其他欄 */ }
   }));
+}
+
+/** 韋氏新三欄一鍵（deck modal 版；韋氏優先、無 key 走 LLM；只填空欄）。
+ *  prefix: 'deckAdd' | 'deckEdit'；s/g 為該 modal 的 set/get 閉包 */
+async function mwFillExtra(prefix, s, g, word) {
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      if (f) {
+        if (f.syllables) s(`${prefix}Syllables`, f.syllables);
+        if (f.etymology) s(`${prefix}Etymology`, f.etymology);
+        if (f.phrases) s(`${prefix}Phrases`, f.phrases);
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
+  // 無 key：LLM 補片語（音節/字源已在 llm 分支補過，這裡只補片語）
+  try { await mwFillPhrases(prefix, `${prefix}Phrases`, word); } catch (_) {}
+}
+
+/** 片語 sparkle：韋氏優先（有 key），無 key 走 LLM；只填空欄 */
+async function mwFillPhrases(prefix, inputId, word) {
+  const host = document.getElementById(inputId + 'Chips');
+  const cur = host?._tagInputApi ? host._tagInputApi.getVal() : (document.getElementById(inputId)?.value.trim() || '');
+  if (cur) return;
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      if (f?.phrases) {
+        if (host && host._tagInputApi) host._tagInputApi.setVal(f.phrases);
+        else document.getElementById(inputId).value = f.phrases;
+        toast('已從韋氏補上片語', 'toast-success');
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
+  try {
+    const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
+    const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
+    const text = await fetchLLM(`${baseUrl}/api/generate`, model,
+      `List 3-5 common English phrases or collocations using the word "${word}", one per line. Return ONLY the phrases, nothing else.`
+    );
+    if (text && text.trim()) {
+      const val = [...new Set(text.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n');
+      if (host && host._tagInputApi) host._tagInputApi.setVal(val);
+      else document.getElementById(inputId).value = val;
+    }
+  } catch (e) { toast('片語產生失敗: ' + e, 'toast-error'); }
 }
 
 function batchMoveToDeck(s) {
