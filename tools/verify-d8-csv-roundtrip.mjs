@@ -21,8 +21,8 @@ const T = (name, cond, extra = '') => {
 };
 const dir = mkdtempSync(join(tmpdir(), 'd8-verify-'));
 
-// 合同 header（app buildCSV src/core/import.js:229 逐字）
-const CONTRACT_HEADER = 'word,definition,pos,pron,example,deck,image,description,tags,related,forms,synonym,antonym,derivative,examples';
+// 合同 header（app buildCSV src/core/import.js:241 逐字；18 欄＝15＋LOG-MW 新三欄）
+const CONTRACT_HEADER = 'word,definition,pos,pron,example,deck,image,description,tags,related,forms,synonym,antonym,derivative,examples,etymology,syllables,phrases';
 const OLD_HEADER = 'word,definition,part_of_speech,pronunciation,example,deck,tags';
 const D8_MARK = '// D8: CSV 合同對齊';
 // 負控制重建：區段起訖錨（修法後源碼）
@@ -99,7 +99,9 @@ const SCHEMA = `
     tags TEXT DEFAULT '', image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')),
     description TEXT DEFAULT '', related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]',
     synonym TEXT NOT NULL DEFAULT '', antonym TEXT NOT NULL DEFAULT '',
-    derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '[]');
+    derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '[]',
+    etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '',
+    phrases TEXT NOT NULL DEFAULT '');
   CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT, stability REAL, difficulty REAL,
     elapsed_days INTEGER, scheduled_days INTEGER, reps INTEGER, lapses INTEGER, state INTEGER,
     last_review TEXT, buried INTEGER, suspended INTEGER, step INTEGER, mc_data TEXT, spell_data TEXT);
@@ -116,7 +118,7 @@ function runCli(cliPath, argv, dbPath, noBak = '1') {
     timeout: 60000,
   });
 }
-const BIZ_COLS = ['word','definition','part_of_speech','pronunciation','example','deck','tags','image','description','related','forms','synonym','antonym','derivative','examples'];
+const BIZ_COLS = ['word','definition','part_of_speech','pronunciation','example','deck','tags','image','description','related','forms','synonym','antonym','derivative','examples','etymology','syllables','phrases'];
 const rowsOf = (p) => new DatabaseSync(p, { readOnly: true }).prepare(`SELECT ${BIZ_COLS.join(',')} FROM words ORDER BY lower(word)`).all();
 const deep = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // R1#3：JSON 陣列欄比對先 parse 正規化（import 端 canonical 化，非 canonical 測資不被誤判）
@@ -127,32 +129,36 @@ try {
   const src = readFileSync(CLI, 'utf8');
   const fixed = src.includes(D8_MARK);
 
-  // fixture 資料（15 業務欄全非空；引號/逗號/換行/中文/多元素陣列）
+  // fixture 資料（18 業務欄全非空；引號/逗號/換行/中文/多元素陣列；新三欄故意放刁鑽值）
   const FIX = {
     id: 'w1', word: 'Apple', definition: 'a "red", fruit\n第二行', part_of_speech: 'n.',
     pronunciation: '/ˈæp.əl/', example: 'An apple a day.', deck: 'Fruit',
     tags: '["food","red"]', image: 'img/a.png', description: '苹果，常见水果',
     related: '["pear"]', forms: '["apples"]', synonym: 'pome', antonym: 'none',
     derivative: 'applet', examples: '[{"en":"An apple a day.","zh":"每日一果"}]',
+    etymology: 'from Latin, "old" root\n第二行字源', syllables: 'ap·ple', phrases: 'apple of my eye',
   };
   const FIX2 = { id: 'w2', word: 'banana', definition: 'yellow fruit', part_of_speech: 'n.',
     pronunciation: '/bəˈnɑːnə/', example: '', deck: 'Fruit', tags: '[]', image: '',
-    description: '', related: '[]', forms: '[]', synonym: '', antonym: '', derivative: '', examples: '[]' };
+    description: '', related: '[]', forms: '[]', synonym: '', antonym: '', derivative: '', examples: '[]',
+    etymology: '', syllables: '', phrases: '' };
   // FIX3：逗號 definition（驗 quote-esc）＋多元素 tags，但無換行 →
   // 雙序列化指紋測資必須免換行（舊版逐行斷行會位移欄位、指紋不穩）
   const FIX3 = { id: 'w3', word: 'Cherry', definition: 'sweet, red fruit', part_of_speech: 'noun',
     pronunciation: '/ˈtʃɛr.i/', example: 'sweet, juicy', deck: 'Fruit',
     tags: '["fruit","red"]', image: '', description: '核果', related: '["plum"]',
-    forms: '["cherries"]', synonym: 'drupe', antonym: '', derivative: '', examples: '[]' };
+    forms: '["cherries"]', synonym: 'drupe', antonym: '', derivative: '', examples: '[]',
+    etymology: 'sweet origin', syllables: 'cher·ry', phrases: '' };
   // FIX4（R1#3 mutD 補洞）：非 canonical JSON（空格/鍵序）→ 對稱損壞變異在
   // export 字節釘（T1e）無所遁形：不 parse 直傳 buildCSV 會輸出原字節≠參考正規化輸出
   const FIX4 = { id: 'w4', word: 'date', definition: 'dried sweet fruit', part_of_speech: 'n.',
     pronunciation: '', example: '', deck: 'Dried',
     tags: '["b",  "a"]', image: '', description: '', related: '[ "x" , "y" ]',
-    forms: '[]', synonym: '', antonym: '', derivative: '', examples: '[{"zh":"甲","en":"A"}]' };
+    forms: '[]', synonym: '', antonym: '', derivative: '', examples: '[{"zh":"甲","en":"A"}]',
+    etymology: '', syllables: '', phrases: '' };
   const FIXES = [FIX, FIX2, FIX3, FIX4];
 
-  console.log('T1 round-trip 主牙：15 欄全等＋大小寫保留');
+  console.log('T1 round-trip 主牙：18 欄全等＋大小寫保留');
   const db1 = mkDb(join(dir, 'src1.db'));
   {
     const d = new DatabaseSync(db1);
@@ -163,14 +169,15 @@ try {
   const csv1 = join(dir, 'out1.csv');
   const r1 = runCli(CLI, ['export-csv', csv1], db1);
   const csvText = exists(csv1) ? readFileSync(csv1, 'utf8') : '';
-  T('T1a export CSV header＝合同 15 列', csvText.split('\n')[0] === CONTRACT_HEADER, csvText.split('\n')[0]);
+  T('T1a export CSV header＝合同 18 列', csvText.split('\n')[0] === CONTRACT_HEADER, csvText.split('\n')[0]);
   // T1e（R1#3 mutD 補洞）：export 全檔字節＝buildCSV(canonical 映射) 參考值
   // （行序與 DB ORDER BY word BINARY 一致；容忍結尾換行）
   const refRows = [...FIXES].sort((a, b) => a.word < b.word ? -1 : a.word > b.word ? 1 : 0)
     .map(f => ({ word: f.word, definition: f.definition, pos: f.part_of_speech, pron: f.pronunciation,
       example: f.example, deck: f.deck, image: f.image, description: f.description,
       tags: JSON.parse(f.tags), related: JSON.parse(f.related), forms: JSON.parse(f.forms),
-      synonym: f.synonym, antonym: f.antonym, derivative: f.derivative, examples: JSON.parse(f.examples) }));
+      synonym: f.synonym, antonym: f.antonym, derivative: f.derivative, examples: JSON.parse(f.examples),
+      etymology: f.etymology, syllables: f.syllables, phrases: f.phrases }));
   const refCsv = buildCSV(refRows);
   T('T1e export 字節＝buildCSV 參考（非 canonical 測資防對稱損壞）',
     csvText === refCsv || csvText === refCsv + '\n',
@@ -185,7 +192,7 @@ try {
   for (let i = 0; i < Math.min(got.length, want.length); i++) {
     for (const c of BIZ_COLS) if (norm(c, got[i][c]) !== norm(c, want[i][c])) mismatch.push(`${want[i].word}.${c}: ${JSON.stringify(got[i][c])}≠${JSON.stringify(want[i][c])}`);
   }
-  T('T1c 15 欄逐欄全等（JSON 欄 parse 正規化；含換行/引號/中文/非 canonical）', mismatch.length === 0, mismatch.slice(0, 4).join(' | '));
+  T('T1c 18 欄逐欄全等（JSON 欄 parse 正規化；含換行/引號/中文/非 canonical）', mismatch.length === 0, mismatch.slice(0, 4).join(' | '));
   T('T1d word 大小寫保留（Apple≠apple）', got.some(r => r.word === 'Apple'));
 
   console.log('T2 app 格式寬容（真 buildCSV 產 CSV → CLI import）');
@@ -193,12 +200,14 @@ try {
   // R1#3 阻斷洞修復：app.csv 逐字用真合同 buildCSV 產出（手刻转义曾非法致 T2c 永紅）
   writeFileSync(appCsv, buildCSV([{ word: 'cherry', definition: 'a stone fruit', pos: 'n.', pron: '/ˈtʃɛr.i/',
     example: 'sweet cherry', deck: 'Fruit', image: '', description: '', tags: ['red'], related: ['plum'],
-    forms: ['cherries'], synonym: '', antonym: '', derivative: '', examples: [] }]));
+    forms: ['cherries'], synonym: '', antonym: '', derivative: '', examples: [],
+    etymology: 'Latin cerasum', syllables: 'cher·ry', phrases: '' }]));
   const db3 = mkDb(join(dir, 'dst2.db'));
   runCli(CLI, ['import-csv', appCsv], db3);
   const r3 = rowsOf(db3)[0] || {};
   T('T2a pos 落庫 part_of_speech', r3.part_of_speech === 'n.', JSON.stringify(r3.part_of_speech));
   T('T2b pron 落庫 pronunciation', r3.pronunciation === '/ˈtʃɛr.i/', JSON.stringify(r3.pronunciation));
+  T('T2i 新三欄入庫（etymology/syllables/phrases 走 import 全路徑）', r3.etymology === 'Latin cerasum' && r3.syllables === 'cher·ry' && r3.phrases === '', JSON.stringify([r3.etymology, r3.syllables, r3.phrases]));
   T('T2c tags JSON 陣列完好', r3.tags === '["red"]', JSON.stringify(r3.tags));
   // T2f/g（R1#2）：裸文字陣列欄 fallback 三規格（鏡像 mapWords:191/193/196-199）
   const tolCsv = join(dir, 'tol.csv');
@@ -218,7 +227,7 @@ try {
   const dupOut = runCli(CLI, ['import-csv', csv1], db2).stdout;
   T('T4a 重複匯入全跳過（新增 0）', /新增 0/.test(dupOut), dupOut.trim().split('\n').slice(-3).join(' / '));
   const junk = join(dir, 'junk.csv');
-  writeFileSync(junk, CONTRACT_HEADER + '\n,no word here,n.,,,,,,,,,,,'  );
+  writeFileSync(junk, CONTRACT_HEADER + '\n,no word here,n.,,,,,,,,,,,,,,,');
   const db4 = mkDb(join(dir, 'dst3.db'));
   runCli(CLI, ['import-csv', junk], db4);
   T('T4b 無 word 列跳過', rowsOf(db4).length === 0);
@@ -238,6 +247,9 @@ try {
   T('T5a 負控制源碼含舊 header', buggySrc.includes(OLD_HEADER) && !buggySrc.includes(CONTRACT_HEADER));
   const bugDir = join(dir, 'bugsub'); mkdirSync(bugDir);
   symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+  // cli.mjs 有 bare 引入（tesseract.js）：tmp 樹無 node_modules 會早死、
+  // bug.csv 生不出來（同 D19 T8 教訓）。鏈 repo 的進來（唯讀解析用）。
+  try { symlinkSync(join(REPO, 'node_modules'), join(dir, 'node_modules'), 'dir'); } catch {}
   writeFileSync(join(bugDir, 'cli.mjs'), buggySrc);
   const dbB = mkDb(join(dir, 'bug.db'));
   {

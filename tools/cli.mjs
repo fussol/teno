@@ -79,6 +79,16 @@ function ensureSchema() {
       d.close();
     }
   } catch (e) { log('ERROR', `ensureReviewLogNewState: ${e.message}`); }
+  // words 新三欄 (LOG-MW v5.14.0) — app 端 migrate v13 會加, CLI 直連時自行補
+  // （cmdExportCsv/cmdImportCsv 讀寫此三欄；無此自癒舊庫直接炸 no such column）
+  try {
+    const cols = db.prepare("PRAGMA table_info(words)").all().map(c => c.name);
+    const d = dbw();
+    for (const c of ['etymology', 'syllables', 'phrases']) {
+      if (!cols.includes(c)) d.exec(`ALTER TABLE words ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`);
+    }
+    d.close();
+  } catch (e) { log('ERROR', `ensureWordsNewCols: ${e.message}`); }
 }
 
 function audit(action, detail = '') {
@@ -1233,7 +1243,8 @@ function cmdSet() {
 
 function cmdExportCsv() {
   const out = args[0] || `${HOME}/影片/teno-export-${new Date().toISOString().slice(0,10)}.csv`;
-  const rows = db.prepare('SELECT word, definition, part_of_speech, pronunciation, example, deck, image, description, tags, related, forms, synonym, antonym, derivative, examples FROM words ORDER BY word').all();
+  ensureSchema();   // 舊庫缺新三欄先自癒，否則下行 SELECT 炸 no such column
+  const rows = db.prepare('SELECT word, definition, part_of_speech, pronunciation, example, deck, image, description, tags, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases FROM words ORDER BY word').all();
   // JSON 陣列欄一律 parse 成陣本體（非 canonical 測資經 buildCSV rebuild 正規化——
   // 字節合同＝buildCSV(canonical 映射)，不 parse 直傳原字串即違約）
   const parseArr = (s) => { try { const v = JSON.parse(s); return Array.isArray(v) ? v : String(s ?? ''); } catch { return String(s ?? ''); } };
@@ -1243,6 +1254,7 @@ function cmdExportCsv() {
     tags: parseArr(r.tags), related: parseArr(r.related), forms: parseArr(r.forms),
     synonym: r.synonym ?? '', antonym: r.antonym ?? '', derivative: r.derivative ?? '',
     examples: parseArr(r.examples),
+    etymology: r.etymology ?? '', syllables: r.syllables ?? '', phrases: r.phrases ?? '',
   }));
   writeFileSync(out, buildCSV(mapped));
   log('READ', `export-csv ${rows.length} 筆 → ${out}`);
@@ -1256,6 +1268,7 @@ function cmdImportCsv() {
   const text = readFileSync(file, 'utf8');
   const { headers, rows } = parseCSVTable(text);   // 多行 quoted 安全＋BOM 容忍
   const fields = headers.map(h => resolveField(h));
+  ensureSchema();   // 舊庫缺新三欄先自癒，否則下行 INSERT 炸 no such column
   backupDb();
   const w = dbw();
   let added = 0, skipped = 0;
@@ -1264,8 +1277,8 @@ function cmdImportCsv() {
   const fTags = (v) => { let p; try { p = JSON.parse(v); } catch { p = v.split(',').map(s => s.trim()).filter(Boolean); } return JSON.stringify(p); };
   const fExamples = (v) => { let p; try { p = JSON.parse(v); } catch { p = v.split(';').map(e => ({ en: e.trim(), zh: '' })); } return JSON.stringify(p); };
   const fArray = (v) => { let p = null; try { p = JSON.parse(v); } catch {} return JSON.stringify(Array.isArray(p) ? p : v.split(',').map(s => s.trim()).filter(Boolean)); };
-  const stmt = w.prepare(`INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const stmt = w.prepare(`INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   for (const cols of rows) {
     const obj = {};
     cols.forEach((v, j) => { const k = fields[j]; if (k) obj[k] = String(v ?? '').trim(); });
@@ -1280,6 +1293,7 @@ function cmdImportCsv() {
       obj.related ? fArray(obj.related) : '[]', obj.forms ? fArray(obj.forms) : '[]',
       obj.synonym || '', obj.antonym || '', obj.derivative || '',
       obj.examples ? fExamples(obj.examples) : '[]',
+      obj.etymology || '', obj.syllables || '', obj.phrases || '',
       new Date().toISOString());   // E2: created_at ISO 帶 Z
     added++;
   }

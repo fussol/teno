@@ -37,12 +37,16 @@ function scan(src) {
   };
 }
 
-// 動工後正解清單（42 - export_csv_data = 41）
+// 動工後正解清單（42 - export_csv_data + 4 合法新增 = 45）
+// 新增（各有自家 commit＋驗證，非幽靈）：
+//   lookup_merriam（LOG-MW v5.14.0）、export_db_bundle_data＋export_bundle_dialog
+//   （TENOC 捆包 v5.14.0）、export_app_log_text（v5.14.0）
 const EXPECTED_CMDS = [
   'log_msg','run_cli','get_app_paths','speak_text','fetch_llm','fetch_get',
-  'lookup_cambridge','list_piper_voices','scrape_quizlet','write_db_bytes',
+  'lookup_cambridge','lookup_merriam','list_piper_voices','scrape_quizlet','write_db_bytes',
   'import_db_dialog','export_db_dialog','export_csv_dialog',
-  'export_db_data','export_backup_data','backup_db','prune_backups','get_db_mtime',
+  'export_db_data','export_db_bundle_data','export_bundle_dialog','export_app_log_text',
+  'export_backup_data','backup_db','prune_backups','get_db_mtime',
   'list_backups','restore_backup','delete_backup','export_backup_dialog',
   'import_piper_model_dialog','install_piper_model','delete_piper_model',
   'tts_android::speak_android','tts_android::finish_app','optimize_fsrs',
@@ -59,10 +63,10 @@ const s1 = scan(cur);
 T('T1a \\bexport_csv_data\\b 全檔零（含註解；詞邊界天然放行近似名 dialog）', s1.hits === 0, `hits=${s1.hits}`);
 T('T1b 近似名活命令 export_csv_dialog 未誤傷（註冊＋fn ≥2 在位）', s1.dialogHits >= 2, `dialog=${s1.dialogHits}`);
 T('T1c generate_handler 無 export_csv_data', !s1.cmds.includes('export_csv_data'));
-T('T1d 命令計數 41（42-1）', s1.cmds.length === 41, `got=${s1.cmds.length}`);
+T('T1d 命令計數 45（42-1+4 合法新增）', s1.cmds.length === 45, `got=${s1.cmds.length}`);
 const missing = EXPECTED_CMDS.filter(c => !s1.cmds.includes(c));
 const extra = s1.cmds.filter(c => !EXPECTED_CMDS.includes(c));
-T('T1e 其餘 41 命令逐一在位', missing.length === 0, `missing=${missing.join(',')}`);
+T('T1e 其餘 45 命令逐一在位', missing.length === 0, `missing=${missing.join(',')}`);
 T('T1f 幽靈命令零', extra.length === 0, `extra=${extra.join(',')}`);
 
 console.log('== T2: 負控制——F15 後舊 blob 同掃描器徵狀全響 ==');
@@ -74,7 +78,7 @@ if (old) {
   const s2 = scan(old);
   T('T2a 舊態 export_csv_data 在位（fn+註冊=2 hits）', s2.hits === 2, `hits=${s2.hits}`);
   T('T2b 舊態 handler 含之且計數 42', s2.cmds.includes('export_csv_data') && s2.cmds.length === 42, `n=${s2.cmds.length}`);
-  T('T2c 判別性：同掃描器新態歸零＋計數嚴格少於舊態', s1.hits === 0 && s2.hits === 2 && s1.cmds.length < s2.cmds.length);
+  T('T2c 判別性：新態殲滅＋舊態在位（計數不比：合法新增使新態更多）', s1.hits === 0 && s2.hits === 2 && !s1.cmds.includes('export_csv_data') && s2.cmds.includes('export_csv_data'));
 }
 
 console.log('== T3: JS 側呼叫恆常釘（死 wrapper 永不可被接上）==');

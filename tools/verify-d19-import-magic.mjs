@@ -180,6 +180,10 @@ try {
     }
     const bugDir = join(dir, 'bugsub'); mkdirSync(bugDir);
     symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+    // cli.mjs 有 bare 引入（tesseract.js 等）：tmp 樹上層無 node_modules 會
+    // ERR_MODULE_NOT_FOUND 早死、損壞重現不出來。鏈 repo 的 node_modules 進來
+    // （唯讀解析用，不寫入）。
+    try { symlinkSync(join(REPO, 'node_modules'), join(dir, 'node_modules'), 'dir'); } catch {}
     writeFileSync(join(bugDir, 'cli.mjs'), buggySrc);
     const gf = join(dir, 'garbage.txt'); if (!existsSync(gf)) writeFileSync(gf, GARBAGE);
     const tgt = mkTarget('t8');
