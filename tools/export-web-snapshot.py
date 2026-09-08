@@ -39,22 +39,80 @@ def main():
     words = []
     for r in con.execute('SELECT * FROM words'):
         d = dict(r)
+        w = (d['word'] or '').strip()
+        definition = d.get('definition') or ''
+        pos = d.get('part_of_speech') or ''
+        pron = d.get('pronunciation') or ''
+        example = d.get('example') or ''
+        deck = d.get('deck') or 'Default'
+        tags = J(d.get('tags'), [])
+        related = J(d.get('related'), [])
+        forms = J(d.get('forms'), [])
+        synonym = d.get('synonym') or ''
+        antonym = d.get('antonym') or ''
+        derivative = d.get('derivative') or ''
+        examples = J(d.get('examples'), [])
+        # ── WEB-DEMO 回填（2026-09-08 使用者裁示：每欄都填上、一樣也可以）──
+        # 只動快照、不寫 DB。拿既有資料互填，填完網頁卡片每欄都有東西。
+        if not pos:
+            pos = '名詞'
+        if not pron and w:
+            pron = f'/{w.lower()}/'
+        if not example and w:
+            example = f'{w} — {definition}' if definition else w
+        if not tags:
+            tags = [deck]
+        if not related and w:
+            # 同字本抓兩個鄰居當相關詞（去重、去自己）
+            related = []
+        if not forms and w:
+            forms = [w]
+        if not synonym and related:
+            synonym = ', '.join(related[:3])
+        if not synonym and w:
+            synonym = w
+        if not antonym:
+            antonym = '（待補）'
+        if not derivative and forms:
+            derivative = ', '.join(forms[:3])
+        if not derivative and w:
+            derivative = w
+        if not examples and example:
+            examples = [example]
         words.append({
-            'id': d['id'], 'word': d['word'] or '', 'definition': d.get('definition') or '',
-            'pos': d.get('part_of_speech') or '', 'pron': d.get('pronunciation') or '',
-            'example': d.get('example') or '', 'deck': d.get('deck') or 'Default',
-            'tags': J(d.get('tags'), []),
+            'id': d['id'], 'word': w, 'definition': definition,
+            'pos': pos, 'pron': pron,
+            'example': example, 'deck': deck,
+            'tags': tags,
             'image': d.get('image') or '' if len(d.get('image') or '') < IMG_CAP else '',
-            'description': d.get('description') or '',
-            'related': J(d.get('related'), []), 'forms': J(d.get('forms'), []),
-            'synonym': d.get('synonym') or '', 'antonym': d.get('antonym') or '',
-            'derivative': d.get('derivative') or '', 'examples': J(d.get('examples'), []),
+            'description': d.get('description') or definition,
+            'related': related, 'forms': forms,
+            'synonym': synonym, 'antonym': antonym,
+            'derivative': derivative, 'examples': examples,
             # v13 三欄：此機 DB 若還沒跑過 migration 就留空（means: 舊庫相容）
-            'etymology': d.get('etymology') or '' if 'etymology' in cols else '',
-            'syllables': d.get('syllables') or '' if 'syllables' in cols else '',
-            'phrases': d.get('phrases') or '' if 'phrases' in cols else '',
+            'etymology': (d.get('etymology') or '') if 'etymology' in cols else '',
+            'syllables': (d.get('syllables') or '') if 'syllables' in cols else '',
+            'phrases': (d.get('phrases') or '') if 'phrases' in cols else '',
             'createdAt': d.get('created_at') or '',
         })
+    # 相關詞空的第二遍：同字本鄰居互填（第一遍時全表還沒齊）
+    by_deck = {}
+    for x in words:
+        by_deck.setdefault(x['deck'], []).append(x['word'])
+    for x in words:
+        if not x['related']:
+            mates = [m for m in by_deck.get(x['deck'], []) if m != x['word']][:3]
+            x['related'] = mates if mates else [x['word']]
+            if x['synonym'] in ('', x['word']):
+                x['synonym'] = ', '.join(x['related'][:3])
+    # v13 三欄空的：拿既有欄位互填（字源/音節/片語）
+    for x in words:
+        if not x['etymology']:
+            x['etymology'] = f"{x['word']}（字源待補）"
+        if not x['syllables']:
+            x['syllables'] = x['word']
+        if not x['phrases']:
+            x['phrases'] = x['example'] or x['word']
 
     cards = {}
     for r in con.execute('SELECT * FROM cards'):
