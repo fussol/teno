@@ -474,18 +474,22 @@ function openAddModal(s) {
           <input class="form-input" id="deckAddDef" placeholder="多個定義用逗號分隔">
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddDefChips"></div>
         </div>
-        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
-          <div class="form-group" style="flex:1">
-            <label class="form-label">詞性</label>
+        <div class="form-group">
+          <label class="form-label">詞性</label>
             <div style="display:flex;flex-wrap:wrap;gap:4px" id="deckAddPosGroup">
               ${['名詞','動詞','形容詞','副詞','介係詞','連接詞','代名詞','感嘆詞','限定詞','冠詞','片語','慣用語','後綴','前綴','縮寫','複數名詞'].map(p =>
                 `<span class="pos-chip" data-pos="${p}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${p}</span>`
               ).join('')}
             </div>
           </div>
+        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
           <div class="form-group" style="flex:1">
             <label class="form-label">發音</label>
             <input class="form-input" id="deckAddPron" placeholder="/ˈæp.əl/">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label class="form-label">音節</label>
+            <input class="form-input" id="deckAddSyllables" placeholder="例：dic·tion·a·ry；Enter 跳下一欄">
           </div>
         </div>
         <div class="form-group">
@@ -495,7 +499,7 @@ function openAddModal(s) {
         </div>
         <div class="form-group">
           <label class="form-label">描述</label>
-          <textarea class="form-input" id="deckAddDesc" rows="2" placeholder="補充說明、記憶技巧..." style="resize:vertical"></textarea>
+          <textarea class="form-input" id="deckAddDesc" rows="2" placeholder="補充說明、記憶技巧...；Ctrl+Enter 跳下一欄" style="resize:vertical"></textarea>
         </div>
         <div class="form-group">
           <label class="form-label">相關詞</label>
@@ -523,12 +527,8 @@ function openAddModal(s) {
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckAddDerivativeChips"></div>
         </div>
         <div class="form-group">
-          <label class="form-label">音節</label>
-          <input class="form-input" id="deckAddSyllables" placeholder="例：dic·tion·a·ry">
-        </div>
-        <div class="form-group">
           <label class="form-label">字源</label>
-          <textarea class="form-input" id="deckAddEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用年份"></textarea>
+          <textarea class="form-input" id="deckAddEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用年份；Ctrl+Enter 跳下一欄"></textarea>
         </div>
         <div class="form-group">
           <label class="form-label">片語</label>
@@ -595,9 +595,11 @@ function openAddModal(s) {
     const input = document.getElementById(inputId);
     const isSentenceMode = sep === null || sep === undefined;   // 例句模式：不分割
     const spl = isSentenceMode ? null : new RegExp(sep);
-    let chips = isSentenceMode
+    // 同欄去重（編輯器重開不再把膠囊值複製一次；保留首次出現順序）
+    const _dedupe = (arr) => [...new Set(arr)];
+    let chips = _dedupe(isSentenceMode
       ? (initialVal || '').split('\n').map(s => s.trim()).filter(Boolean)
-      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean);
+      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean));
     const render = () => {
       cont.innerHTML = '';
       chips.forEach((d, i) => {
@@ -617,7 +619,13 @@ function openAddModal(s) {
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
-        if (vals.length) { chips.push(...vals); input.value = ''; render(); e.stopPropagation(); }
+        if (vals.length) {
+          // 有打字就地消化：只收膠囊沒有的新值（重複的不再塞一次），不清跳轉
+          const fresh = vals.filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+          input.value = '';
+          e.stopPropagation();
+        }
       }
     });
     cont.addEventListener('click', (e) => {
@@ -658,15 +666,19 @@ function openAddModal(s) {
     const api = {
       getVal: () => chips.join(isSentenceMode ? '\n' : jn),
       setVal: (str) => {
-        chips = isSentenceMode
+        chips = _dedupe(isSentenceMode
           ? String(str || '').split('\n').map(s => s.trim()).filter(Boolean)
-          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean);
+          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean));
         render();
       },
       append: (val) => {
-        if (isSentenceMode) { chips.push(String(val || '').trim()); }
-        else { chips.push(...String(val || '').split(spl).map(s => s.trim()).filter(Boolean)); }
-        render();
+        if (isSentenceMode) {
+          const v = String(val || '').trim();
+          if (v && !chips.includes(v)) { chips.push(v); render(); }
+        } else {
+          const fresh = String(val || '').split(spl).map(s => s.trim()).filter(Boolean).filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+        }
       }
     };
     cont._tagInputApi = api;   // LLM 填入函式透過 inputId+'Chips' 容器取用
@@ -743,8 +755,11 @@ function openAddModal(s) {
   };
   _renderAutoOrderChips();
 
+  // 新增器連續輸入：最後一欄 Enter 觸發的儲存，存完直接開下一筆（點新增鈕則照舊關閉）
+  let _addEnterChain = false;
   // ── Save handler ───
   document.getElementById('deckAddSave')?.addEventListener('click', async () => {
+    const _chained = _addEnterChain; _addEnterChain = false;
     const tagCbs = document.querySelectorAll('#deckAddTagGroup .deck-add-tag-checkbox:checked');
     // 殘留沖洗：沒按 Enter 的輸入框內容併入膠囊（片語換行模式：整段一切行併入）
     for (const [el, ch] of [['deckAddSynonym', deckSynChips], ['deckAddAntonym', deckAntChips], ['deckAddDerivative', deckDerivChips], ['deckAddRelated', deckRelChips], ['deckAddForms', deckFormsChips]]) {
@@ -782,6 +797,7 @@ function openAddModal(s) {
       toast(`已新增「${data.word}」`, 'toast-success');
       close();
       renderInPlace(s);
+      if (_chained) openAddModal(s);   // 連續新增：直接開下一筆
     } catch (e) { toast('儲存失敗: ' + e, 'toast-error'); }
   });
 
@@ -943,21 +959,32 @@ function openAddModal(s) {
     if (w && w !== _lastAutoFilled) autoFillAll();
   });
 
-  const addFieldIds = ['deckAddWord', 'deckAddDef', 'deckAddPron', 'deckAddExample', 'deckAddRelated', 'deckAddForms', 'deckAddSynonym', 'deckAddAntonym', 'deckAddDerivative', 'deckAddSyllables', 'deckAddEtymology', 'deckAddPhrases', 'deckAddDeck'];
+  // Enter 導覽（由上而下；描述/字源 textarea 需 Ctrl+Enter；膠囊欄空 Enter 跳轉、有字就地存膠囊）
+  const addFieldIds = ['deckAddWord', 'deckAddDef', 'deckAddPron', 'deckAddSyllables', 'deckAddExample', 'deckAddDesc', 'deckAddRelated', 'deckAddForms', 'deckAddSynonym', 'deckAddAntonym', 'deckAddDerivative', 'deckAddEtymology', 'deckAddPhrases', 'deckAddDeck'];
+  const _addJumpNext = (curId) => {
+    const idx = addFieldIds.indexOf(curId);
+    if (idx === -1) return;
+    if (idx < addFieldIds.length - 1) {
+      document.getElementById(addFieldIds[idx + 1])?.focus();
+    } else {
+      _addEnterChain = true;
+      document.getElementById('deckAddSave')?.click();
+    }
+  };
   document.getElementById('deckAddModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const el = e.target;
-    if (el.tagName === 'TEXTAREA') return;
+    if (el.tagName === 'TEXTAREA') {
+      // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); _addJumpNext(el.id); }
+      return;
+    }
     if ((el.id === 'deckAddDef' || el.id === 'deckAddExample') && el.value.trim()) return;
     const idx = addFieldIds.indexOf(el.id);
     if (idx === -1) return;
     e.preventDefault();
     if (el.id === 'deckAddWord') autoFillAll();
-    if (idx < addFieldIds.length - 1) {
-      document.getElementById(addFieldIds[idx + 1])?.focus();
-    } else {
-      document.getElementById('deckAddSave')?.click();
-    }
+    _addJumpNext(el.id);
   });
 
   // ── Fill related / forms（deckAddSuggest 段已綁過，此處只綁片語；重複綁定會打兩次 LLM）
@@ -1022,12 +1049,11 @@ function openEditModal(s, id) {
         </div>
         <div class="form-group">
           <label class="form-label">定義</label>
-          <input class="form-input" id="deckEditDef" value="${escapeAttr(w.definition || '')}" placeholder="多個定義用逗號分隔">
+          <input class="form-input" id="deckEditDef" placeholder="多個定義用逗號分隔">
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditDefChips"></div>
         </div>
-        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
-          <div class="form-group" style="flex:1">
-            <label class="form-label">詞性</label>
+        <div class="form-group">
+          <label class="form-label">詞性</label>
             <div style="display:flex;flex-wrap:wrap;gap:4px" id="deckEditPosGroup">
               ${['名詞','動詞','形容詞','副詞','介係詞','連接詞','代名詞','感嘆詞','限定詞','冠詞','片語','慣用語','後綴','前綴','縮寫','複數名詞'].map(p => {
                 const sel = (w.pos || '').split(',').map(s => s.trim()).includes(p);
@@ -1035,52 +1061,53 @@ function openEditModal(s, id) {
               }).join('')}
             </div>
           </div>
+        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
           <div class="form-group" style="flex:1">
             <label class="form-label">發音</label>
             <input class="form-input" id="deckEditPron" value="${escapeAttr(w.pron || '')}">
           </div>
+          <div class="form-group" style="flex:1">
+            <label class="form-label">音節</label>
+            <input class="form-input" id="deckEditSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(w.syllables || '')}">
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">例句</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditExample" value="${escapeAttr(w.example || '')}" placeholder="輸入後按 Enter" style="flex:1"><button class="btn btn-sm" id="deckEditFillExample" type="button">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditExample" placeholder="輸入後按 Enter" style="flex:1"><button class="btn btn-sm" id="deckEditFillExample" type="button">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditExChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">描述</label>
-          <textarea class="form-input" id="deckEditDesc" rows="2" style="resize:vertical">${escapeHtml(w.description || '')}</textarea>
+          <textarea class="form-input" id="deckEditDesc" rows="2" style="resize:vertical" placeholder="補充說明、記憶技巧...；Ctrl+Enter 跳下一欄">${escapeHtml(w.description || '')}</textarea>
         </div>
         <div class="form-group">
           <label class="form-label">相關詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.related || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillRelated" type="button">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillRelated" type="button">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditRelatedChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">詞形變化</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((w.forms || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="deckEditFillForms" type="button">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillForms" type="button">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditFormsChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">相似詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditSynonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr(w.synonym || '')}" style="flex:1"><button class="btn btn-sm" id="deckEditFillSynonym" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditSynonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillSynonym" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditSynonymChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">反義詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditAntonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr(w.antonym || '')}" style="flex:1"><button class="btn btn-sm" id="deckEditFillAntonym" type="button" title="LLM 自動產生反義詞">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditAntonym" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillAntonym" type="button" title="LLM 自動產生反義詞">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditAntonymChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">衍生物</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditDerivative" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr(w.derivative || '')}" style="flex:1"><button class="btn btn-sm" id="deckEditFillDerivative" type="button" title="LLM 自動產生衍生物">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="deckEditDerivative" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckEditFillDerivative" type="button" title="LLM 自動產生衍生物">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="deckEditDerivativeChips"></div>
         </div>
         <div class="form-group">
-          <label class="form-label">音節</label>
-          <input class="form-input" id="deckEditSyllables" placeholder="例：dict·io·nary" value="${escapeAttr(w.syllables || '')}" style="flex:1">
-        </div>
-        <div class="form-group">
           <label class="form-label">字源</label>
-          <textarea class="form-input" id="deckEditEtymology" rows="2" style="resize:vertical">${escapeHtml(w.etymology || '')}</textarea>
+          <textarea class="form-input" id="deckEditEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用年份；Ctrl+Enter 跳下一欄">${escapeHtml(w.etymology || '')}</textarea>
         </div>
         <div class="form-group">
           <label class="form-label">片語</label>
@@ -1142,9 +1169,11 @@ function openEditModal(s, id) {
     const input = document.getElementById(inputId);
     const isSentenceMode = sep === null || sep === undefined;
     const spl = isSentenceMode ? null : new RegExp(sep);
-    let chips = isSentenceMode
+    // 同欄去重（編輯器重開不再把膠囊值複製一次；保留首次出現順序）
+    const _dedupe = (arr) => [...new Set(arr)];
+    let chips = _dedupe(isSentenceMode
       ? (initialVal || '').split('\n').map(s => s.trim()).filter(Boolean)
-      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean);
+      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean));
     const render = () => {
       cont.innerHTML = '';
       chips.forEach((d, i) => {
@@ -1164,7 +1193,13 @@ function openEditModal(s, id) {
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
-        if (vals.length) { chips.push(...vals); input.value = ''; render(); e.stopPropagation(); }
+        if (vals.length) {
+          // 有打字就地消化：只收膠囊沒有的新值（重複的不再塞一次），不清跳轉
+          const fresh = vals.filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+          input.value = '';
+          e.stopPropagation();
+        }
       }
     });
     cont.addEventListener('click', (e) => {
@@ -1203,15 +1238,19 @@ function openEditModal(s, id) {
     const api = {
       getVal: () => chips.join(isSentenceMode ? '\n' : jn),
       setVal: (str) => {
-        chips = isSentenceMode
+        chips = _dedupe(isSentenceMode
           ? String(str || '').split('\n').map(s => s.trim()).filter(Boolean)
-          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean);
+          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean));
         render();
       },
       append: (val) => {
-        if (isSentenceMode) { chips.push(String(val || '').trim()); }
-        else { chips.push(...String(val || '').split(spl).map(s => s.trim()).filter(Boolean)); }
-        render();
+        if (isSentenceMode) {
+          const v = String(val || '').trim();
+          if (v && !chips.includes(v)) { chips.push(v); render(); }
+        } else {
+          const fresh = String(val || '').split(spl).map(s => s.trim()).filter(Boolean).filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+        }
       }
     };
     cont._tagInputApi = api;
@@ -1408,21 +1447,31 @@ function openEditModal(s, id) {
     if (w && w !== _editLastAutoFilled) editAutoFillAll();
   });
 
-  const editFieldIds = ['deckEditWord', 'deckEditDef', 'deckEditPron', 'deckEditExample', 'deckEditRelated', 'deckEditForms', 'deckEditSynonym', 'deckEditAntonym', 'deckEditDerivative', 'deckEditSyllables', 'deckEditEtymology', 'deckEditPhrases', 'deckEditDeck'];
-  document.getElementById('deckEditModal')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    const el = e.target;
-    if (el.tagName === 'TEXTAREA') return;
-    if ((el.id === 'deckEditDef' || el.id === 'deckEditExample') && el.value.trim()) return;
-    const idx = editFieldIds.indexOf(el.id);
+  // Enter 導覽（由上而下；描述/字源 textarea 需 Ctrl+Enter；膠囊欄空 Enter 跳轉、有字就地存膠囊）
+  const editFieldIds = ['deckEditWord', 'deckEditDef', 'deckEditPron', 'deckEditSyllables', 'deckEditExample', 'deckEditDesc', 'deckEditRelated', 'deckEditForms', 'deckEditSynonym', 'deckEditAntonym', 'deckEditDerivative', 'deckEditEtymology', 'deckEditPhrases', 'deckEditDeck'];
+  const _editJumpNext = (curId) => {
+    const idx = editFieldIds.indexOf(curId);
     if (idx === -1) return;
-    e.preventDefault();
-    if (el.id === 'deckEditWord') editAutoFillAll();
     if (idx < editFieldIds.length - 1) {
       document.getElementById(editFieldIds[idx + 1])?.focus();
     } else {
       document.getElementById('deckEditSave')?.click();
     }
+  };
+  document.getElementById('deckEditModal')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const el = e.target;
+    if (el.tagName === 'TEXTAREA') {
+      // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); _editJumpNext(el.id); }
+      return;
+    }
+    if ((el.id === 'deckEditDef' || el.id === 'deckEditExample') && el.value.trim()) return;
+    const idx = editFieldIds.indexOf(el.id);
+    if (idx === -1) return;
+    e.preventDefault();
+    if (el.id === 'deckEditWord') editAutoFillAll();
+    _editJumpNext(el.id);
   });
 
   // ── Example fill ───

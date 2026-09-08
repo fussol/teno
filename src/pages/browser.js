@@ -876,9 +876,8 @@ function openModal(s, word) {
           <input class="form-input" id="fDefinition" placeholder="多個定義用逗號分隔">
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fDefChips"></div>
         </div>
-        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
-          <div class="form-group" style="flex:1">
-            <label class="form-label">詞性</label>
+        <div class="form-group">
+          <label class="form-label">詞性</label>
             <div style="display:flex;flex-wrap:wrap;gap:4px" id="fPosGroup">
               ${['名詞','動詞','形容詞','副詞','介係詞','連接詞','代名詞','感嘆詞','限定詞','冠詞','片語','慣用語','後綴','前綴','縮寫','複數名詞'].map(p => {
                 const sel = (word?.pos || '').split(',').map(s => s.trim()).includes(p);
@@ -886,9 +885,14 @@ function openModal(s, word) {
               }).join('')}
             </div>
           </div>
+        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
           <div class="form-group" style="flex:1">
             <label class="form-label">發音</label>
             <input class="form-input" id="fPron" placeholder="/ˈæp.əl/" value="${escapeAttr(word?.pron || '')}">
+          </div>
+          <div class="form-group" style="flex:1">
+            <label class="form-label">音節</label>
+            <input class="form-input" id="fSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(word?.syllables || '')}">
           </div>
         </div>
         <div class="form-group">
@@ -898,46 +902,40 @@ function openModal(s, word) {
         </div>
         <div class="form-group">
           <label class="form-label">描述</label>
-          <textarea class="form-input" id="fDescription" rows="2" placeholder="補充說明、記憶技巧..." style="resize:vertical">${escapeHtml(word?.description || '')}</textarea>
+          <textarea class="form-input" id="fDescription" rows="2" placeholder="補充說明、記憶技巧...；Ctrl+Enter 跳下一欄" style="resize:vertical">${escapeHtml(word?.description || '')}</textarea>
         </div>
         <div class="form-group">
           <label class="form-label">相關詞</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="fRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((word?.related || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="btnFillRelated" type="button" title="LLM 自動產生相關詞">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="fRelated" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillRelated" type="button" title="LLM 自動產生相關詞">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fRelatedChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">詞形變化</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="fForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((word?.forms || []).join(', '))}" style="flex:1"><button class="btn btn-sm" id="btnFillForms" type="button" title="LLM 自動產生詞形變化">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="fForms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillForms" type="button" title="LLM 自動產生詞形變化">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fFormsChips"></div>
         </div>
-        <div class="form-row" style="${isMobile ? 'flex-direction:column' : ''}">
-          <div class="form-group" style="flex:1">
-            <label class="form-label">相似詞</label>
-            <div style="display:flex;gap:4px"><input class="form-input" id="fSynonyms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((word?.synonym || ''))}" style="flex:1"><button class="btn btn-sm" id="btnFillSynonyms" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
+        <div class="form-group">
+          <label class="form-label">相似詞</label>
+            <div style="display:flex;gap:4px"><input class="form-input" id="fSynonyms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillSynonyms" type="button" title="LLM 自動產生相似詞">${icon('sparkle')}</button></div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fSynonymChips"></div>
-          </div>
-          <div class="form-group" style="flex:1">
-            <label class="form-label">反義詞</label>
-            <div style="display:flex;gap:4px"><input class="form-input" id="fAntonyms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((word?.antonym || ''))}" style="flex:1"><button class="btn btn-sm" id="btnFillAntonyms" type="button" title="LLM 自動產生反義詞">${icon('sparkle')}</button></div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">反義詞</label>
+            <div style="display:flex;gap:4px"><input class="form-input" id="fAntonyms" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillAntonyms" type="button" title="LLM 自動產生反義詞">${icon('sparkle')}</button></div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fAntonymChips"></div>
-          </div>
         </div>
         <div class="form-group">
           <label class="form-label">衍生物</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="fDerivatives" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" value="${escapeAttr((word?.derivative || ''))}" style="flex:1"><button class="btn btn-sm" id="btnFillDerivatives" type="button" title="LLM 自動產生衍生物">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="fDerivatives" placeholder="輸入後按 Enter 存入膠囊（逗號分隔多筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillDerivatives" type="button" title="LLM 自動產生衍生物">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fDerivativeChips"></div>
         </div>
         <div class="form-group">
-          <label class="form-label">音節</label>
-          <input class="form-input" id="fSyllables" placeholder="例：dict·io·nary" value="${escapeAttr((word?.syllables || ''))}" style="flex:1">
-        </div>
-        <div class="form-group">
           <label class="form-label">字源</label>
-          <textarea class="form-input" id="fEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用">${escapeHtml(word?.etymology || '')}</textarea>
+          <textarea class="form-input" id="fEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用；Ctrl+Enter 跳下一欄">${escapeHtml(word?.etymology || '')}</textarea>
         </div>
         <div class="form-group">
           <label class="form-label">片語</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="fPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）" style="flex:1"><button class="btn btn-sm" id="btnFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
+          <div style="display:flex;gap:4px"><input class="form-input" id="fPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fPhrasesChips"></div>
         </div>
         <div class="form-group">
@@ -986,9 +984,11 @@ function openModal(s, word) {
     const input = document.getElementById(inputId);
     const isSentenceMode = sep === null || sep === undefined;
     const spl = isSentenceMode ? null : new RegExp(sep);
-    let chips = isSentenceMode
+    // 同欄去重（編輯器重開不再把膠囊值複製一次；保留首次出現順序）
+    const _dedupe = (arr) => [...new Set(arr)];
+    let chips = _dedupe(isSentenceMode
       ? (initialVal || '').split('\n').map(s => s.trim()).filter(Boolean)
-      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean);
+      : (initialVal || '').split(spl).map(s => s.trim()).filter(Boolean));
     const render = () => {
       cont.innerHTML = '';
       chips.forEach((d, i) => {
@@ -1008,7 +1008,13 @@ function openModal(s, word) {
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
-        if (vals.length) { chips.push(...vals); input.value = ''; render(); e.stopPropagation(); }
+        if (vals.length) {
+          // 有打字就地消化：只收膠囊沒有的新值（重複的不再塞一次），不清跳轉
+          const fresh = vals.filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+          input.value = '';
+          e.stopPropagation();
+        }
       }
     });
     cont.addEventListener('click', (e) => {
@@ -1047,15 +1053,19 @@ function openModal(s, word) {
     const api = {
       getVal: () => chips.join(isSentenceMode ? '\n' : jn),
       setVal: (str) => {
-        chips = isSentenceMode
+        chips = _dedupe(isSentenceMode
           ? String(str || '').split('\n').map(s => s.trim()).filter(Boolean)
-          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean);
+          : String(str || '').split(spl || ',').map(s => s.trim()).filter(Boolean));
         render();
       },
       append: (val) => {
-        if (isSentenceMode) { chips.push(String(val || '').trim()); }
-        else { chips.push(...String(val || '').split(spl).map(s => s.trim()).filter(Boolean)); }
-        render();
+        if (isSentenceMode) {
+          const v = String(val || '').trim();
+          if (v && !chips.includes(v)) { chips.push(v); render(); }
+        } else {
+          const fresh = String(val || '').split(spl).map(s => s.trim()).filter(Boolean).filter(v => !chips.includes(v));
+          if (fresh.length) { chips.push(...fresh); render(); }
+        }
       }
     };
     cont._tagInputApi = api;
@@ -1111,7 +1121,10 @@ function openModal(s, word) {
     if (e.target.id === 'wordModal') close();
   });
 
+  // 新增器連續輸入：最後一欄 Enter 觸發的儲存，存完直接開下一筆（點儲存鈕則照舊關閉）
+  let _enterChainAdd = false;
   document.getElementById('modalSave')?.addEventListener('click', async () => {
+    const _chained = _enterChainAdd; _enterChainAdd = false;
     const tagCbs = document.querySelectorAll('#fTagGroup .tag-checkbox:checked');
     const defEl = document.getElementById('fDefinition');
     const exEl = document.getElementById('fExample');
@@ -1166,6 +1179,7 @@ function openModal(s, word) {
       }
       close();
       renderInPlace(s);
+      if (_chained && !isEdit) openModal(s, null);   // 連續新增：直接開下一筆
     } catch (e) { toast('儲存失敗: ' + e, 'toast-error'); }
   });
 
@@ -1446,12 +1460,27 @@ function openModal(s, word) {
     chip.style.borderColor = chip.classList.contains('selected') ? 'var(--accent)' : 'var(--border)';
   });
 
-  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fExample', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fRelated', 'fForms', 'fSyllables', 'fEtymology', 'fPhrases', 'fDeck'];
+  // Enter 導覽（由上而下；描述/字源 textarea 需 Ctrl+Enter；膠囊欄空 Enter 跳轉、有字就地存膠囊）
+  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fSyllables', 'fExample', 'fDescription', 'fRelated', 'fForms', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fEtymology', 'fPhrases', 'fDeck'];
+  const _jumpNext = (curId) => {
+    const idx = fieldIds.indexOf(curId);
+    if (idx === -1) return;
+    if (idx < fieldIds.length - 1) {
+      document.getElementById(fieldIds[idx + 1])?.focus();
+    } else {
+      _enterChainAdd = true;
+      document.getElementById('modalSave')?.click();
+    }
+  };
 
   document.getElementById('wordModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const el = e.target;
-    if (el.tagName === 'TEXTAREA') return;
+    if (el.tagName === 'TEXTAREA') {
+      // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); _jumpNext(el.id); }
+      return;
+    }
     if ((el.id === 'fDefinition' || el.id === 'fExample') && el.value.trim()) return;
     const idx = fieldIds.indexOf(el.id);
     if (idx === -1) return;
@@ -1460,12 +1489,7 @@ function openModal(s, word) {
     if (el.id === 'fWord') {
       autoFillAll();
     }
-
-    if (idx < fieldIds.length - 1) {
-      document.getElementById(fieldIds[idx + 1])?.focus();
-    } else {
-      document.getElementById('modalSave')?.click();
-    }
+    _jumpNext(el.id);
   });
 
   if (isEdit) {
