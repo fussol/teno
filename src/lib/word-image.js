@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 import { getImagesForWord, getImagesForWords } from './db.js';
 import { icon } from './svg.js';
+import { normalizeImageUrl } from './image-url.js'; // IMG-HOTFIX2：Drive uc 轉 lh3 直連（CORP 擋跨站嵌）
 
 // ── module cache（wordId → images[]；無圖快取為空陣列以省重查）──
 const _cache = new Map();
@@ -69,7 +70,7 @@ export function renderImageCarousel(images, opts = {}) {
        <button class="wimg-nav wimg-next" data-wimg-next title="下一張（→）">${icon('chevronR')}</button>`
     : '';
   const imgs = images.map((im, i) =>
-    `<img class="wimg-img${i === 0 ? ' on' : ''}" src="${esc(im.data)}" alt="${esc(im.filename || 'word image')}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-wimg-idx="${i}">`
+    `<img class="wimg-img${i === 0 ? ' on' : ''}" src="${esc(normalizeImageUrl(im.data))}" alt="${esc(im.filename || 'word image')}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-wimg-idx="${i}">`
   ).join('');
   return `<div class="${cls}" data-wimg data-count="${images.length}">
     <div class="wimg-track" data-wimg-track>${imgs}</div>
@@ -211,7 +212,7 @@ export function renderEditorThumbs(images, onChange) {
     <div class="wimg-thumbs" data-wimg-thumbs>
       ${list.map((im, i) => `
         <div class="wimg-thumb" data-wimg-thumb="${i}" title="${esc2(im.filename || '')}">
-          <img src="${esc2(im.data)}" alt="${esc2(im.filename || '')}">
+          <img src="${esc2(normalizeImageUrl(im.data))}" alt="${esc2(im.filename || '')}">
           <div class="wimg-thumb-tools">
             <button type="button" data-wimg-move="-1" title="左移">${icon('chevronL')}</button>
             <button type="button" data-wimg-move="1" title="右移">${icon('chevronR')}</button>

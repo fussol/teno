@@ -5,6 +5,7 @@ public/real-data.json 已進 .gitignore，不進版本庫、不上 GitHub。
 跑法：python3 tools/export-web-snapshot.py（build 前跑一次即可）。
 demo-data.js seed() 會優先 fetch 此檔，失敗才回退 36 詞種子。"""
 import json
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -155,12 +156,34 @@ def main():
     # 使用者真庫可能還沒跑過 v14 搬遷（表不存在或空）→ 舊欄回退，網頁立刻有圖不用等開 App。
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     images = {}
+    def _norm(u):
+        # IMG-HOTFIX2：Drive uc 轉 lh3 直連（跟 src/lib/image-url.js 同語意）。
+        # uc 終點回 CORP: same-site＋COEP: require-corp，跨站 <img> 全破圖；
+        # lh3 無 CORP、可嵌，=w800 順手順 800px 省流量。
+        u = (u or '').strip()
+        if not u or u.startswith('data:'):
+            return u
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(u).hostname or ''
+        except Exception:
+            return u
+        if not re.search(r'google(usercontent)?\.com$', host):
+            return u
+        if host.startswith('lh3.'):
+            return u if re.search(r'=w\d', u) else u + '=w800'
+        m = (re.search(r'[?&]id=([A-Za-z0-9_-]{10,})', u)
+             or re.search(r'/file/d/([A-Za-z0-9_-]{10,})', u)
+             or re.search(r'/d/([A-Za-z0-9_-]{10,})', u))
+        if m:
+            return f'https://lh3.googleusercontent.com/d/{m.group(1)}=w800'
+        return u
     def _put(wid, filename, data):
         # 舊欄可逗號分隔多 URL（38 詞 2 張以上）→ 逐張拆開，跟 JS/Rust 搬遷同語意
         if not data:
             return
         for part in str(data).split(','):
-            u = part.strip()
+            u = _norm(part.strip())
             if not u or len(u) >= IMG_CAP:
                 continue
             images.setdefault(wid, []).append({'filename': filename or '', 'data': u})
