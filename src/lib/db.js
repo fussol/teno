@@ -133,13 +133,29 @@ async function migrate(d) {
     await d.execute('CREATE INDEX IF NOT EXISTS idx_word_images_word ON word_images(word_id)');
   } catch (_) {}
   // IMG1-LEGACY（2026-09-08）：舊 words.image 欄孤兒圖一次性搬遷。
-  // v5.11.0 前圖存 words.image；IMG1 切新表後無搬遷＋無渲染路徑讀舊欄 → 436 張圖全隱身。
-  // NOT EXISTS 守門＝冪等，開機每次跑無妨；搬完舊欄保留（匯出/回滾參照），渲染一律走新表。
+  // v5.11.0 前圖存 words.image（Google Drive URL，逗號分隔可多張）；
+  // IMG1 切新表後無搬遷＋無渲染路徑讀舊欄 → 436 張圖全隱身。
+  // 單 URL 走純 SQL；多 URL（逗號分隔）走下面 JS 拆分（SQLite 無 split）。
+  // NOT EXISTS 守門＝冪等，開機每次跑無妨；舊欄保留，渲染一律走新表。
   try {
     await d.execute(`INSERT INTO word_images (word_id, filename, data)
       SELECT w.id, '', w.image FROM words w
-      WHERE w.image IS NOT NULL AND w.image != ''
+      WHERE w.image IS NOT NULL AND w.image != '' AND w.image NOT LIKE '%,%'
       AND NOT EXISTS (SELECT 1 FROM word_images wi WHERE wi.word_id = w.id)`);
+  } catch (_) {}
+  // IMG1-LEGACY 多圖拆分（2026-09-08 追補）：逗號分隔多 URL 逐張拆開。
+  // 整詞比對守門＝冪等；若已有一列但內容是未拆整串（舊版誤存）→ 刪掉重拆。
+  try {
+    const multi = await d.select(`SELECT id, image FROM words WHERE image LIKE '%,%'`);
+    for (const row of multi) {
+      const urls = String(row.image || '').split(',').map(u => u.trim()).filter(Boolean);
+      if (!urls.length) continue;
+      const have = await d.select('SELECT data FROM word_images WHERE word_id = $1', [row.id]);
+      const ok = have.length === urls.length && have.every(r => urls.includes((r.data || '').trim()));
+      if (ok) continue;
+      await d.execute('DELETE FROM word_images WHERE word_id = $1', [row.id]);
+      for (const u of urls) await d.execute('INSERT INTO word_images (word_id, filename, data) VALUES ($1, $2, $3)', [row.id, '', u]);
+    }
   } catch (_) {}
   // v5.2: review_log 記錄複習後的狀態 (fsrs-report 轉移分析不用 replay)
   try { await d.execute('ALTER TABLE review_log ADD COLUMN new_state INTEGER'); } catch (_) {}

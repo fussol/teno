@@ -72,10 +72,14 @@ export async function seed() {
           }
         }
         for (const w of words) {
-          if (!images.has(w.id) && w.image) images.set(w.id, [{ filename: '', data: w.image }]);
+          // 舊欄逗號分隔多 URL → 逐張拆開（跟匯出腳本／搬遷同語意）
+          if (!images.has(w.id) && w.image) {
+            const parts = String(w.image).split(',').map(u => u.trim()).filter(Boolean);
+            if (parts.length) images.set(w.id, parts.map(u => ({ filename: '', data: u })));
+          }
         }
         wordSeq = 1; logSeq = reviewLogs.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
-        console.log(`[demo] 📦 真資料快照：${words.length} 詞 / ${cards.size} 卡 / ${decks.length} 字本`);
+        console.log(`[demo] 📦 真資料快照：${words.length} 詞 / ${cards.size} 卡 / ${decks.length} 字本 / ${images.size} 有圖`);
         return;
       }
     }

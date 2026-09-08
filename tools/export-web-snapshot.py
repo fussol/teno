@@ -156,11 +156,14 @@ def main():
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     images = {}
     def _put(wid, filename, data):
+        # 舊欄可逗號分隔多 URL（38 詞 2 張以上）→ 逐張拆開，跟 JS/Rust 搬遷同語意
         if not data:
             return
-        if len(data) >= IMG_CAP:
-            return
-        images.setdefault(wid, []).append({'filename': filename or '', 'data': data})
+        for part in str(data).split(','):
+            u = part.strip()
+            if not u or len(u) >= IMG_CAP:
+                continue
+            images.setdefault(wid, []).append({'filename': filename or '', 'data': u})
     if 'word_images' in tables:
         for r in con.execute('SELECT word_id, filename, data FROM word_images ORDER BY word_id, id'):
             d = dict(r)

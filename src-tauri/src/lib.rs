@@ -1956,14 +1956,16 @@ pub fn run() {
         },
         Migration {
             // IMG1-LEGACY（2026-09-08）：舊 words.image 欄孤兒圖一次性搬遷。
-            // v5.11.0 前圖存 words.image；IMG1 切新表後無搬遷 → 舊圖全隱身。
+            // v5.11.0 前圖存 words.image（Drive URL，逗號分隔可多張）；IMG1 切新表後無搬遷 → 舊圖全隱身。
+            // 單 URL 走此 SQL；多 URL 由 JS migrate 拆分補（SQLite 無 split）。
             // NOT EXISTS 守門＝冪等；舊欄保留，渲染一律走 word_images。
+            // 註：v14 從未在任何地方執行過（本 commit 前無含 v14 的版本被 build／push），故直接修 SQL 而非另開 v15。
             version: 14,
             description: "backfill word_images from legacy words.image (IMG1 legacy orphan images)",
             sql: "
                 INSERT INTO word_images (word_id, filename, data)
                 SELECT w.id, '', w.image FROM words w
-                WHERE w.image IS NOT NULL AND w.image != ''
+                WHERE w.image IS NOT NULL AND w.image != '' AND w.image NOT LIKE '%,%'
                 AND NOT EXISTS (SELECT 1 FROM word_images wi WHERE wi.word_id = w.id);
             ",
             kind: MigrationKind::Up,
