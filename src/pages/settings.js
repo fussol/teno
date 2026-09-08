@@ -250,6 +250,20 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
+    <!-- 字卡顯示 -->
+    <div class="section">
+      <div class="section-title">${icon('galleryHorizontalEnd')} 字卡顯示</div>
+      <div class="config-section">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">${icon('list')} 例句顯示句數</div>
+            <div class="config-field-hint">字卡／學習／測驗最多顯示幾句，超過的隱藏可展開（0＝全部顯示）</div>
+          </div>
+          <input type="number" id="exampleDisplayMaxInput" min="0" max="50" value="${window.__maxExampleLines ?? 0}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
+        </div>
+      </div>
+    </div>
+
     ${s.state.devMode ? `
     <!-- 操作日誌 -->
     <div class="section">
@@ -995,6 +1009,20 @@ export function onMount(s) {
     const val = parseInt(document.getElementById('maxExamSessionsInput')?.value);
     if (val > 0) {
       await s.actions.setMaxExamSessions(val);
+    }
+  });
+
+  document.getElementById('exampleDisplayMaxInput')?.addEventListener('change', async () => {
+    const el = document.getElementById('exampleDisplayMaxInput');
+    const val = Math.max(0, Math.min(50, parseInt(el?.value) || 0));
+    el.value = val;
+    window.__maxExampleLines = val;
+    try {
+      const d = await import('../lib/db.js');
+      await d.setSetting('exampleDisplayMax', String(val));
+      toast(val === 0 ? '例句顯示：全部顯示' : `例句顯示：最多 ${val} 句（其餘可展開）`, 'toast-success');
+    } catch (e) {
+      toast('例句顯示設定儲存失敗: ' + e, 'toast-error');
     }
   });
 

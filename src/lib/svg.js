@@ -213,20 +213,28 @@ function esc(s) {
 /**
  * Format example text: if it contains English + Chinese translation
  * separated by punctuation boundary, split onto separate lines.
+ * 顯示上限只做隱藏不做刪除：超過 max 的句子包在可展開區，
+ * 使用者點「展開其餘 N 句」即看全文（全域設定 exampleDisplayMax，0＝全顯示）。
  */
 export function fmtExample(ex) {
   if (!ex) return '';
   const row = (html) => `<div style="display:flex;gap:.4em"><span>•</span><span>${html}</span></div>`;
-  let lines = ex.split('\n').filter(Boolean);
-  const max = window.__maxExampleLines || 0;
-  if (max > 0 && lines.length > max) {
-    lines = lines.slice(0, max);
-  }
-  return lines.map(l => {
+  const fmtLine = (l) => {
     const m = l.match(/^(.+[.!?])\s*[,，]\s*([\u4e00-\u9fff].+)$/);
     if (m) {
       return `${row(esc(m[1]))}<div style="margin-top:4px;color:var(--text-tertiary);font-size:13px">${row(esc(m[2]))}</div>`;
     }
     return row(esc(l));
-  }).join('');
+  };
+  const lines = ex.split('\n').filter(Boolean);
+  const max = window.__maxExampleLines || 0;
+  if (!(max > 0 && lines.length > max)) {
+    return lines.map(fmtLine).join('');
+  }
+  const shown = lines.slice(0, max).map(fmtLine).join('');
+  const rest = lines.slice(max).map(fmtLine).join('');
+  const hiddenCount = lines.length - max;
+  return `${shown}<div class="ex-extra" style="display:none">${rest}</div>`
+    + `<button class="ex-toggle" style="margin-top:4px;font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;padding:2px 0" `
+    + `onclick="var x=this.previousElementSibling;var open=x.style.display!=='none';x.style.display=open?'none':'';this.textContent=open?'展開其餘 ${hiddenCount} 句 ▾':'收起 ▴'">展開其餘 ${hiddenCount} 句 ▾</button>`;
 }
