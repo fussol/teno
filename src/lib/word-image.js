@@ -147,6 +147,9 @@ function _onDocKey(e) {
   if (e.isComposing) return;
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  // 卡預覽開著時方向鍵歸卡片上下張（兩瀏覽器的 _cardKeyHandler），carousel 不搶——
+  // 否則多圖卡片按一下 → 又換卡又切圖（2026-09-08 全圈審計抓到）
+  if (document.getElementById('cardPreviewModal') || document.getElementById('deckCardPreview')) return;
   const car = document.querySelector('[data-wimg] .wimg-img.on');
   if (!car) return;
   const root = car.closest('[data-wimg]');
