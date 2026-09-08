@@ -123,10 +123,10 @@ export function render(s) {
       </div>
     </div>
 
-    <!-- A套：自動補齊家族（五卡網格；手機塌單欄） -->
+    <!-- A套：自動補齊家族（六卡網格；手機塌單欄） -->
     <div class="section">
       <div class="section-title">${icon('sparkle')} 自動補齊</div>
-      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音與相關詞</div>
+      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形與韋氏欄位（字義/字源/音節/片語/同反義）</div>
       <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
         <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
         <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位（開＝整欄取代＋無視門檻；關＝只補缺失）</span>
@@ -202,6 +202,16 @@ export function render(s) {
         <button class="btn" onclick="window.__genFormsLLM()">${icon('sparkle')} 開始產生</button>
         <div class="tool-output" id="formsResult" style="margin-top:var(--s3);display:none"></div>
         </div>
+
+    <!-- D段：韋氏完整補齊（自動補齊家族一員；缺失才填，覆寫開關同樣生效） -->
+        <div class="card">
+          <div class="card-title">${icon('book')} 韋氏完整補齊</div>
+          <div class="card-desc">為缺少字義、字源、音節、片語、同義反義的單字自動補上（韋氏字典）</div>
+        <div class="tool-row" style="margin-bottom:var(--s2)">
+          <button class="btn" id="mwFullFillBtn">${icon('book')} 開始補齊</button>
+        </div>
+        <div class="tool-output" id="mwFullResult" style="margin-top:var(--s3);display:none"></div>
+        </div>
       </div><!-- /自動補齊 grid -->
     </div><!-- /自動補齊 section -->
 
@@ -211,10 +221,6 @@ export function render(s) {
       <div class="card">
         <div class="card-title">${icon('book')} Cambridge 字典查詢</div>
         <div class="card-desc">從 Cambridge Dictionary 查詢單字定義、IPA、例句</div>
-        <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2)">
-          <button class="btn" id="mwFullFillBtn">${icon('book')} 韋氏完整補齊（字義/字源/音節/片語/同反義）</button>
-        </div>
-        <div class="card-desc" id="mwFullFillHint">用韋氏填 definition、etymology、syllables、phrases、synonym、antonym；覆寫開關同樣生效</div>
          <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2)">
            ${_selHtml('cambridgeDict', [['英英','en'],['英中','zh']], 'en')}
             <input id="cambridgeWord" type="text" placeholder="輸入英文單字"
@@ -1186,7 +1192,7 @@ export function onMount(s) {
     const need = _ow() ? [...words] : words.filter(w =>
       !w.definition?.trim() || !w.etymology?.trim() || !w.syllables?.trim() ||
       !w.phrases?.trim() || !w.synonym?.trim() || !w.antonym?.trim());
-    const el = document.getElementById('cambridgeResult');
+    const el = document.getElementById('mwFullResult') || document.getElementById('cambridgeResult');
     if (!need.length) {
       if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 韋氏欄位都齊了！</div>`; }
       return;
