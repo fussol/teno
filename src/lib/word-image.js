@@ -69,7 +69,7 @@ export function renderImageCarousel(images, opts = {}) {
        <button class="wimg-nav wimg-next" data-wimg-next title="下一張（→）">${icon('chevronR')}</button>`
     : '';
   const imgs = images.map((im, i) =>
-    `<img class="wimg-img${i === 0 ? ' on' : ''}" src="${esc(im.data)}" alt="${esc(im.filename || 'word image')}" loading="lazy" decoding="async" data-wimg-idx="${i}">`
+    `<img class="wimg-img${i === 0 ? ' on' : ''}" src="${esc(im.data)}" alt="${esc(im.filename || 'word image')}" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-wimg-idx="${i}">`
   ).join('');
   return `<div class="${cls}" data-wimg data-count="${images.length}">
     <div class="wimg-track" data-wimg-track>${imgs}</div>
