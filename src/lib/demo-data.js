@@ -17,6 +17,7 @@ let reviewLogs = [];
 let examHistory = [];
 let goalStreak = null;
 let filteredDecks = [];
+let images = new Map(); // IMG1-LEGACY（2026-09-08）：wordId → [{filename, data}]；快照 images 段載入
 let logSeq = 1;
 let wordSeq = 1;
 
@@ -63,6 +64,16 @@ export async function seed() {
         reviewLogs = j.reviewLogs || [];
         examHistory = j.examHistory || [];
         goalStreak = j.goalStreak || null;
+        // IMG1-LEGACY：快照 images 段（無則舊 words.image 欄回退，跟匯出腳本同語意）
+        images = new Map();
+        if (j.images && typeof j.images === 'object') {
+          for (const [wid, list] of Object.entries(j.images)) {
+            if (Array.isArray(list) && list.length) images.set(wid, list.map(x => ({ filename: x.filename || '', data: x.data || '' })));
+          }
+        }
+        for (const w of words) {
+          if (!images.has(w.id) && w.image) images.set(w.id, [{ filename: '', data: w.image }]);
+        }
         wordSeq = 1; logSeq = reviewLogs.reduce((m, x) => Math.max(m, x.id || 0), 0) + 1;
         console.log(`[demo] 📦 真資料快照：${words.length} 詞 / ${cards.size} 卡 / ${decks.length} 字本`);
         return;
@@ -340,19 +351,29 @@ export async function saveWord(word) {
   if (i >= 0) words[i] = w; else words.push(w);
 }
 export async function saveWordsInTx(list) { for (const w of list) await saveWord(w); }
-export async function getImagesForWord() { return []; }
-export async function getImagesForWords() { return new Map(); }
-export async function addWordImage() {}
-export async function deleteWordImage() {}
-export async function deleteWordImagesForWord() {}
+export async function getImagesForWord(wordId) { return (images.get(wordId) || []).map(x => ({ ...x })); }
+export async function getImagesForWords(wordIds) {
+  const m = new Map();
+  for (const id of [...new Set(wordIds || [])]) {
+    if (images.has(id)) m.set(id, images.get(id).map(x => ({ ...x })));
+  }
+  return m;
+}
+export async function addWordImage(wordId, filename, data) {
+  if (!images.has(wordId)) images.set(wordId, []);
+  images.get(wordId).push({ filename: filename || '', data });
+}
+export async function deleteWordImage(imageId) { /* demo 無 row id 語意：呼叫端走全量替換；no-op */ }
+export async function deleteWordImagesForWord(wordId) { images.delete(wordId); }
 export async function deleteWord(id) {
   const w = words.find((x) => x.id === id);
   words = words.filter((x) => x.id !== id);
   cards.delete(id);
+  images.delete(id); // IMG1-LEGACY：刪字連刪圖（跟 db.js deleteWord 同語意）
   reviewLogs = reviewLogs.filter((r) => r.wordId !== id);
   examHistory = examHistory.filter((e2) => e2.word !== id && (!w || e2.word !== w.word));
 }
-export async function bulkSaveWords(list) { words = []; for (const w of list) await saveWord(w); }
+export async function bulkSaveWords(list) { words = []; images = new Map(); for (const w of list) await saveWord(w); }
 
 // ─── Cards ───
 export async function getAllCards() { return new Map(cards); }
@@ -374,6 +395,7 @@ export async function deleteWordsByDeck(deckName) {
   words = words.filter((w) => w.deck !== deckName);
   for (const id of ids) {
     cards.delete(id);
+    images.delete(id); // IMG1-LEGACY：刪字本連刪圖
     reviewLogs = reviewLogs.filter((r) => r.wordId !== id);
   }
   examHistory = examHistory.filter((e2) => !ids.has(e2.word));
@@ -466,5 +488,5 @@ export async function checkpoint() {}
 export async function clearAll() {
   words = []; cards = new Map(); decks = []; folders = {};
   additions = []; settings = new Map(); reviewLogs = [];
-  examHistory = []; goalStreak = null; filteredDecks = [];
+  examHistory = []; goalStreak = null; filteredDecks = []; images = new Map();
 }

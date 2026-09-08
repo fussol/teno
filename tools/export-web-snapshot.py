@@ -151,12 +151,33 @@ def main():
                     'questionType': r['question_type'], 'examinedAt': r['examined_at']}
                    for r in con.execute('SELECT word, correct, question_type, examined_at FROM exam_history')]
 
+    # IMG1-LEGACY（2026-09-08）：word_images 新表＋舊 words.image 欄雙來源。
+    # 使用者真庫可能還沒跑過 v14 搬遷（表不存在或空）→ 舊欄回退，網頁立刻有圖不用等開 App。
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    images = {}
+    def _put(wid, filename, data):
+        if not data:
+            return
+        if len(data) >= IMG_CAP:
+            return
+        images.setdefault(wid, []).append({'filename': filename or '', 'data': data})
+    if 'word_images' in tables:
+        for r in con.execute('SELECT word_id, filename, data FROM word_images ORDER BY word_id, id'):
+            d = dict(r)
+            _put(d['word_id'], d.get('filename'), d.get('data'))
+    # 舊欄回退：新表沒該字的圖＋舊欄有 → 補上（跟 JS/Rust 搬遷同語意：NOT EXISTS 才補）
+    for r in con.execute("SELECT id, image FROM words WHERE image IS NOT NULL AND image != ''"):
+        d = dict(r)
+        if d['id'] not in images:
+            _put(d['id'], '', d.get('image'))
+
     snap = {'words': words, 'cards': cards, 'decks': decks,
-            'reviewLogs': reviewLogs, 'goalStreak': goalStreak, 'examHistory': examHistory}
+            'reviewLogs': reviewLogs, 'goalStreak': goalStreak, 'examHistory': examHistory,
+            'images': images}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(snap, ensure_ascii=False), encoding='utf-8')
     print(f'OK: {len(words)} words, {len(cards)} cards, {len(decks)} decks, '
-          f'{len(reviewLogs)} logs -> {OUT} ({OUT.stat().st_size // 1024} KB)')
+          f'{len(reviewLogs)} logs, {len(images)} imaged words -> {OUT} ({OUT.stat().st_size // 1024} KB)')
     con.close()
     return 0
 

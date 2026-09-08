@@ -1954,6 +1954,20 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            // IMG1-LEGACY（2026-09-08）：舊 words.image 欄孤兒圖一次性搬遷。
+            // v5.11.0 前圖存 words.image；IMG1 切新表後無搬遷 → 舊圖全隱身。
+            // NOT EXISTS 守門＝冪等；舊欄保留，渲染一律走 word_images。
+            version: 14,
+            description: "backfill word_images from legacy words.image (IMG1 legacy orphan images)",
+            sql: "
+                INSERT INTO word_images (word_id, filename, data)
+                SELECT w.id, '', w.image FROM words w
+                WHERE w.image IS NOT NULL AND w.image != ''
+                AND NOT EXISTS (SELECT 1 FROM word_images wi WHERE wi.word_id = w.id);
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)

@@ -132,6 +132,15 @@ async function migrate(d) {
     )`);
     await d.execute('CREATE INDEX IF NOT EXISTS idx_word_images_word ON word_images(word_id)');
   } catch (_) {}
+  // IMG1-LEGACY（2026-09-08）：舊 words.image 欄孤兒圖一次性搬遷。
+  // v5.11.0 前圖存 words.image；IMG1 切新表後無搬遷＋無渲染路徑讀舊欄 → 436 張圖全隱身。
+  // NOT EXISTS 守門＝冪等，開機每次跑無妨；搬完舊欄保留（匯出/回滾參照），渲染一律走新表。
+  try {
+    await d.execute(`INSERT INTO word_images (word_id, filename, data)
+      SELECT w.id, '', w.image FROM words w
+      WHERE w.image IS NOT NULL AND w.image != ''
+      AND NOT EXISTS (SELECT 1 FROM word_images wi WHERE wi.word_id = w.id)`);
+  } catch (_) {}
   // v5.2: review_log 記錄複習後的狀態 (fsrs-report 轉移分析不用 replay)
   try { await d.execute('ALTER TABLE review_log ADD COLUMN new_state INTEGER'); } catch (_) {}
   // v5.2: 審計日誌 (設定變更/匯入匯出/CLI 寫入)
