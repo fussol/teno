@@ -1287,7 +1287,9 @@ export function createStore() {
         examples: wordData.examples || [],
         createdAt: new Date().toISOString(),
       };
-      state.words.push(word);
+      // 搜尋索引以陣列 reference 判斷新鮮度（browser/deck-browser searchIndex+filter memo）：
+      // push 不換 reference 會讓剛加的字搜不到，改 immutable append。
+      state.words = [...state.words, word];
       try { await db.saveWord(word); } catch (e) { console.warn('[store] addWord saveWord error:', e); }
       await refreshDerived();
       notify();
@@ -1486,7 +1488,6 @@ export function createStore() {
           examples: src.examples || [],
           createdAt: now,
         };
-        state.words.push(word);
         existing.add(w);
         newWords.push(word);
         added++;
@@ -1496,6 +1497,9 @@ export function createStore() {
         }
       }
 
+      // 搜尋索引以陣列 reference 判斷新鮮度：loop 內只收 newWords，
+      // 成功後一次 immutable append 換 reference（單筆 push 不換 reference 會讓新字搜不到）。
+      // D15/G4 回滾語意保留：tx 失敗時 state.words 根本沒動過，直接 added 歸零即可。
       // ponytail: single transaction for bulk insert
       if (newWords.length) {
         let txFailed = false;
@@ -1509,11 +1513,9 @@ export function createStore() {
           console.warn('[store] importWords bulk insert error:', e);
         }
         if (txFailed) {
-          // D15/G4: tx 失敗時，不僅 added 歸零，連 in-memory state.words 也要回滾
-          // 這批已 push 的新字（否則 UI 顯示已入庫、DB 其實 0 顆 → 重開即失蹤）。
-          const newIds = new Set(newWords.map(w => w.id));
-          state.words = state.words.filter(w => !newIds.has(w.id));
           added = 0;
+        } else {
+          state.words = [...state.words, ...newWords];
         }
       }
 
@@ -1587,7 +1589,9 @@ export function createStore() {
     async editWord(id, updates) {
       const idx = state.words.findIndex(w => w.id === id);
       if (idx === -1) return;
-      state.words[idx] = { ...state.words[idx], ...updates };
+      // 搜尋索引以陣列 reference＋物件身分判斷新鮮度：原地賦值舊物件仍在 Map 裡，
+      // 新物件查不到 → 編輯後的字搜尋人間蒸發。改 map 換 reference＋新物件。
+      state.words = state.words.map(w => w.id === id ? { ...w, ...updates } : w);
       try { await db.saveWord(state.words[idx]); } catch (e) { console.warn('[store] editWord saveWord error:', e); }
       notify();
     },
