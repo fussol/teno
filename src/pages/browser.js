@@ -146,9 +146,6 @@ function wordRowHtml(w, tagColors, sysTags) {
         }).join('')}
         ${!(w.tags || []).length ? `<span class="muted" style="font-size:11px">無標籤</span>` : ''}
       </span>
-      ${w.description ? `<div class="word-row-desc" style="margin-left:0">${escapeHtml(w.description)}</div>` : ''}
-      ${w.related && w.related.length ? `<div class="word-row-related" style="margin-left:0">${w.related.map(r => `<span>${escapeHtml(r)}</span>`).join('')}</div>` : ''}
-      ${w.forms && w.forms.length ? `<div class="word-row-forms" style="margin-left:0">${w.forms.map(f => `<span>${escapeHtml(f)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="word-row-actions" style="${isMobile ? 'opacity:1' : ''}">
       <button title="編輯標籤" data-action="tags" data-word-id="${escapeAttr(w.id)}">${icon('hash')}</button>
