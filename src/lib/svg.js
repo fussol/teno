@@ -232,8 +232,9 @@ export function wordExample(w) {
 /**
  * Format example text: if it contains English + Chinese translation
  * separated by punctuation boundary, split onto separate lines.
- * 顯示上限只做隱藏不做刪除：超過 max 的句子包在可展開區，
+ * 顯示上限只做隱藏不做刪除：超過 max 隨機抽 max 句顯示，其餘包在可展開區，
  * 使用者點「展開其餘 N 句」即看全文（全域設定 exampleDisplayMax，0＝全顯示）。
+ * 每次渲染重抽，所以重開卡片看到的 N 句會不一樣。
  */
 export function fmtExample(ex) {
   if (!ex) return '';
@@ -250,8 +251,14 @@ export function fmtExample(ex) {
   if (!(max > 0 && lines.length > max)) {
     return lines.map(fmtLine).join('');
   }
-  const shown = lines.slice(0, max).map(fmtLine).join('');
-  const rest = lines.slice(max).map(fmtLine).join('');
+  // Fisher-Yates 洗牌後取前 max 句（舊寫法 sort(()=>Math.random()-0.5) 有 bias，這裡用無偏版本）
+  const shuffled = [...lines];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  const shown = shuffled.slice(0, max).map(fmtLine).join('');
+  const rest = shuffled.slice(max).map(fmtLine).join('');
   const hiddenCount = lines.length - max;
   return `${shown}<div class="ex-extra" style="display:none">${rest}</div>`
     + `<button class="ex-toggle" style="margin-top:4px;font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;padding:2px 0" `
