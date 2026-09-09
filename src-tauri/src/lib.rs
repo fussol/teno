@@ -1695,6 +1695,124 @@ async fn export_app_log_text(app_handle: tauri::AppHandle) -> Result<Vec<u8>, St
     Ok(out.into_bytes())
 }
 
+// ─── 操作日誌文字檔匯入（import_app_log_text；export_app_log_text 的逆操作）───
+// 解析匯出格式（`#`註解＋`ISO | level | message`／`ISO | kind | days | …` 兩段），
+// 逐筆併入 app-log.db。語意：
+//  - 去重冪等：app_log 以 (ts, level, message) 判重，sim_runs 以 (ts, kind) 判重；
+//    重跑同一檔新增 0 筆，匯入前不需清空。
+//  - 壞行跳過計數，不整單失敗（手改檔常見缺欄／壞時間）。
+//  - 時區：匯出端 chrono::DateTime::from_timestamp＝UTC，解析一律按 UTC，
+//    roundtrip 毫秒精確。message 內的 `\\n` 還原為換行。
+//  - 表不存在先建（空庫／刪檔重建後照吃）。
+#[derive(serde::Serialize)]
+struct AppLogImportResult {
+    log_added: usize,
+    log_skipped: usize,
+    sim_added: usize,
+    sim_skipped: usize,
+    bad_lines: usize,
+}
+
+fn parse_applog_ts(s: &str) -> Option<i64> {
+    let s = s.trim();
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.3f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        .ok()
+        .map(|dt| dt.and_utc().timestamp_millis())
+}
+
+fn parse_opt_i64(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if s == "-" || s.is_empty() { None } else { s.parse().ok() }
+}
+
+fn parse_opt_f64(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s == "-" || s.is_empty() { None } else { s.parse().ok() }
+}
+
+fn import_app_log_text_into(conn: &mut rusqlite::Connection, text: &str) -> Result<AppLogImportResult, String> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS app_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, level TEXT NOT NULL DEFAULT 'log', message TEXT NOT NULL);
+         CREATE INDEX IF NOT EXISTS idx_app_log_ts ON app_log(ts);
+         CREATE TABLE IF NOT EXISTS sim_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, days INTEGER, target_pct REAL, seed INTEGER, from_zero INTEGER DEFAULT 0, total_reviews INTEGER, mature_cards INTEGER, mature_pct REAL, summary TEXT);
+         CREATE INDEX IF NOT EXISTS idx_sim_runs_ts ON sim_runs(ts);"
+    ).map_err(|e| format!("建表失敗: {}", e))?;
+    let tx = conn.transaction().map_err(|e| format!("開啟交易失敗: {}", e))?;
+    let mut res = AppLogImportResult { log_added: 0, log_skipped: 0, sim_added: 0, sim_skipped: 0, bad_lines: 0 };
+    {
+        let mut ins_log = tx.prepare(
+            "INSERT INTO app_log (ts, level, message) SELECT ?, ?, ?
+             WHERE NOT EXISTS (SELECT 1 FROM app_log WHERE ts = ? AND level = ? AND message = ?)"
+        ).map_err(|e| format!("準備 app_log 寫入失敗: {}", e))?;
+        let mut ins_sim = tx.prepare(
+            "INSERT INTO sim_runs (ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary)
+             SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+             WHERE NOT EXISTS (SELECT 1 FROM sim_runs WHERE ts = ? AND kind = ?)"
+        ).map_err(|e| format!("準備 sim_runs 寫入失敗: {}", e))?;
+        let mut in_sim = false;
+        for raw in text.lines() {
+            // 只去行首（註解／空行判定用）；行尾必須保留——sim 空 summary 行以
+            // 尾空格成段（`… | 95 | `），trim_end 會把 10 段砍成 9 段誤判壞行。
+            let line = raw.trim_start();
+            if line.trim().is_empty() { continue; }
+            if line.starts_with('#') {
+                if line.contains("模擬歷史") || line.contains("sim_runs") { in_sim = true; }
+                continue;
+            }
+            if !in_sim {
+                // splitn(3)：message 內含 " | " 照收（前兩欄固定，餘全是 message）
+                let mut it = line.splitn(3, " | ");
+                let (ts_s, level, msg) = match (it.next(), it.next(), it.next()) {
+                    (Some(a), Some(b), Some(c)) => (a, b.trim(), c),
+                    _ => { res.bad_lines += 1; continue; }
+                };
+                if level != "log" && level != "warn" && level != "error" { res.bad_lines += 1; continue; }
+                let ts = match parse_applog_ts(ts_s) { Some(v) => v, None => { res.bad_lines += 1; continue; } };
+                let msg = msg.replace("\\n", "\n");
+                let n = ins_log.execute(rusqlite::params![ts, level, msg, ts, level, msg])
+                    .map_err(|e| format!("寫入 app_log 失敗: {}", e))?;
+                if n == 1 { res.log_added += 1; } else { res.log_skipped += 1; }
+            } else {
+                // splitn(10)：summary 內含 " | " 照收
+                let p: Vec<&str> = line.splitn(10, " | ").collect();
+                if p.len() != 10 { res.bad_lines += 1; continue; }
+                let ts = match parse_applog_ts(p[0]) { Some(v) => v, None => { res.bad_lines += 1; continue; } };
+                let kind = p[1].trim();
+                if kind.is_empty() { res.bad_lines += 1; continue; }
+                let days = parse_opt_i64(p[2]);
+                let target = parse_opt_f64(p[3]);
+                let seed = parse_opt_i64(p[4]);
+                let fz = parse_opt_i64(p[5]).unwrap_or(0);
+                let rv = parse_opt_i64(p[6]);
+                let mc = parse_opt_i64(p[7]);
+                let mp = parse_opt_f64(p[8]);
+                let sm = p[9].replace("\\n", "\n");
+                let n = ins_sim.execute(rusqlite::params![ts, kind, days, target, seed, fz, rv, mc, mp, sm, ts, kind])
+                    .map_err(|e| format!("寫入 sim_runs 失敗: {}", e))?;
+                if n == 1 { res.sim_added += 1; } else { res.sim_skipped += 1; }
+            }
+        }
+    }
+    tx.commit().map_err(|e| format!("提交失敗: {}", e))?;
+    Ok(res)
+}
+
+#[tauri::command]
+async fn import_app_log_text(app_handle: tauri::AppHandle, text: String) -> Result<AppLogImportResult, String> {
+    // 50MB 守門（WebView IPC 大字串先擋；正常匯出檔約 9MB）
+    if text.len() > 50 * 1024 * 1024 {
+        return Err("檔案過大（>50MB），拒絕匯入".to_string());
+    }
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let log_path = app_dir.join("app-log.db");
+    let mut conn = rusqlite::Connection::open(&log_path).map_err(|e| format!("開啟操作日誌失敗: {}", e))?;
+    let res = import_app_log_text_into(&mut conn, &text)?;
+    log::info!("import_app_log_text OK log+{}/~{} sim+{}/~{} bad={}",
+        res.log_added, res.log_skipped, res.sim_added, res.sim_skipped, res.bad_lines);
+    Ok(res)
+}
+
 #[tauri::command]
 async fn export_backup_data(app_handle: tauri::AppHandle, filename: String) -> Result<Vec<u8>, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -2202,7 +2320,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_bundle_data, export_bundle_dialog, export_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {
@@ -2340,6 +2458,103 @@ mod container_tests {
         assert_eq!(std::fs::read(app_dir.join("app-log.db")).unwrap(), b"NEW_LOG");
 
         let _ = std::fs::remove_dir_all(&app_dir);
+    }
+}
+
+#[cfg(test)]
+mod applog_import_tests {
+    use super::*;
+
+    fn memdb() -> rusqlite::Connection {
+        rusqlite::Connection::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn applog_txt_roundtrip_and_idempotent() {
+        let mut conn = memdb();
+        // 含：毫秒時間／無毫秒時間／message 內 " | "／\\n 轉義／壞行／sim 全 `-` 空值
+        let text = "# Teno 操作日誌導出 (app_log)\n\
+            # 格式: ISO時間 | level | message\n\
+            2026-08-13 09:44:51.209 | log | hello world\n\
+            2026-08-13 09:44:51 | warn | pipe | inside | message\n\
+            2026-08-13 09:44:52.000 | error | line1\\nline2\n\
+            2026-08-13 09:44:53.500 | log | millis-exact\n\
+            this is not a log line\n\
+            2026-08-13 09:44:54.000 | verbose | bad level\n\
+            2026-13-99 09:44:54.000 | log | bad ts\n\
+            \n\
+            # 模擬歷史 (sim_runs)\n\
+            # 格式: ISO時間 | kind | days | target% | seed | from_zero | reviews | mature | mature% | summary\n\
+            2026-09-03 12:22:38 | simulate | 365 | - | 1 | 0 | 67167 | 4668 | 95 | \n\
+            2026-09-03 12:22:39 | mature | 30 | 90 | 42 | 1 | 512 | 28 | 77.8 | pipe | in | summary\n\
+            2026-09-03 12:22:40 | simulate | 1\n";
+        let r = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!((r.log_added, r.log_skipped), (4, 0), "log 新增应为 4, 实际 {:?}", (r.log_added, r.bad_lines));
+        assert_eq!((r.sim_added, r.sim_skipped), (2, 0));
+        assert_eq!(r.bad_lines, 4, "壞行應為 4（垃圾行／錯 level／錯時間／sim 缺欄）");
+
+        // 值級驗證：毫秒精確、轉義還原、分隔符保留、NULL 語意
+        let msg: String = conn.query_row(
+            "SELECT message FROM app_log WHERE level = 'warn'", [], |r| r.get(0)).unwrap();
+        assert_eq!(msg, "pipe | inside | message");
+        let msg2: String = conn.query_row(
+            "SELECT message FROM app_log WHERE level = 'error'", [], |r| r.get(0)).unwrap();
+        assert_eq!(msg2, "line1\nline2");
+        let ts: i64 = conn.query_row(
+            "SELECT ts FROM app_log WHERE message = 'hello world'", [], |r| r.get(0)).unwrap();
+        assert_eq!(ts, 1786614291209, "UTC 毫秒 roundtrip");
+        let (days, tgt, mature_pct, summary): (Option<i64>, Option<f64>, Option<f64>, String) = conn.query_row(
+            "SELECT days, target_pct, mature_pct, summary FROM sim_runs WHERE kind = 'simulate'",
+            [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap();
+        assert_eq!((days, tgt, mature_pct), (Some(365), None, Some(95.0)));
+        assert_eq!(summary, "");
+        let sm2: String = conn.query_row(
+            "SELECT summary FROM sim_runs WHERE kind = 'mature'", [], |r| r.get(0)).unwrap();
+        assert_eq!(sm2, "pipe | in | summary");
+
+        // 冪等：重跑同一檔，新增 0
+        let r2 = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!((r2.log_added, r2.log_skipped), (0, 4));
+        assert_eq!((r2.sim_added, r2.sim_skipped), (0, 2));
+        assert_eq!(r2.bad_lines, 4);
+    }
+
+    #[test]
+    fn applog_txt_empty_and_header_only() {
+        let mut conn = memdb();
+        let r = import_app_log_text_into(&mut conn, "").unwrap();
+        assert_eq!((r.log_added, r.sim_added, r.bad_lines), (0, 0, 0));
+        let r = import_app_log_text_into(&mut conn, "# Teno 操作日誌導出 (app_log)\n（尚無操作日誌）\n").unwrap();
+        assert_eq!((r.log_added, r.bad_lines), (0, 1), "「尚無操作日誌」行計壞行但不炸");
+    }
+
+    /// 真檔 E2E（環境變數 TENOTEST_APPLOG 指向實際匯出檔時才跑；CI 無該變數自動跳過）。
+    /// 驗：73k 行全吃、筆數正確、重跑冪等。
+    #[test]
+    fn applog_txt_real_file_e2e() {
+        let path = match std::env::var("TENOTEST_APPLOG") {
+            Ok(p) => p,
+            Err(_) => { eprintln!("SKIP real-file E2E（未設 TENOTEST_APPLOG）"); return; }
+        };
+        let text = std::fs::read_to_string(&path).unwrap();
+        let dir = std::env::temp_dir().join("teno-applog-import-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dbp = dir.join("app-log.db");
+        let mut conn = rusqlite::Connection::open(&dbp).unwrap();
+        let r = import_app_log_text_into(&mut conn, &text).unwrap();
+        assert!(r.log_added > 70000, "真檔日誌應 7 萬＋，實際 {}", r.log_added);
+        assert_eq!(r.sim_added, 1, "真檔 sim 應 1 筆");
+        let n: i64 = conn.query_row("SELECT COUNT(*) FROM app_log", [], |x| x.get(0)).unwrap();
+        assert_eq!(n as usize, r.log_added);
+        drop(conn);
+        // 關閉重開後重跑 → 冪等新增 0（跨連線去重）
+        let mut conn2 = rusqlite::Connection::open(&dbp).unwrap();
+        let r2 = import_app_log_text_into(&mut conn2, &text).unwrap();
+        assert_eq!((r2.log_added, r2.sim_added), (0, 0), "重跑應冪等，實際 +{}/+{}", r2.log_added, r2.sim_added);
+        // 第二輪 skipped＝全檔行數（含檔內自重覆：第一輪 added＋skipped）
+        assert_eq!(r2.log_skipped, r.log_added + r.log_skipped);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

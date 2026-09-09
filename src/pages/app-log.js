@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
 import { fetchLogs, fetchSimRuns, countLogs, getRetentionDays, checkpointAppLog } from '../lib/app-log.js';
-import { exportAppLogText, exportDbBundleData, exportBundleDialog } from '../lib/api.js';
+import { exportAppLogText, importAppLogText, exportDbBundleData, exportBundleDialog } from '../lib/api.js';
 import { isAndroid, downloadBlobFromArray } from '../lib/platform.js';
 import { toast } from '../lib/toast.js';
 
@@ -67,6 +67,8 @@ export function render(s) {
       <div class="card" style="padding:var(--s4);display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm" id="applogExportTxtBtn">${icon('list')} 匯出操作日誌 (.txt)</button>
         <span style="font-size:11px;color:var(--text-tertiary)">文字檔（app_log＋模擬歷史）</span>
+        <button class="btn btn-sm" id="applogImportTxtBtn">${icon('upload')} 匯入操作日誌 (.txt)</button>
+        <span style="font-size:11px;color:var(--text-tertiary)">文字檔（去重併入，重複不怕）</span>
         <button class="btn btn-sm" id="applogExportBundleBtn">${icon('save')} 匯出完整備份 (.db)</button>
         <span style="font-size:11px;color:var(--text-tertiary)">捆包（teno.db＋app-log.db，匯入可吃）</span>
       </div>
@@ -121,6 +123,31 @@ export function onMount(s) {
     } catch (e) {
       toast('操作日誌匯出失敗: ' + e, 'toast-error');
     }
+  });
+  // C段：文字檔匯入（匯出格式逆操作；去重併入＋壞行跳過，後端回傳計數）。
+  // 先 closeAppLog 斷開 plugin-sql 連線再寫（避 WAL 競態），匯完重載列表。
+  document.getElementById('applogImportTxtBtn')?.addEventListener('click', () => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.txt,text/plain';
+    inp.onchange = async () => {
+      const f = inp.files?.[0];
+      if (!f) return;
+      try {
+        if (f.size > 50 * 1024 * 1024) { toast('檔案過大（>50MB），拒絕匯入', 'toast-error'); return; }
+        const text = await f.text();
+        const { closeAppLog } = await import('../lib/app-log.js');
+        await checkpointAppLog().catch(() => {});
+        await closeAppLog().catch(() => {});
+        const r = await importAppLogText(text);
+        toast(`匯入完成：日誌＋${r.log_added}／已存在${r.log_skipped}，模擬＋${r.sim_added}／已存在${r.sim_skipped}${r.bad_lines ? `，壞行跳過${r.bad_lines}` : ''}`, 'toast-success');
+        _loaded = false;
+        renderInPlace(s);
+      } catch (e) {
+        toast('操作日誌匯入失敗: ' + e, 'toast-error');
+      }
+    };
+    inp.click();
   });
   // B段：捆包匯出（TENOC 容器；雙 checkpoint＋50MB 守門；匯入走既有
   // importDbDialog，本來就吃容器，零改動）。

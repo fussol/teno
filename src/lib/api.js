@@ -126,6 +126,10 @@ export const exportBundleDialog = () =>
 export const exportAppLogText = () =>
   invoke('export_app_log_text')
 
+// 操作日誌 ← 文字檔（匯出格式逆操作；去重併入，回傳 {log_added,log_skipped,sim_added,sim_skipped,bad_lines}）
+export const importAppLogText = (text) =>
+  invoke('import_app_log_text', { text })
+
 export const exportBackupData = (filename) =>
   invoke('export_backup_data', { filename })
 
