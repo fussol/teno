@@ -177,6 +177,57 @@ export function parseCSVTable(text) {
   return { headers, rows };
 }
 
+/** app 詞性 chip 固定 16 項（browser/deck-browser 編輯器寫死中文）。 */
+export const CANONICAL_POS = [
+  '名詞', '動詞', '形容詞', '副詞', '介係詞', '連接詞', '代名詞', '感嘆詞',
+  '限定詞', '冠詞', '片語', '慣用語', '後綴', '前綴', '縮寫', '複數名詞',
+];
+
+/** 英文縮寫/全名（含簡體）→ 中文 chip。key 為小寫去尾點形。 */
+const POS_MAP = {
+  'n': '名詞', 'noun': '名詞', 'no': '名詞', '名词': '名詞', '名': '名詞',
+  'pl': '複數名詞', 'pls': '複數名詞', 'ns': '複數名詞', 'plural noun': '複數名詞', '复数名词': '複數名詞',
+  'v': '動詞', 'verb': '動詞', 'vi': '動詞', 'vt': '動詞', '动词': '動詞',
+  'adj': '形容詞', 'adjective': '形容詞', '形容词': '形容詞',
+  'adv': '副詞', 'adverb': '副詞', 'ad': '副詞', '副词': '副詞',
+  'prep': '介係詞', 'preposition': '介係詞', '介系词': '介係詞', '介词': '介係詞',
+  'conj': '連接詞', 'conjunction': '連接詞', 'cj': '連接詞', '连接词': '連接詞',
+  'pron': '代名詞', 'pronoun': '代名詞', 'pn': '代名詞', '代名词': '代名詞',
+  'interj': '感嘆詞', 'interjection': '感嘆詞', 'int': '感嘆詞', 'excl': '感嘆詞', 'exclamation': '感嘆詞', '感叹词': '感嘆詞',
+  'det': '限定詞', 'determiner': '限定詞', '限定词': '限定詞',
+  'art': '冠詞', 'article': '冠詞', '冠词': '冠詞',
+  'phrase': '片語', 'phr': '片語', 'ph': '片語', '片语': '片語',
+  'idiom': '慣用語', '惯用语': '慣用語',
+  'suffix': '後綴', 'suf': '後綴', 'suff': '後綴', '后缀': '後綴',
+  'prefix': '前綴', 'pref': '前綴', '前缀': '前綴',
+  'abbr': '縮寫', 'abbrv': '縮寫', 'abbreviation': '縮寫', '缩写': '縮寫',
+};
+
+/**
+ * 詞性正規化：英文縮寫/全名 → 中文 chip（去重保序，`, ` 連接）。
+ * 未知 token 原樣保留（不丟資料）；已是中文 chip 的直接保留。
+ * e.g. "adj." → "形容詞", "n./v." → "名詞, 動詞"
+ * @param {string} val
+ * @returns {string}
+ */
+export function normalizePos(val) {
+  const parts = String(val ?? '').split(/[,，;；/／|、]+/).map(s => s.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  const out = [];
+  const seen = new Set();
+  for (const p of parts) {
+    if (CANONICAL_POS.includes(p)) {
+      if (!seen.has(p)) { seen.add(p); out.push(p); }
+      continue;
+    }
+    const key = p.toLowerCase().replace(/\.+$/g, '').trim();
+    const mapped = POS_MAP[key] || POS_MAP[p.toLowerCase().trim()];
+    const final = mapped || p;
+    if (!seen.has(final)) { seen.add(final); out.push(final); }
+  }
+  return out.join(', ');
+}
+
 /**
  * Build word objects from a raw table and a per-column field mapping.
  *
@@ -209,6 +260,8 @@ export function mapWords(headers, rows, fields, defaults = {}) {
         try { w.examples = JSON.parse(val); } catch { w.examples = val.split(';').map(e => ({ en: e.trim(), zh: '' })); }
       } else if (key === 'word') {
         w.word = val.toLowerCase();
+      } else if (key === 'pos') {
+        w.pos = normalizePos(val);
       } else if (key === 'related' || key === 'forms') {
         let parsed = null;
         try { parsed = JSON.parse(val); } catch {}
