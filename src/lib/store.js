@@ -296,6 +296,8 @@ export function createStore() {
             deckOrder: await db.getSetting('deckOrder'),
             exampleDisplayMax: await db.getSetting('exampleDisplayMax'),
             fieldVisBrowser: await db.getSetting('fieldVisBrowser'),
+            fieldVisBrowserFront: await db.getSetting('fieldVisBrowserFront'),
+            fieldVisBrowserBack: await db.getSetting('fieldVisBrowserBack'),
             fieldVisStudy: await db.getSetting('fieldVisStudy'),
             fieldVisExam: await db.getSetting('fieldVisExam'),
             colorPalette: await db.getSetting('colorPalette'),
@@ -428,23 +430,38 @@ export function createStore() {
     state.themeAccent = typeof settings.themeAccent === 'string' ? settings.themeAccent : 'skyBlue';
     state.themeAccentIntensity = typeof settings.themeAccentIntensity === 'number' ? settings.themeAccentIntensity : 0.5;
     window.__maxExampleLines = Math.max(0, parseInt(settings.exampleDisplayMax, 10) || 0);
-    // ── 欄位可見度（設定頁 master；瀏覽器/學習/測驗各一組，預設全顯示）──
-    const _FV_KEYS = ['pron', 'definition', 'example', 'description', 'related', 'forms', 'synonym', 'antonym', 'tags', 'image', 'syllables', 'etymology'];
-    const _parseVis = (v) => {
-      if (v == null || v === '') return [..._FV_KEYS];
+    // ── 欄位可見度（設定頁 master；瀏覽器正面／背面／學習測驗共用三組）──
+    // 正面預設只顯示英文單字（fresh）；背面預設全開。舊 fieldVisBrowser 遷給背面。
+    // 學習／測驗共用同一組：舊 fieldVisExam 併入 study（聯集，不藏使用者看過的），
+    // 雙鍵同步寫回，exam 讀 study 別名。
+    const _FV_KEYS = ['word', 'pron', 'definition', 'example', 'description', 'related', 'forms', 'synonym', 'antonym', 'tags', 'image', 'syllables', 'etymology'];
+    const _parseVis = (v, fallback) => {
+      const fb = fallback || _FV_KEYS;
+      if (v == null || v === '') return [...fb];
       try {
         const a = JSON.parse(v);
         if (Array.isArray(a)) return a.filter(k => _FV_KEYS.includes(k));
       } catch (_) {}
-      return [..._FV_KEYS];
+      return [...fb];
     };
-    state.fieldVisBrowser = _parseVis(settings.fieldVisBrowser);
-    state.fieldVisStudy = _parseVis(settings.fieldVisStudy);
-    state.fieldVisExam = _parseVis(settings.fieldVisExam);
+    const _ensureWord = (a) => a.includes('word') ? a : ['word', ...a];
+    state.fieldVisBrowserFront = _parseVis(settings.fieldVisBrowserFront, ['word']);
+    state.fieldVisBrowserBack = _parseVis(settings.fieldVisBrowserBack ?? settings.fieldVisBrowser);
+    const _study = _ensureWord(_parseVis(settings.fieldVisStudy));
+    const _examOld = _parseVis(settings.fieldVisExam, []);
+    const _merged = _ensureWord([...new Set([..._study, ..._examOld])]);
+    state.fieldVisStudy = _merged;
+    state.fieldVisExam = [..._merged];
+    // 舊 exam 鍵有差異才回寫合併值（首跑一次，之後雙鍵恆同）
+    if (JSON.stringify(_examOld.slice().sort()) !== JSON.stringify(_merged.slice().sort())) {
+      db.setSetting('fieldVisExam', JSON.stringify(_merged)).catch(() => {});
+    }
     window.__fieldVis = {
-      browser: [...state.fieldVisBrowser],
+      browserFront: [...state.fieldVisBrowserFront],
+      browserBack: [...state.fieldVisBrowserBack],
       study: [...state.fieldVisStudy],
-      exam: [...state.fieldVisExam],
+      exam: [...state.fieldVisStudy],
+      browser: [...state.fieldVisBrowserFront],
     };
     // ── 操作日誌: 保留天數 (0 = 不記錄, 預設 14) ──
     const logDays = parseInt(settings.logRetentionDays, 10);

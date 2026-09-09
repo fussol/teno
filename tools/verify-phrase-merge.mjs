@@ -36,17 +36,41 @@ ok('phrases only', wordExample({ example: '', phrases: 'take off\ntake off \n ta
 // 5. 空白行過濾
 ok('blank lines dropped', mergeExamplePhrases('a\n\nb', '\n c \n') === 'a\nb\nc');
 
-// ── word-extra：可見度預設全開、缺失回退 ──
+// ── word-extra：可見度預設全開、缺失回退、新 ctx 別名 ──
 const extra = await import('../src/lib/word-extra.js');
 globalThis.window = {};
-ok('FIELD_KEYS=12', extra.FIELD_KEYS.length === 12, extra.FIELD_KEYS.join(','));
-ok('default all visible', extra.visShow('study', 'example') && extra.visShow('exam', 'syllables') && extra.visShow('browser', 'image'));
-globalThis.window.__fieldVis = { browser: ['pron'], study: [], exam: ['example'] };
-ok('browser gate', !extra.visShow('browser', 'example') && extra.visShow('browser', 'pron'));
+ok('FIELD_KEYS=13', extra.FIELD_KEYS.length === 13, extra.FIELD_KEYS.join(','));
+ok('word is first key', extra.FIELD_KEYS[0] === 'word');
+ok('default all visible', extra.visShow('study', 'example') && extra.visShow('exam', 'syllables') && extra.visShow('browserFront', 'image'));
+// exam 是 study 別名：只設 study，exam 跟著走
+globalThis.window.__fieldVis = { browserFront: ['pron'], browserBack: [], study: [] };
+ok('browserFront gate', !extra.visShow('browserFront', 'example') && extra.visShow('browserFront', 'pron'));
+ok('exam aliases study', !extra.visShow('exam', 'example') && !extra.visShow('study', 'example'));
 ok('empty array = all hidden', !extra.visShow('study', 'example'));
+ok('legacy browser aliases front', !extra.visShow('browser', 'example') && extra.visShow('browser', 'pron'));
 // extraFieldsHtml 不再渲染片語獨立區塊
 globalThis.window.__fieldVis = {};
 const html = extra.extraFieldsHtml({ syllables: 'scram·ble', phrases: 'scramble up', etymology: 'x', synonym: 'a', antonym: 'b' }, (s) => s, 'study');
 ok('no phrases block', !html.includes('片語') && html.includes('scram·ble'), html.slice(0, 60));
+
+// ── cardFaceHtml：正反面各走各的可見度、單字只在字卡可關 ──
+const H = {
+  escapeHtml: (s) => String(s ?? ''),
+  wordImageSlotHTML: () => '<img>',
+  splitFieldsHtml: () => '',
+  fmtExample: (s) => s,
+  wordExample,
+};
+const w = { id: 'w1', word: 'proof', pron: 'pr', definition: 'def', example: 'ex1', tags: ['correct'], related: [], forms: [] };
+const s = { state: { decks: [], tagConfig: {} } };
+globalThis.window.__fieldVis = { browserFront: ['word'], browserBack: ['word', 'pron', 'definition', 'example', 'tags'], study: ['word'] };
+const front = extra.cardFaceHtml(w, s, 'browserFront', H);
+const back = extra.cardFaceHtml(w, s, 'browserBack', H);
+ok('front only word', front.includes('proof') && !front.includes('def') && !front.includes('ex1'), front.slice(0, 80));
+ok('back has fields', back.includes('proof') && back.includes('def') && back.includes('ex1') && back.includes('correct'), back.slice(0, 80));
+// 正面關掉 word：該面無單字（字卡限定行為）
+globalThis.window.__fieldVis.browserFront = ['pron'];
+const frontNoWord = extra.cardFaceHtml(w, s, 'browserFront', H);
+ok('front word can hide', !frontNoWord.includes('proof') && frontNoWord.includes('pr'), frontNoWord.slice(0, 80));
 
 process.exit(fail ? 1 : 0);

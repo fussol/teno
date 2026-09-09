@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample } from '../lib/svg.js';
-import { visShow } from '../lib/word-extra.js';
+import { cardFaceHtml } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
@@ -261,20 +261,17 @@ let _cardKeyHandler = null;
 let _bCardOutside = null;      // G11: card settings outside-click (document 常駐，重開卡片疊)
 let _bTagDocHandler = null;    // G11: tag dropdown outside-click（onMount 重複註冊）
 let cardSettings = {
-  showComplete: true,
-  hiddenFields: ['example', 'description'],
   pronAuto: false,
   pronManual: false,
   autoAdvance: false,
   pauseAfterPron: 1.5,
   pauseBetweenCards: 3,
 };
-// 字卡顯示設定持久化（db 設定鍵 — 換頁/重整不重置；播放狀態不存）
+// 卡片播放設定持久化（db 設定鍵 — 換頁/重整不重置；播放狀態不存）
+// 顯示類設定（正反面欄位／例句句數）統一由設定頁 master 控制，此處只留播放相關
 const CARD_SETTINGS_KEY = 'browserCardSettings';
 function saveCardSettings() {
   import('../lib/db.js').then(m => m.setSetting(CARD_SETTINGS_KEY, JSON.stringify({
-    showComplete: cardSettings.showComplete,
-    hiddenFields: cardSettings.hiddenFields,
     pronAuto: cardSettings.pronAuto,
     pronManual: cardSettings.pronManual,
     pauseAfterPron: cardSettings.pauseAfterPron,
@@ -328,27 +325,36 @@ const cardPanelCSS = `<style id="cardStyle">
   .card-popover-divider{border:none;border-top:1px solid var(--border);margin:8px 0}
 </style>`;
 
-function cardBodyHTML(w, s, st) {
-  const fh = (f) => !st.showComplete && st.hiddenFields.includes(f);
-  const ah = !st.showComplete && st.hiddenFields.length > 0;
-  // 全域欄位可見度（設定頁 master）：關掉＝整段不渲染；卡片內臨時隱藏另走 fh
-  const gv = (f) => visShow('browser', f);
-  const exMerged = wordExample(w);
-  return `<div class="card-panel-body${ah ? '' : ' revealed'}" id="cardPreviewBody">
-    <div class="card-panel-word">${escapeHtml(w.word)}</div>
-    ${gv('image') ? `<div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap${fh('image') ? ' card-hidden' : ''}">${wordImageSlotHTML(w.id)}</div>` : ''}
-    ${(gv('pron') && w.pron) ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
-    ${gv('definition') ? `${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? 'card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}` : ''}
-    ${(gv('example') && exMerged) ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(exMerged)}</div>` : ''}
-    ${(gv('description') && w.description) ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
-    ${(gv('related') && w.related && w.related.length) ? `<div class="card-panel-desc${fh('related') ? ' card-hidden' : ''}" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
-    ${(gv('forms') && w.forms && w.forms.length) ? `<div class="card-panel-desc${fh('forms') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
-    ${(gv('syllables') && w.syllables) ? `<div class="card-panel-desc${fh('syllables') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
-    ${(gv('etymology') && w.etymology) ? `<div class="card-panel-desc${fh('etymology') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
-    ${((w.tags || []).length && gv('tags')) ? `${(() => { const deckSet = new Set((s.state.decks || []).map(d => d.name)); const showTags = (w.tags || []).filter(t => !deckSet.has(t)); return showTags.length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${showTags.map(t => {
-      const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
-      return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;
-    }).join('')}</div>` : ''; })()}` : ''}
+// ── 字卡正反面：進卡片／換字一律先正面，點一下翻背面，再點回正面 ──
+function flipCardBody(body) {
+  if (!body) return;
+  const f = body.querySelector('[data-face="front"]');
+  const b = body.querySelector('[data-face="back"]');
+  if (!f || !b) return;
+  const toBack = !f.hidden;
+  f.hidden = toBack;
+  b.hidden = !toBack;
+  const hint = body.querySelector('[data-flip-hint]');
+  if (hint) hint.textContent = toBack ? '點一下回正面' : '點一下看背面';
+}
+
+function onCardBodyClick() {
+  // 滑動換字後接著觸發的 click 不翻面（touchend 已記 _swiped）
+  if (_cardState && _cardState._swiped) { _cardState._swiped = false; return; }
+  flipCardBody(document.getElementById('cardPreviewBody'));
+}
+
+function markSwipeMoved(dx, dy) {
+  if (_cardState && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) _cardState._swiped = true;
+}
+
+function cardBodyHTML(w, s) {
+  // 正反面欄位由設定頁 master 控制（cardFaceHtml＋browserFront／browserBack）
+  const H = { escapeHtml, wordImageSlotHTML, splitFieldsHtml, fmtExample, wordExample };
+  return `<div class="card-panel-body" id="cardPreviewBody">
+    <div class="card-face" data-face="front">${cardFaceHtml(w, s, 'browserFront', H)}</div>
+    <div class="card-face" data-face="back" hidden>${cardFaceHtml(w, s, 'browserBack', H)}</div>
+    <div class="card-flip-hint" data-flip-hint style="font-size:11px;color:var(--text-quaternary);margin-top:4px">點一下看背面</div>
   </div>`;
 }
 
@@ -376,11 +382,12 @@ function showCard(idx) {
     const newBody = body;
     if (!newBody.dataset._listeners) {
       newBody.dataset._listeners = '1';
-      newBody.addEventListener('click', () => { if (!newBody.classList.contains('revealed')) newBody.classList.add('revealed'); });
+      newBody.addEventListener('click', onCardBodyClick);
       newBody.addEventListener('touchstart', (e) => { _cardState._sx = e.touches[0].clientX; _cardState._sy = e.touches[0].clientY; }, { passive: true });
       newBody.addEventListener('touchend', (e) => {
         const dx = _cardState._sx - e.changedTouches[0].clientX;
         const dy = (_cardState._sy ?? e.changedTouches[0].clientY) - e.changedTouches[0].clientY;
+        markSwipeMoved(dx, dy);
         // 左右切換只吃水平主導的手勢：斜著往下滑（dy 大）不再誤觸換字
         if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
           if (dx > 0 && _cardState.idx < _cardState.words.length - 1) showCard(_cardState.idx + 1);
@@ -430,19 +437,6 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
       <div class="card-panel-head-actions" style="position:relative">
         <button title="設定" id="cardSettingsBtn">${icon('settings')}</button>
         <div class="card-popover" id="cardSettingsPop">
-          <div class="card-popover-title">顯示設定</div>
-          <label><span>完整顯示</span><input type="checkbox" id="csComplete" ${st.showComplete ? 'checked' : ''}></label>
-          <div id="csHiddenFields" style="${st.showComplete ? 'display:none' : ''};padding-left:12px;margin-top:4px">
-            <div style="font-size:10px;color:var(--text-quaternary);margin-bottom:4px">隱藏（點卡片顯示）</div>
-            ${[['definition','定義'],['example','例句（含片語）'],['pron','發音'],['description','備註'],['tags','標籤'],['image','圖片'],['related','相似詞'],['forms','詞形變化'],['syllables','音節'],['etymology','字源']].map(([k,l]) => `
-              <label style="justify-content:flex-start;gap:6px"><input type="checkbox" data-cs-hide="${k}" ${st.hiddenFields.includes(k) ? 'checked' : ''}><span>${l}</span></label>
-            `).join('')}
-          </div>
-          <hr class="card-popover-divider">
-          <div class="card-popover-title">例句顯示</div>
-          <label><span>最多顯示</span><span style="display:flex;align-items:center;gap:4px"><input type="number" id="csExampleMax" min="0" value="${(window.__maxExampleLines || 0)}" style="width:56px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:12px;text-align:center">句</span></label>
-          <div style="font-size:10px;color:var(--text-quaternary);margin:-2px 0 4px">0＝全部顯示（與工具頁同步記憶）</div>
-          <hr class="card-popover-divider">
           <div class="card-popover-title">自動朗讀</div>
           <label><span>自動播放時</span><input type="checkbox" id="csPronAuto" ${st.pronAuto ? 'checked' : ''}></label>
           <label><span>手動跳轉時</span><input type="checkbox" id="csPronManual" ${st.pronManual ? 'checked' : ''}></label>
@@ -457,7 +451,7 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
         <button title="關閉" id="cardPreviewClose">${icon('x')}</button>
       </div>
     </div>
-    ${cardBodyHTML(w, s, st)}
+    ${cardBodyHTML(w, s)}
     <div class="card-panel-nav">
       ${idx > 0 ? `<button class="card-panel-nav-btn" id="cardPrev">‹</button>` : `<span style="width:36px"></span>`}
       ${browserRulerHTML(total, idx)}
@@ -494,7 +488,7 @@ function scrollBrowserRuler(idx) {
 
 function bindCardEvents(s, w, st) {
   const body = document.getElementById('cardPreviewBody');
-  body.addEventListener('click', () => { if (!body.classList.contains('revealed')) body.classList.add('revealed'); });
+  body.addEventListener('click', onCardBodyClick);
   document.getElementById('cardPreviewClose').addEventListener('click', closeCardPreview);
   document.getElementById('cardEditBtn')?.addEventListener('click', (e) => { e.stopPropagation(); closeCardPreview(); openEditModal(s, w.id); });
   document.getElementById('cardTagsBtn')?.addEventListener('click', (e) => { e.stopPropagation(); closeCardPreview(); openEditTags(s, w.id); });
@@ -508,30 +502,6 @@ function bindCardEvents(s, w, st) {
       if (!settingsPop.contains(e.target) && e.target !== settingsBtn) settingsPop.classList.remove('open');
     };
     document.addEventListener('click', _bCardOutside);
-    document.getElementById('csComplete')?.addEventListener('change', function() { st.showComplete = this.checked; document.getElementById('csHiddenFields').style.display = this.checked ? 'none' : ''; saveCardSettings(); showCard(_cardState.idx); });
-    document.querySelectorAll('[data-cs-hide]').forEach(cb => {
-      cb.addEventListener('change', function() {
-        const k = this.dataset.csHide;
-        if (this.checked) {
-          if (!st.hiddenFields.includes(k)) st.hiddenFields.push(k);
-          // 一點即生效：勾選隱藏時自動關掉完整顯示（否則隱藏清單被閘住、看似無效）
-          if (st.showComplete) {
-            st.showComplete = false;
-            const cc = document.getElementById('csComplete'); if (cc) cc.checked = false;
-            const hf = document.getElementById('csHiddenFields'); if (hf) hf.style.display = '';
-          }
-        } else st.hiddenFields = st.hiddenFields.filter(x => x !== k);
-        saveCardSettings();
-        showCard(_cardState.idx);
-      });
-    });
-    // 例句顯示數：與工具頁同一設定鍵（exampleDisplayMax）＋window 即時變數；改完即重繪
-    document.getElementById('csExampleMax')?.addEventListener('input', function() {
-      const n = Math.max(0, parseInt(this.value, 10) || 0);
-      window.__maxExampleLines = n;
-      import('../lib/db.js').then(m => m.setSetting('exampleDisplayMax', String(n))).catch(() => {});
-      showCard(_cardState.idx);
-    });
     document.getElementById('csPronAuto')?.addEventListener('change', function() { st.pronAuto = this.checked; saveCardSettings(); });
     document.getElementById('csPronManual')?.addEventListener('change', function() { st.pronManual = this.checked; saveCardSettings(); });
     document.getElementById('csPausePron')?.addEventListener('change', function() { st.pauseAfterPron = parseFloat(this.value); saveCardSettings(); });
@@ -549,6 +519,7 @@ function bindCardEvents(s, w, st) {
   body.addEventListener('touchend', (e) => {
     const dx = sx - e.changedTouches[0].clientX;
     const dy = sy - e.changedTouches[0].clientY;
+    markSwipeMoved(dx, dy);
     // 左右切換只吃水平主導的手勢：斜著往下滑（dy 大）不再誤觸換字
     if (Math.abs(dx) > 40 && Math.abs(dx) > 2 * Math.abs(dy)) {
       if (dx > 0 && _cardState.idx < _cardState.words.length - 1) showCard(_cardState.idx + 1);
@@ -705,8 +676,6 @@ export function onMount(s) {
     try {
       const o = JSON.parse(v);
       if (o && typeof o === 'object') {
-        if (typeof o.showComplete === 'boolean') cardSettings.showComplete = o.showComplete;
-        if (Array.isArray(o.hiddenFields)) cardSettings.hiddenFields = o.hiddenFields;
         if (typeof o.pronAuto === 'boolean') cardSettings.pronAuto = o.pronAuto;
         if (typeof o.pronManual === 'boolean') cardSettings.pronManual = o.pronManual;
         if (typeof o.pauseAfterPron === 'number') cardSettings.pauseAfterPron = o.pauseAfterPron;

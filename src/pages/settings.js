@@ -18,11 +18,11 @@ import { ICON_PRESETS } from '../lib/icon-presets.js';
 import { clampLearnAhead } from '../lib/store.js';
 import { FIELD_LABELS, FIELD_KEYS } from '../lib/word-extra.js';
 
-// 欄位顯示三情境（設定頁 master）
+// 欄位顯示三組（設定頁 master）：瀏覽器字卡正面／背面＋學習測驗共用
 const FIELD_VIS_GROUPS = [
-  ['browser', '瀏覽器', '字庫／字本的字卡面板'],
-  ['study', '學習', '翻卡／多選／拼字學習'],
-  ['exam', '測驗', '翻卡／多選／拼字測驗'],
+  ['browserFront', '瀏覽器・正面', '字庫／字本點開字卡先看到的面（點一下翻到背面）'],
+  ['browserBack', '瀏覽器・背面', '點一下正面後翻到的面'],
+  ['study', '學習／測驗', '翻卡／多選／拼字，學習和測驗共用同一組'],
 ];
 
 // ─── 模組級狀態 ───
@@ -258,26 +258,26 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
-    <!-- 字卡顯示 -->
+    <!-- 例句顯示（三處共用） -->
     <div class="section">
-      <div class="section-title">${icon('galleryHorizontalEnd')} 字卡顯示</div>
+      <div class="section-title">${icon('list')} 例句顯示</div>
       <div class="config-section">
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">${icon('list')} 例句顯示句數</div>
-            <div class="config-field-hint">字卡／學習／測驗最多顯示幾句，超過的隱藏可展開（0＝全部顯示）</div>
+            <div class="config-field-hint">瀏覽器字卡／學習／測驗共用同一設定，超過的隱藏可展開（0＝全部顯示）</div>
           </div>
           <input type="number" id="exampleDisplayMaxInput" min="0" max="50" value="${window.__maxExampleLines ?? 0}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
         </div>
       </div>
     </div>
 
-    <!-- 欄位顯示（隱藏或顯示欄位：三情境各一組，取消勾選＝該處不顯示） -->
+    <!-- 欄位顯示（隱藏或顯示欄位：正面／背面／學習測驗共用三組，取消勾選＝該處不顯示） -->
     <div class="section">
       <div class="section-title">${icon('eye')} 欄位顯示</div>
       <div class="config-section">
         <div class="config-field-info" style="margin-bottom:var(--s2)">
-          <div class="config-field-hint">三處各別設定要顯示哪些欄位（例句含片語；單字本身一定顯示）</div>
+          <div class="config-field-hint">三組各別設定要顯示哪些欄位（例句含片語；英文單字只有字卡正反面可以隱藏）</div>
         </div>
         ${FIELD_VIS_GROUPS.map(([ctx, name, hint]) => {
           const cur = Array.isArray(s.state['fieldVis' + ctx[0].toUpperCase() + ctx.slice(1)])
@@ -287,9 +287,13 @@ function renderSettingsContent(s) {
             <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:2px">${name}</div>
             <div class="muted" style="font-size:11px;margin-bottom:6px">${hint}</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${FIELD_KEYS.map(k => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);border:1px solid var(--border);border-radius:100px;padding:3px 10px;cursor:pointer">
-                <input type="checkbox" data-fieldvis-ctx="${ctx}" value="${k}" ${cur.includes(k) ? 'checked' : ''}>${FIELD_LABELS[k]}
-              </label>`).join('')}
+              ${FIELD_KEYS.map(k => {
+                const forced = ctx === 'study' && k === 'word';
+                const checked = forced || cur.includes(k);
+                return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);border:1px solid var(--border);border-radius:100px;padding:3px 10px;${forced ? 'opacity:.55;' : 'cursor:pointer'}">
+                <input type="checkbox" data-fieldvis-ctx="${ctx}" value="${k}" ${checked ? 'checked' : ''}${forced ? ' disabled title="學習／測驗一定顯示英文單字"' : ''}>${FIELD_LABELS[k]}${forced ? '（固定）' : ''}
+              </label>`;
+              }).join('')}
             </div>
           </div>`;
         }).join('')}
@@ -1058,18 +1062,23 @@ export function onMount(s) {
     }
   });
 
-  // ── 欄位顯示（三情境各一組；改完即寫 db＋同步 window/state，即時生效）──
+  // ── 欄位顯示（三組；學習／測驗共用：study 寫入時同步 exam，渲染端 exam 讀 study 別名）──
   document.querySelectorAll('[data-fieldvis-ctx]')?.forEach(cb => {
     cb.addEventListener('change', async () => {
       const ctx = cb.dataset.fieldvisCtx;
-      const key = 'fieldVis' + ctx[0].toUpperCase() + ctx.slice(1);
+      const ctxs = ctx === 'study' ? ['study', 'exam'] : [ctx];
       const vals = Array.from(document.querySelectorAll(`[data-fieldvis-ctx="${ctx}"]:checked`)).map(x => x.value);
+      // 學習組英文單字強制保留（checkbox disabled 仍會被 :checked 選中，雙保險）
+      if (ctx === 'study' && !vals.includes('word')) vals.unshift('word');
       try {
         const d = await import('../lib/db.js');
-        await d.setSetting(key, JSON.stringify(vals));
-        s.state[key] = [...vals];
-        window.__fieldVis = window.__fieldVis || {};
-        window.__fieldVis[ctx] = [...vals];
+        for (const c of ctxs) {
+          const key = 'fieldVis' + c[0].toUpperCase() + c.slice(1);
+          await d.setSetting(key, JSON.stringify(vals));
+          s.state[key] = [...vals];
+          window.__fieldVis = window.__fieldVis || {};
+          window.__fieldVis[c] = [...vals];
+        }
         toast('欄位顯示已更新', 'toast-success');
       } catch (e) {
         toast('欄位顯示儲存失敗: ' + e, 'toast-error');
