@@ -113,6 +113,10 @@ const FIELD_MAP = {
   '例句們': 'examples', '範例': 'examples',
   '字源': 'etymology', '音節': 'syllables', '片語': 'phrases',
   etymology: 'etymology', syllables: 'syllables', phrases: 'phrases',
+  // Anki 常見欄位名（notetype 各異：Front/Back、Expression/Meaning…）
+  front: 'word', expression: 'word',
+  back: 'definition',
+  reading: 'pron', sentence: 'example',
   // Single-letter abbrev codes used in the Era seed
   w: 'word', m: 'definition', p: 'pron', e: 'example',
   der: 'derivative', sim: 'synonym', a: 'antonym', i: 'image',

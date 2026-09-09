@@ -1,6 +1,6 @@
 import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
-import { scrapeQuizlet } from '../lib/api.js';
+import { scrapeQuizlet, inspectApkgDialog, getApkgMedia } from '../lib/api.js';
 import { isMobile } from '../lib/platform.js';
 import {
   parseCSVTable, parseAnkiTSV, mapWords,
@@ -17,6 +17,12 @@ let _forceDeck = false;
 // Quizlet state
 let _quizletUrl = '';
 let _quizletCards = null;
+// Anki .apkg state（每來源欄獨立開關：_colEnabled 全 true 預設；
+// 有效 mapping = 開關 AND 下拉，見 effectiveApkgFields）
+let _colEnabled = [];
+let _importImages = true;
+let _apkgInfo = null;
+let _cellImages = [];
 // Shared state
 let _phase = 'idle';
 let _progress = { done: 0, total: 0, added: 0, skipped: 0 };
@@ -29,7 +35,7 @@ export function renderContent(s) {
   if (_phase === 'done') return renderDone(s);
   return `
     ${renderTabs()}
-    ${_importMode === 'csv' ? renderCsvSection(s) : renderQuizletSection(s)}
+    ${_importMode === 'csv' ? renderCsvSection(s) : _importMode === 'apkg' ? renderApkgSection(s) : renderQuizletSection(s)}
   `;
 }
 
@@ -38,7 +44,7 @@ export function render(s) {
   if (_phase === 'done') return renderDone(s);
   return `
     <div class="page-title">${icon('upload')} 匯入</div>
-    <div class="page-subtitle">從 CSV/TSV 或 Quizlet URL 匯入單字</div>
+    <div class="page-subtitle">從 CSV/TSV、Anki .apkg 或 Quizlet URL 匯入單字</div>
     ${renderContent(s)}
   `;
 }
@@ -47,6 +53,7 @@ function renderTabs() {
   return `
     <div class="sub-tabs" id="importTabs">
       <button class="sub-tab ${_importMode === 'csv' ? 'active' : ''}" data-mode="csv">${icon('file')} CSV / TSV</button>
+      <button class="sub-tab ${_importMode === 'apkg' ? 'active' : ''}" data-mode="apkg">${icon('layers')} Anki .apkg</button>
       <button class="sub-tab ${_importMode === 'quizlet' ? 'active' : ''}" data-mode="quizlet">${icon('globe')} Quizlet URL</button>
     </div>
   `;
@@ -167,9 +174,11 @@ function renderImportBar(s) {
 }
 
 function renderPreview(s, isCsv) {
-  const mapped = isCsv ? computeMappedCsv(s) : computeMappedQuizlet(s);
+  const isApkg = isCsv === 'apkg';
+  const mapped = isApkg ? computeMappedApkg(s) : isCsv ? computeMappedCsv(s) : computeMappedQuizlet(s);
   const shown = mapped.slice(0, PREVIEW_ROWS);
-  const mappedFields = [...new Set((_fields || []).filter(Boolean))];
+  const effFields = isApkg ? effectiveApkgFields() : (_fields || []);
+  const mappedFields = [...new Set(effFields.filter(Boolean))];
   const mappedChips = mappedFields.map(f => `<span class="tag" style="font-size:10px">${escapeHtml(FIELD_LABELS[f] || f)}</span>`).join('');
   if (shown.length === 0) {
     return `<div class="section"><div class="section-title">${icon('eye')} 預覽</div>
@@ -197,6 +206,148 @@ function renderPreview(s, isCsv) {
               <span>${escapeHtml(w.pos) || '<span class="muted">-</span>'}</span>
             </div>
           `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Anki .apkg ─────────────────────────────────────────
+// 後端 inspect 回 {headers, rows, media_files, cell_images, skipped_*}
+// _table 沿用既有形狀 {headers, rows}，_fields 自動偵測，_colEnabled 逐欄開關。
+function renderApkgSection(s) {
+  return `
+    <div class="section">
+      <div class="section-title">${icon('layers')} 選擇牌組檔</div>
+      <div class="config-section">
+        <div class="drop-zone" id="apkgDropZone">
+          <div class="drop-zone-inner">
+            <div class="drop-zone-ic">${icon('layers')}</div>
+            <div class="drop-zone-title">${_fileName ? escapeHtml(_fileName) : '點擊選擇 .apkg 檔案'}</div>
+            <div class="drop-zone-sub">${_table ? `${_table.rows.length} 列 · ${_table.headers.length} 欄` : 'Anki 匯出的牌組檔（.apkg）'}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--s2);margin-top:var(--s3);justify-content:center;flex-wrap:wrap">
+          <button class="btn" id="apkgPickBtn">${icon('folder')} 選擇檔案</button>
+          ${_table ? `<button class="btn" id="apkgClearBtn">${icon('x')} 清除</button>` : ''}
+        </div>
+        ${_apkgInfo ? `
+        <div style="margin-top:var(--s2);font-size:12px;color:var(--text-tertiary);text-align:center">
+          無卡片 ${ _apkgInfo.skipped_no_cards} 筆略過 · 首欄空白 ${_apkgInfo.skipped_empty} 筆
+        </div>` : ''}
+      </div>
+    </div>
+    ${_table ? renderApkgMapping(s) + renderPreview(s, 'apkg') + renderApkgImportBar(s) : ''}
+  `;
+}
+
+// 某欄含圖張數（_cellImages 按 col 彙總，去重）。
+function apkgColImageCount(colIdx) {
+  const seen = new Set();
+  for (const c of (_cellImages || [])) {
+    if (c.col === colIdx) for (const f of (c.files || [])) seen.add(f);
+  }
+  return seen.size;
+}
+
+function renderApkgMapping(s) {
+  const { headers } = _table;
+  const skipLabel = '- 略過 -';
+  const optionList = ['', ...CANONICAL_FIELDS];
+  return `
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">${icon('columns')} 欄位對應</div>
+        <span class="muted" style="font-size:12px">每欄開關決定要不要進 · 自動偵測，可手動調整</span>
+      </div>
+      <div class="config-section">
+        <div style="display:flex;gap:var(--s2);margin-bottom:var(--s3)">
+          <button class="btn btn-sm" id="apkgSelectAll">全選</button>
+          <button class="btn btn-sm" id="apkgSelectNone">全不選</button>
+        </div>
+        <div class="map-table">
+          <div class="map-row map-head">
+            <span></span>
+            <span>Anki 欄位</span>
+            <span>預覽</span>
+            <span>對應到</span>
+            <span></span>
+          </div>
+          ${headers.map((h, i) => {
+            const enabled = _colEnabled[i] !== false;
+            const field = _fields[i] || '';
+            const preview = String(_table.rows[0]?.[i] ?? '').trim().slice(0, 28);
+            const resolved = h === '_deck' || h === '_tags' ? h : resolveField(h);
+            const imgCount = apkgColImageCount(i);
+            const opts = optionList.map(f => {
+              const label = f ? (FIELD_LABELS[f] + ' · ' + f) : skipLabel;
+              return `<option value="${f}" ${field === f ? 'selected' : ''}>${label}</option>`;
+            }).join('');
+            return `
+              <div class="map-row">
+                <span><input type="checkbox" class="apkg-col-toggle" data-col="${i}" ${enabled ? 'checked' : ''} title="此欄要不要匯入"></span>
+                <span class="map-hdr" title="${escapeAttr(h)}">${escapeHtml(h)}${imgCount ? ` <span class="tag" style="font-size:10px" title="此欄附帶圖片，關掉即連圖一起丟">含圖 ${imgCount}</span>` : ''}</span>
+                <span class="map-prev" title="${escapeAttr(preview)}">${escapeHtml(preview) || '<span class="muted">-</span>'}</span>
+                <select class="map-sel apkg-map-sel" data-col="${i}" ${enabled ? '' : 'disabled'}>${opts}</select>
+                ${resolved ? `<span class="tag tag-accent" style="font-size:10px">建議</span>` : '<span></span>'}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderApkgImportBar(s) {
+  const decks = s.state.decks;
+  const deckNames = decks.map(d => d.name);
+  const allDecks = Array.from(new Set(['Default', ...deckNames, _targetDeck].filter(Boolean)));
+  const mapped = computeMappedApkg(s);
+  const newCount = mapped.length;
+  const effCount = effectiveApkgFields().filter(Boolean).length;
+  return `
+    <div class="section">
+      <div class="section-title">${icon('book')} 匯入設定</div>
+      <div class="config-section">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">目標字本</div>
+            <div class="config-field-hint">無字本欄位時使用此字本</div>
+          </div>
+          <input type="text" id="targetDeck" list="deckList" value="${escapeAttr(_targetDeck)}" placeholder="Default" style="width:160px">
+          <datalist id="deckList">
+            ${allDecks.map(d => `<option value="${escapeAttr(d)}">`).join('')}
+          </datalist>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">強制匯入至此字本</div>
+            <div class="config-field-hint">勾選後忽略牌組中的字本欄位</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:var(--s2);cursor:pointer">
+            <input type="checkbox" id="forceDeck" ${_forceDeck ? 'checked' : ''}>
+            <span style="font-size:13px">啟用</span>
+          </label>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">圖片一起匯入</div>
+            <div class="config-field-hint">關掉則只進文字，圖一張都不抓</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:var(--s2);cursor:pointer">
+            <input type="checkbox" id="apkgImportImages" ${_importImages ? 'checked' : ''}>
+            <span style="font-size:13px">啟用</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--s4);flex-wrap:wrap;gap:var(--s3)">
+          <div style="font-size:13px;color:var(--text-secondary)">
+            將匯入 <span class="tnum" style="color:var(--green);font-weight:700">${newCount}</span> 詞 · ${effCount} 欄
+            ${_table.rows.length - newCount > 0 ? `· 跳過 <span class="tnum">${_table.rows.length - newCount}</span> 重複` : ''}
+          </div>
+          <button class="btn-primary" id="importRunBtn" ${newCount === 0 || _phase === 'importing' ? 'disabled' : ''}>
+            ${icon('check')} 開始匯入
+          </button>
         </div>
       </div>
     </div>
@@ -303,7 +454,7 @@ function renderProgress(s) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return `
     <div class="page-title">${icon('upload')} 匯入中</div>
-    <div class="page-subtitle">${_importMode === 'csv' ? escapeHtml(_fileName) : 'Quizlet: ' + escapeHtml(_quizletUrl)}</div>
+    <div class="page-subtitle">${_importMode === 'quizlet' ? 'Quizlet: ' + escapeHtml(_quizletUrl) : escapeHtml(_fileName)}</div>
     <div class="section">
       <div class="config-section" style="text-align:center;padding:var(--s10)">
         <div class="hero-pct" style="font-size:48px;font-weight:800;color:var(--accent);font-feature-settings:'tnum';line-height:1">${pct}<span style="font-size:20px">%</span></div>
@@ -318,7 +469,7 @@ function renderDone(s) {
   const r = _result || { added: 0, skipped: 0, decksCreated: [] };
   return `
     <div class="page-title">${icon('check')} 匯入完成</div>
-    <div class="page-subtitle">${_importMode === 'csv' ? escapeHtml(_fileName) : 'Quizlet: ' + escapeHtml(_quizletUrl)}</div>
+    <div class="page-subtitle">${_importMode === 'quizlet' ? 'Quizlet: ' + escapeHtml(_quizletUrl) : escapeHtml(_fileName)}</div>
     <div class="hero" style="text-align:center">
       <div class="hero-glow"></div>
       <div class="hero-content">
@@ -345,6 +496,38 @@ function renderDone(s) {
       <button class="btn" id="importAgain">${icon('upload')} 再匯入一個</button>
     </div>
   `;
+}
+
+// ─── Anki .apkg 映射 ────────────────────────────────────
+// 有效 mapping = _colEnabled[i] AND _fields[i]；任一關即不注入。
+// computeMappedCsv 不動（純 _fields 版），apkg 走自己的 computeMappedApkg。
+function effectiveApkgFields() {
+  if (!_table) return [];
+  return _table.headers.map((h, i) => (_colEnabled[i] !== false ? (_fields[i] || null) : null));
+}
+
+function computeMappedApkg(s) {
+  return mapApkgWithRows(s).map(x => x.w);
+}
+
+// 逐列映射並保留原始列號（圖片階段靠 rowIdx 對回 _cellImages）。
+// 去重語意與 importWords 對齊：DB 已有略過，檔內重複只留首見。
+function mapApkgWithRows(s) {
+  if (!_table) return [];
+  const eff = effectiveApkgFields();
+  const existing = new Set(s.state.words.map(w => w.word.toLowerCase()));
+  const out = [];
+  _table.rows.forEach((row, ri) => {
+    const arr = mapWords(_table.headers, [row], eff, { deck: _targetDeck || 'Default' });
+    if (!arr.length) return;
+    const w = arr[0];
+    if (_forceDeck) w.deck = _targetDeck || 'Default';
+    const key = w.word.toLowerCase();
+    if (existing.has(key)) return;
+    existing.add(key);
+    out.push({ w, rowIdx: ri });
+  });
+  return out;
 }
 
 function computeMappedCsv(s) {
@@ -383,6 +566,7 @@ export function onMount(s, renderFn) {
   });
 
   if (_importMode === 'csv') mountCsv(s);
+  else if (_importMode === 'apkg') mountApkg(s);
   else mountQuizlet(s);
 
   // Done navigation
@@ -449,6 +633,67 @@ function mountCsv(s) {
 
   const runBtn = document.getElementById('importRunBtn');
   if (runBtn) runBtn.addEventListener('click', () => runCsvImport(s));
+}
+
+function mountApkg(s) {
+  const pickBtn = document.getElementById('apkgPickBtn');
+  if (pickBtn) pickBtn.addEventListener('click', () => pickApkg(s));
+  const clearBtn = document.getElementById('apkgClearBtn');
+  if (clearBtn) clearBtn.addEventListener('click', () => { resetState(); _renderInPlace(s); });
+
+  const allBtn = document.getElementById('apkgSelectAll');
+  if (allBtn) allBtn.addEventListener('click', () => {
+    _colEnabled = (_table?.headers || []).map(() => true);
+    _renderInPlace(s);
+  });
+  const noneBtn = document.getElementById('apkgSelectNone');
+  if (noneBtn) noneBtn.addEventListener('click', () => {
+    _colEnabled = (_table?.headers || []).map(() => false);
+    _renderInPlace(s);
+  });
+
+  document.querySelectorAll('.apkg-col-toggle[data-col]').forEach(box => {
+    box.addEventListener('change', () => {
+      const i = parseInt(box.dataset.col, 10);
+      _colEnabled[i] = box.checked;
+      _renderInPlace(s);
+    });
+  });
+  document.querySelectorAll('.apkg-map-sel[data-col]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const i = parseInt(sel.dataset.col, 10);
+      _fields[i] = sel.value || null;
+      _renderInPlace(s);
+    });
+  });
+
+  const targetDeckInput = document.getElementById('targetDeck');
+  if (targetDeckInput) {
+    targetDeckInput.addEventListener('input', () => {
+      _targetDeck = targetDeckInput.value.trim() || 'Default';
+    });
+    targetDeckInput.addEventListener('change', () => {
+      _targetDeck = targetDeckInput.value.trim() || 'Default';
+      _renderInPlace(s);
+    });
+  }
+  const forceDeckInput = document.getElementById('forceDeck');
+  if (forceDeckInput) {
+    forceDeckInput.addEventListener('change', () => {
+      _forceDeck = forceDeckInput.checked;
+      _renderInPlace(s);
+    });
+  }
+  const imgToggle = document.getElementById('apkgImportImages');
+  if (imgToggle) {
+    imgToggle.addEventListener('change', () => {
+      _importImages = imgToggle.checked;
+      _renderInPlace(s);
+    });
+  }
+
+  const runBtn = document.getElementById('importRunBtn');
+  if (runBtn) runBtn.addEventListener('click', () => runApkgImport(s));
 }
 
 function mountQuizlet(s) {
@@ -569,7 +814,96 @@ async function runQuizletImport(s) {
   await doImport(s, mapped);
 }
 
-async function doImport(s, toImport) {
+// ─── Anki .apkg 執行 ────────────────────────────────────
+async function pickApkg(s) {
+  if (_phase === 'importing') { toast('匯入進行中…'); return; }
+  try {
+    const r = await inspectApkgDialog();
+    if (!r || !r.headers || !r.rows || r.rows.length === 0) {
+      toast('牌組為空或格式錯誤', 'toast-error');
+      return;
+    }
+    _fileName = '牌組（' + r.rows.length + ' 列）';
+    // Anki tags 以空格分隔；mapWords 吃逗號分隔 → 就地轉換（Anki tag 不可含空白，安全）
+    const tagsIdx = r.headers.indexOf('_tags');
+    if (tagsIdx !== -1) {
+      for (const row of r.rows) {
+        if (row[tagsIdx]) row[tagsIdx] = String(row[tagsIdx]).split(/\s+/).filter(Boolean).join(',');
+      }
+    }
+    _table = { headers: r.headers, rows: r.rows };
+    _fields = r.headers.map(h => h === '_deck' ? 'deck' : h === '_tags' ? 'tags' : resolveField(h));
+    _colEnabled = r.headers.map(() => true);
+    _cellImages = r.cell_images || [];
+    _apkgInfo = { skipped_no_cards: r.skipped_no_cards || 0, skipped_empty: r.skipped_empty || 0 };
+    _phase = 'ready';
+    toast(`已載入 ${r.rows.length} 列、${r.headers.length} 欄`, '');
+    _renderInPlace(s);
+  } catch (e) {
+    const msg = String(e || '');
+    if (/取消/.test(msg)) return; // 使用者取消選檔，不打擾
+    console.error('[import] pickApkg error:', e);
+    toast('讀取牌組失敗: ' + (e.message || e), 'toast-error');
+  }
+}
+
+async function runApkgImport(s) {
+  // G28：重入保護 — 雙擊/重複觸發不得產生重複匯入
+  if (_phase === 'importing') { toast('匯入進行中…'); return; }
+  const pairs = mapApkgWithRows(s);
+  if (pairs.length === 0) { toast('沒有可匯入的單字', 'toast-error'); return; }
+  const toImport = pairs.map(x => x.w);
+  // word → 原始列號（首見；圖片階段對回 _cellImages 用。
+  // importWords 內還會擋黑灰名單，那些字無 addedId，自然不會走到圖片階段）
+  const wordRowIdx = new Map(pairs.map(x => [x.w.word.toLowerCase(), x.rowIdx]));
+  _phase = 'importing';
+  _progress = { done: 0, total: toImport.length, added: 0, skipped: 0 };
+  _renderInPlace(s);
+  await doImport(s, toImport, (res) => importApkgImages(s, res, wordRowIdx));
+}
+
+// 圖片三層 AND：總開關 AND 該圖所在欄開關 AND 該欄下拉有選。
+// 單張失敗記 skipped 不整批掛；總張數超 500 先問。
+async function importApkgImages(s, res, wordRowIdx) {
+  if (!_importImages) {
+    toast('圖片已略過（開關關閉）', '');
+    return;
+  }
+  const eff = effectiveApkgFields();
+  const jobs = [];
+  let colSkipped = 0;
+  for (const id of (res.addedIds || [])) {
+    const w = s.state.words.find(x => x.id === id);
+    if (!w) continue;
+    const ri = wordRowIdx.get((w.word || '').toLowerCase());
+    if (ri == null) continue;
+    for (const c of (_cellImages || [])) {
+      if (c.row !== ri) continue;
+      if (!eff[c.col]) { colSkipped += (c.files || []).length; continue; }
+      for (const f of (c.files || [])) jobs.push({ wordId: id, file: f });
+    }
+  }
+  if (!jobs.length) return;
+  if (jobs.length > 500 && !confirm(`圖片共 ${jobs.length} 張，確定全部匯入嗎？`)) {
+    toast(`圖片已略過（${jobs.length} 張未匯入）`, '');
+    return;
+  }
+  const { addWordImage } = await import('../lib/db.js');
+  let ok = 0, skipped = 0;
+  for (const { wordId, file } of jobs) {
+    try {
+      const dataUrl = await getApkgMedia(file);
+      await addWordImage(wordId, file, dataUrl);
+      ok++;
+    } catch (e) {
+      console.warn('[import] apkg image skip:', file, e);
+      skipped++;
+    }
+  }
+  toast(`圖片 ${ok} 張${skipped ? `、跳過 ${skipped} 張` : ''}${colSkipped ? `（關閉欄 ${colSkipped} 張未抓）` : ''}`, ok ? 'toast-success' : '');
+}
+
+async function doImport(s, toImport, after) {
   try {
     const res = await s.actions.importWords(toImport, (p) => {
       _progress = p;
@@ -587,6 +921,9 @@ async function doImport(s, toImport) {
       }
     });
     _result = res;
+    if (after) {
+      try { await after(res); } catch (e) { console.warn('[import] after-hook error:', e); }
+    }
     _phase = 'done';
     _renderInPlace(s);
     toast(`成功匯入 ${res.added} 詞`, 'toast-success');
@@ -604,6 +941,10 @@ function resetState() {
   _fields = [];
   _quizletUrl = '';
   _quizletCards = null;
+  _colEnabled = [];
+  _importImages = true;
+  _apkgInfo = null;
+  _cellImages = [];
   _targetDeck = 'Default';
   _forceDeck = false;
   _phase = 'idle';
