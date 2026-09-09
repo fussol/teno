@@ -26,6 +26,13 @@ export const lookupMerriam = (word, dictKey, thesKey) =>
 export const scrapeQuizlet = (url) =>
   invoke('scrape_quizlet', { url })
 
+// ─── Anki .apkg 匯入 ─────────────────────────────────────
+export const inspectApkgDialog = () =>
+  invoke('inspect_apkg_dialog')
+
+export const getApkgMedia = (filename) =>
+  invoke('get_apkg_media', { filename })
+
 // ─── TTS ───────────────────────────────────────────────
 export const speakText = (text, opts = {}) => {
   const { speed = 1, voice = 'en_US-ryan-high', pitch } = opts
