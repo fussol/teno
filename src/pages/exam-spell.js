@@ -140,8 +140,7 @@ function renderExam(s) {
     body = `<div class="study-card" style="padding:40px 32px">
         <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px;font-weight:500">請拼出這個單字</div>
         <div class="tts-click" data-speak="${esc(w.word)}" title="點擊播放發音" style="cursor:pointer">
-        ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def" style="font-size:26px;font-weight:700;color:var(--text-primary);margin-bottom:4px">${esc(w.definition || '(無定義)')}</div>
-        ${w.pos ? `<div class="study-pos" style="margin-bottom:12px">${esc(w.pos)}</div>` : ''}`}
+        ${splitFieldsHtml(w.pos, w.definition) || ''}
         </div>
         <div class="study-input-row">
           <input class="study-input" id="esInput" type="text" placeholder="輸入英文單字..." autofocus>
@@ -161,7 +160,7 @@ function renderExam(s) {
         ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         ${!isCorrect ? `<div style="margin-top:10px;font-size:14px;font-weight:600;color:var(--red)">你的輸入：<span style="color:inherit">${esc(e.userInput)}</span></div>` : ''}
         <div style="margin-top:16px">
-          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${esc(w.definition || '(無定義)')}</div>`) : ''}
+          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
           ${(visShow('exam', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
           ${(visShow('exam', 'pron') && w.pron) ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
           ${(visShow('exam', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}

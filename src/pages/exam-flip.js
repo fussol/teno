@@ -154,7 +154,7 @@ function renderExam(s) {
         </div>
         ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div style="margin-top:16px">
-          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${esc(w.definition || '(無定義)')}</div>`) : ''}
+          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
           ${(visShow('exam', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
           ${(visShow('exam', 'pron') && w.pron) ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
           ${(visShow('exam', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}

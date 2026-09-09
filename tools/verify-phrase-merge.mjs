@@ -73,4 +73,15 @@ globalThis.window.__fieldVis.browserFront = ['pron'];
 const frontNoWord = extra.cardFaceHtml(w, s, 'browserFront', H);
 ok('front word can hide', !frontNoWord.includes('proof') && frontNoWord.includes('pr'), frontNoWord.slice(0, 80));
 
+// ── 空欄位整塊隱藏（含標題，不塞佔位）──
+globalThis.window.__fieldVis = {};
+const s2 = { state: { decks: [], tagConfig: {} } };
+const emptyW = { id: 'w0', word: 'blank', pos: '', definition: '', example: '', pron: '', description: '', related: [], forms: [], tags: [] };
+const emptyHtml = extra.cardFaceHtml(emptyW, s2, 'browserBack', H);
+ok('empty hides all', emptyHtml.includes('blank') && !emptyHtml.includes('card-panel-def') && !emptyHtml.includes('card-panel-example') && !emptyHtml.includes('card-panel-pron') && !emptyHtml.includes('無定義') && !emptyHtml.includes('>-<'), emptyHtml.slice(0, 100));
+const posOnly = extra.cardFaceHtml({ ...emptyW, pos: '動詞' }, s2, 'browserBack', H);
+ok('pos-only shows pos no def', posOnly.includes('動詞') && !posOnly.includes('card-panel-def'), posOnly.slice(0, 100));
+const defOnly = extra.cardFaceHtml({ ...emptyW, definition: '跑' }, s2, 'browserBack', H);
+ok('def-only shows def', defOnly.includes('跑'), defOnly.slice(0, 100));
+
 process.exit(fail ? 1 : 0);

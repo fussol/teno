@@ -73,8 +73,7 @@ function renderFront(w, cnt) {
     </div>
     <div class="study-card">
       <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:4px;font-weight:500">請選擇正確的英文</div>
-      ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def" style="font-size:24px;font-weight:700;color:var(--text-primary)">${e(w.definition || '(無定義)')}</div>
-      ${w.pos ? `<div class="study-pos" style="margin-top:8px">${e(w.pos)}</div>` : ''}`}
+      ${splitFieldsHtml(w.pos, w.definition) || ''}
       <div class="study-options">
         ${mcOptions.map((opt, i) => `
           <button class="study-opt" data-opt-index="${i}">
@@ -105,7 +104,7 @@ function renderBack(w, cnt) {
         <div class="study-word">${e(w.word)}</div>
       </div>
       ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
-      ${visShow('study', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${e(w.definition || '(無定義)')}</div>`) : ''}
+      ${visShow('study', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
       ${(visShow('study', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
       ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${(visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}

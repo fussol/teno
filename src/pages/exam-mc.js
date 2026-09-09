@@ -155,7 +155,7 @@ function renderExam(s) {
           你選了：${esc(w._picked >= 0 ? (w._options[w._picked] ?? '-') : '-')}${w._picked !== w._correctIdx ? `（正確：${esc(w.word)}）` : ''}
         </div>
         <div style="margin-top:16px">
-          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${esc(w.definition || '(無定義)')}</div>`) : ''}
+          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
           ${(visShow('exam', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
           ${(visShow('exam', 'pron') && w.pron) ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
           ${(visShow('exam', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}
@@ -168,8 +168,7 @@ function renderExam(s) {
         ` : ''}
       ` : `
         <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px;font-weight:500">選出正確的單字</div>
-        ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def" style="font-size:26px;font-weight:700;color:var(--text-primary);margin-bottom:4px">${esc(w.definition || '(無定義)')}</div>
-        ${w.pos ? `<div class="study-pos" style="margin-bottom:12px">${esc(w.pos)}</div>` : ''}`}
+        ${splitFieldsHtml(w.pos, w.definition) || ''}
         <div class="study-options" id="emOptions">
           ${w._options.map((opt, i) => `
             <button class="study-opt" data-em-opt="${i}">

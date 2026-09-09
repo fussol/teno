@@ -67,9 +67,10 @@ export function cardFaceHtml(w, s, face, h) {
   if (gv('word')) out.push(`<div class="card-panel-word">${e(w.word)}</div>`);
   if (gv('image')) out.push(`<div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap">${h.wordImageSlotHTML(w.id)}</div>`);
   if (gv('pron') && w.pron) out.push(`<div class="card-panel-pron">${e(w.pron)}</div>`);
-  if (gv('definition')) {
+  // 空欄位整塊隱藏（含標題）：定義＋詞性都空就不渲染，不塞 '-' 佔位
+  if (gv('definition') && (String(w.definition || '').trim() || String(w.pos || '').trim())) {
     const sf = h.splitFieldsHtml(w.pos, w.definition);
-    out.push(`<div>${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">' + e(w.pos) + '</div>' : '') + '<div class="card-panel-def">' + e(w.definition || '-') + '</div>'}</div>`);
+    out.push(`<div>${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">' + e(w.pos) + '</div>' : '') + (w.definition ? '<div class="card-panel-def">' + e(w.definition) + '</div>' : '')}</div>`);
   }
   if (gv('example') && exMerged) out.push(`<div class="card-panel-example">${h.fmtExample(exMerged)}</div>`);
   if (gv('description') && w.description) out.push(`<div class="card-panel-desc">${e(w.description)}</div>`);
