@@ -39,5 +39,6 @@ rand = "0.9"
 chrono = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
+zip = "2"
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"
