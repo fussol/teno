@@ -42,6 +42,9 @@ export class Session {
     this._learnSteps = learnSteps;
     this._relearnSteps = relearnSteps;
     this.learnAheadSecs = clampLearnAhead(learnAheadLimit) * 60;
+    // 跨日檢查用：queue 是哪一天建的（buildQueue 內以同 tz＋cutoff 寫入；
+    // 比較兩端必須用同一算法，否則 dayCutoff 非午夜的人會差一天）。
+    this.queueDay = null;
     this.reset();
   }
 
@@ -58,6 +61,7 @@ export class Session {
     const learnQueue = [];
     const reviewQueue = [];
     const today = toLocalDateStr(new Date(), this.timezoneOffset, this.dayCutoff);
+    this.queueDay = today;
     let newSlots = Math.max(0, this.newPerDay - this.ratedNewToday);
     const newCards = [];
 
@@ -405,4 +409,39 @@ export class Session {
     if (days < 365) return (days / 30).toFixed(1) + 'mo';
     return (days / 365).toFixed(1) + 'y';
   }
+}
+
+// ─── 跨日（換日線）支援 ─────────────────────────────────────
+// session 是模組級單例：建一次就住在記憶體裡，queue 裡的 today／ratedNewToday
+// 不會自己更新。App 開著跨過 dayCutoff 日界線，必須強制重建，否則新卡額度
+// 不重置、舊 queue 繼續餵——重開 App 才正常。
+
+/**
+ * queue 建立日是否已是昨天（以 session 自己的 tz＋cutoff 算今天）。
+ * queueDay 為 null（從未建 queue）回 false，不誤觸。
+ */
+export function queueDayRolledOver(session) {
+  if (!session?.queueDay) return false;
+  const today = toLocalDateStr(new Date(), session.timezoneOffset, session.dayCutoff);
+  return session.queueDay !== today;
+}
+
+/**
+ * 從 memory reviewLog 重算今日已評新卡數。
+ * 與 db.getNewRatedTodayAll 同邊界語義（card_state=0 且 reviewed_at >=
+ * 今日 cutoff 邊界），但走同步路徑——ensureQueue 不能等 DB。
+ * 兩處已知差異（皆偏保守、可接受）：legacy NULL-mode 列在開機載入時已併為
+ * 'flip'（db 端 GROUP BY 會丟棄該組），memory 會多算這批古董資料。
+ */
+export function countNewRatedToday(reviewLog, todayStr, dayCutoff, tzOffset, mode) {
+  const offset = tzOffset ?? -(new Date().getTimezoneOffset());
+  const [y, m, d] = todayStr.split('-').map(Number);
+  const boundary = new Date(Date.UTC(y, m - 1, d, 0, dayCutoff || 0) - offset * 60000).toISOString();
+  let n = 0;
+  for (const l of reviewLog || []) {
+    if ((l.mode || 'flip') !== mode) continue;
+    if (l.state !== 0) continue;
+    if ((l.reviewed_at || '') >= boundary) n++;
+  }
+  return n;
 }

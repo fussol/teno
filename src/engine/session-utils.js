@@ -1,4 +1,5 @@
-import { Session } from './session-v4.js';
+import { Session, queueDayRolledOver, countNewRatedToday } from './session-v4.js';
+import { toLocalDateStr } from '../core/scheduler.js';
 import { FSRS, AGAIN, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../core/fsrs.js';
 import { toast } from '../lib/toast.js';
 import { checkStudyMessages, checkMilestone, checkAchievement } from '../lib/easter-eggs.js';
@@ -62,6 +63,14 @@ function buildDeckWeights(storeState) {
 }
 
 export function ensureQueue(filter, storeState) {
+  // 跨日：連 running 中的 session 也強制重建（queue 是昨天的）。
+  // 答過的 results 已寫 review_log＋DB，不丟；未答 queue 按新的一天重排（Anki 語意）。
+  let rolledOver = false;
+  if (session && queueDayRolledOver(session)) {
+    console.log('[ensure] day rollover, rebuilding session');
+    session.reset();
+    rolledOver = true;
+  }
   if (session?.running) return true;
   if (!session) return false;
   if (!session.running && session.results.length > 0) {
@@ -83,6 +92,12 @@ export function ensureQueue(filter, storeState) {
     session.deckWeights = buildDeckWeights(storeState);
     // C4: live sync — ensureSession 只建一次 FSRS，設定變更後此行保證預覽 cap 與 store 端一致
     session.fsrs.maximumInterval = Math.max(1, storeState.ankiSettings?.maxIvl ?? 365);
+  }
+  if (rolledOver && storeState) {
+    // store 的 newRatedToday 要等下一次 refreshDerived（async DB）才更新，
+    // session 先用 memory reviewLog 按同邊界語義重算，否則新卡額度沿用昨天的。
+    const today = toLocalDateStr(new Date(), session.timezoneOffset, session.dayCutoff);
+    session.ratedNewToday = countNewRatedToday(storeState.reviewLog, today, session.dayCutoff, session.timezoneOffset, 'flip');
   }
   session.start(filter);
   if (!session.intradayLearning.length && !session.mainQueue.length && !session.current) {

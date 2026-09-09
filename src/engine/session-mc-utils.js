@@ -1,4 +1,5 @@
-import { Session } from './session-v4.js';
+import { Session, queueDayRolledOver, countNewRatedToday } from './session-v4.js';
+import { toLocalDateStr } from '../core/scheduler.js';
 import { FSRS, AGAIN, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../core/fsrs.js';
 import { toast } from '../lib/toast.js';
 
@@ -62,6 +63,14 @@ function buildDeckWeights(storeState) {
 }
 
 export function ensureQueue(filter, storeState) {
+  // 跨日：連 running 中的 session 也強制重建（queue 是昨天的）。
+  // 答過的 results 已寫 review_log＋DB，不丟；未答 queue 按新的一天重排（Anki 語意）。
+  let rolledOver = false;
+  if (session && queueDayRolledOver(session)) {
+    console.log('[ensure] day rollover, rebuilding session');
+    session.reset();
+    rolledOver = true;
+  }
   if (session?.running) return true;
   if (!session) return false;
   // Session completed — show completion screen once, then allow rebuild
@@ -81,6 +90,11 @@ export function ensureQueue(filter, storeState) {
     session.deckWeights = buildDeckWeights(storeState);   // DW1 live-sync
     // C4: live sync — ensureSession 只建一次 FSRS，設定變更後此行保證預覽 cap 與 store 端一致
     session.fsrs.maximumInterval = Math.max(1, storeState.ankiSettingsMc?.maxIvl ?? 365);
+  }
+  if (rolledOver && storeState) {
+    // 跨日：store 計數待下次 refreshDerived 更新，session 先用 memory reviewLog 重算（同 flip 註解）。
+    const today = toLocalDateStr(new Date(), session.timezoneOffset, session.dayCutoff);
+    session.ratedNewToday = countNewRatedToday(storeState.reviewLog, today, session.dayCutoff, session.timezoneOffset, 'mc');
   }
   session.start(filter);
   if (!session.intradayLearning.length && !session.mainQueue.length && !session.current) { state = 'EMPTY'; return false; }
