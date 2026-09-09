@@ -295,6 +295,9 @@ export function createStore() {
             maxExamSessions: await db.getSetting('maxExamSessions'),
             deckOrder: await db.getSetting('deckOrder'),
             exampleDisplayMax: await db.getSetting('exampleDisplayMax'),
+            fieldVisBrowser: await db.getSetting('fieldVisBrowser'),
+            fieldVisStudy: await db.getSetting('fieldVisStudy'),
+            fieldVisExam: await db.getSetting('fieldVisExam'),
             colorPalette: await db.getSetting('colorPalette'),
             logRetentionDays: await db.getSetting('logRetentionDays'),
             devMode: await db.getSetting('devMode'),
@@ -425,6 +428,24 @@ export function createStore() {
     state.themeAccent = typeof settings.themeAccent === 'string' ? settings.themeAccent : 'skyBlue';
     state.themeAccentIntensity = typeof settings.themeAccentIntensity === 'number' ? settings.themeAccentIntensity : 0.5;
     window.__maxExampleLines = Math.max(0, parseInt(settings.exampleDisplayMax, 10) || 0);
+    // ── 欄位可見度（設定頁 master；瀏覽器/學習/測驗各一組，預設全顯示）──
+    const _FV_KEYS = ['pron', 'definition', 'example', 'description', 'related', 'forms', 'synonym', 'antonym', 'tags', 'image', 'syllables', 'etymology'];
+    const _parseVis = (v) => {
+      if (v == null || v === '') return [..._FV_KEYS];
+      try {
+        const a = JSON.parse(v);
+        if (Array.isArray(a)) return a.filter(k => _FV_KEYS.includes(k));
+      } catch (_) {}
+      return [..._FV_KEYS];
+    };
+    state.fieldVisBrowser = _parseVis(settings.fieldVisBrowser);
+    state.fieldVisStudy = _parseVis(settings.fieldVisStudy);
+    state.fieldVisExam = _parseVis(settings.fieldVisExam);
+    window.__fieldVis = {
+      browser: [...state.fieldVisBrowser],
+      study: [...state.fieldVisStudy],
+      exam: [...state.fieldVisExam],
+    };
     // ── 操作日誌: 保留天數 (0 = 不記錄, 預設 14) ──
     const logDays = parseInt(settings.logRetentionDays, 10);
     state.logRetentionDays = Number.isFinite(logDays) && logDays >= 0 ? logDays : 14;

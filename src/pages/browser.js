@@ -3,7 +3,8 @@
 // v05.01.00.0010
 // ═══════════════════════════════════════════════════════════════
 
-import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
+import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample } from '../lib/svg.js';
+import { visShow } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
@@ -328,19 +329,21 @@ const cardPanelCSS = `<style id="cardStyle">
 function cardBodyHTML(w, s, st) {
   const fh = (f) => !st.showComplete && st.hiddenFields.includes(f);
   const ah = !st.showComplete && st.hiddenFields.length > 0;
+  // 全域欄位可見度（設定頁 master）：關掉＝整段不渲染；卡片內臨時隱藏另走 fh
+  const gv = (f) => visShow('browser', f);
+  const exMerged = wordExample(w);
   return `<div class="card-panel-body${ah ? '' : ' revealed'}" id="cardPreviewBody">
     <div class="card-panel-word">${escapeHtml(w.word)}</div>
-    <div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap${fh('image') ? ' card-hidden' : ''}">${wordImageSlotHTML(w.id)}</div>
-    ${w.pron ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
-    ${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? 'card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}
-    ${w.example ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(w.example)}</div>` : ''}
-    ${w.description ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
-    ${w.related && w.related.length ? `<div class="card-panel-desc${fh('related') ? ' card-hidden' : ''}" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
-    ${w.forms && w.forms.length ? `<div class="card-panel-desc${fh('forms') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
-    ${w.syllables ? `<div class="card-panel-desc${fh('syllables') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
-    ${w.etymology ? `<div class="card-panel-desc${fh('etymology') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
-    ${w.phrases ? `<div class="card-panel-desc${fh('phrases') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">片語 </span>${escapeHtml(w.phrases)}</div>` : ''}
-    ${(w.tags || []).length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
+    ${gv('image') ? `<div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap${fh('image') ? ' card-hidden' : ''}">${wordImageSlotHTML(w.id)}</div>` : ''}
+    ${(gv('pron') && w.pron) ? `<div class="card-panel-pron${fh('pron') ? ' card-hidden' : ''}">${escapeHtml(w.pron)}</div>` : ''}
+    ${gv('definition') ? `${(() => { const sf = splitFieldsHtml(w.pos, w.definition); return `<div class="${fh('definition') ? 'card-hidden' : ''}">${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">'+escapeHtml(w.pos)+'</div>' : '') + '<div class="card-panel-def">'+escapeHtml(w.definition || '-')+'</div>'}</div>`; })()}` : ''}
+    ${(gv('example') && exMerged) ? `<div class="card-panel-example${fh('example') ? ' card-hidden' : ''}">${fmtExample(exMerged)}</div>` : ''}
+    ${(gv('description') && w.description) ? `<div class="card-panel-desc${fh('description') ? ' card-hidden' : ''}">${escapeHtml(w.description)}</div>` : ''}
+    ${(gv('related') && w.related && w.related.length) ? `<div class="card-panel-desc${fh('related') ? ' card-hidden' : ''}" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${escapeHtml(r)}</span>`).join('')}</div>` : ''}
+    ${(gv('forms') && w.forms && w.forms.length) ? `<div class="card-panel-desc${fh('forms') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
+    ${(gv('syllables') && w.syllables) ? `<div class="card-panel-desc${fh('syllables') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
+    ${(gv('etymology') && w.etymology) ? `<div class="card-panel-desc${fh('etymology') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
+    ${((w.tags || []).length && gv('tags')) ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
       const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
       return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;
     }).join('')}</div>` : ''}
@@ -429,7 +432,7 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
           <label><span>完整顯示</span><input type="checkbox" id="csComplete" ${st.showComplete ? 'checked' : ''}></label>
           <div id="csHiddenFields" style="${st.showComplete ? 'display:none' : ''};padding-left:12px;margin-top:4px">
             <div style="font-size:10px;color:var(--text-quaternary);margin-bottom:4px">隱藏（點卡片顯示）</div>
-            ${[['definition','定義'],['example','例句'],['pron','發音'],['description','備註'],['tags','標籤'],['image','圖片'],['related','相似詞'],['forms','詞形變化'],['syllables','音節'],['etymology','字源'],['phrases','片語']].map(([k,l]) => `
+            ${[['definition','定義'],['example','例句（含片語）'],['pron','發音'],['description','備註'],['tags','標籤'],['image','圖片'],['related','相似詞'],['forms','詞形變化'],['syllables','音節'],['etymology','字源']].map(([k,l]) => `
               <label style="justify-content:flex-start;gap:6px"><input type="checkbox" data-cs-hide="${k}" ${st.hiddenFields.includes(k) ? 'checked' : ''}><span>${l}</span></label>
             `).join('')}
           </div>
@@ -947,8 +950,8 @@ function openModal(s, word) {
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">例句</label>
-          <div style="display:flex;gap:4px;${isMobile ? 'flex-direction:column' : ''}"><input class="form-input" id="fExample" placeholder="輸入後按 Enter" style="flex:1"><button class="btn btn-sm" id="btnFillExample" type="button" title="依順序新增一句例句" style="align-self:flex-start">${icon('sparkle')}</button></div>
+          <label class="form-label">例句（含片語）</label>
+          <div style="display:flex;gap:4px;${isMobile ? 'flex-direction:column' : ''}"><input class="form-input" id="fExample" placeholder="輸入後按 Enter（一行一筆；片語同一欄）" style="flex:1"><button class="btn btn-sm" id="btnFillExample" type="button" title="依順序新增一句例句" style="align-self:flex-start">${icon('sparkle')}</button></div>
           <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fExChips"></div>
         </div>
         <div class="form-group">
@@ -983,11 +986,6 @@ function openModal(s, word) {
         <div class="form-group">
           <label class="form-label">字源</label>
           <textarea class="form-input" id="fEtymology" rows="2" style="resize:vertical" placeholder="字源與首次使用；Ctrl+Enter 跳下一欄">${escapeHtml(word?.etymology || '')}</textarea>
-        </div>
-        <div class="form-group">
-          <label class="form-label">片語</label>
-          <div style="display:flex;gap:4px"><input class="form-input" id="fPhrases" placeholder="輸入後按 Enter 存入膠囊（一行一筆）；空 Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="btnFillPhrases" type="button" title="韋氏/LLM 自動產生片語">${icon('sparkle')}</button></div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;min-height:24px" id="fPhrasesChips"></div>
         </div>
         <div class="form-group">
           <label class="form-label">字本</label>
@@ -1125,7 +1123,7 @@ function openModal(s, word) {
   const defSep = ',', defJn = ', ';
   const exSep = null, exJn = '\n';   // 例句模式：sep=null（逗號屬句子一部分）
   const defIn = word?.definition || '';
-  const exIn = word?.example || '';
+  const exIn = mergeExamplePhrases(word?.example, word?.phrases);
   const _defChips = _tagInput('fDefChips', 'fDefinition', 'def-chip', defIn, defSep, defJn, 'display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   const exChips = _tagInput('fExChips', 'fExample', 'ex-chip', exIn, exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   // 統一膠囊：相似/反義/衍生物/相關詞/詞形變化（既有值預載；編輯+新增共用 modal）
@@ -1135,8 +1133,6 @@ function openModal(s, word) {
   const derivChips = _tagInput('fDerivativeChips', 'fDerivatives', 'pill-chip', word?.derivative || '', ',', ', ', _pillStyleB);
   const relChips = _tagInput('fRelatedChips', 'fRelated', 'pill-chip', (word?.related || []).join(', '), ',', ', ', _pillStyleB);
   const formsChips = _tagInput('fFormsChips', 'fForms', 'pill-chip', (word?.forms || []).join(', '), ',', ', ', _pillStyleB);
-  // 片語膠囊（一行一筆，換行模式同例句；韋氏 phrases 以 \n 分隔天然相容）
-  const phrasesChips = _tagInput('fPhrasesChips', 'fPhrases', 'pill-chip', word?.phrases || '', null, '\n', _pillStyleB);
 
   const close = () => document.getElementById('wordModal')?.remove();
   document.getElementById('modalClose')?.addEventListener('click', close);
@@ -1182,7 +1178,7 @@ function openModal(s, word) {
     if (defEl && defEl.value.trim()) { _defChips.append(defEl.value.trim()); defEl.value = ''; }
     if (exEl && exEl.value.trim()) { exChips.append(exEl.value.trim()); exEl.value = ''; }
     // 統一膠囊：殘留輸入框內容 Enter 同款併入膠囊（防使用者沒按 Enter 就存檔）
-    for (const [el, ch] of [['fSynonyms', synChips], ['fAntonyms', antChips], ['fDerivatives', derivChips], ['fRelated', relChips], ['fForms', formsChips], ['fPhrases', phrasesChips]]) {
+    for (const [el, ch] of [['fSynonyms', synChips], ['fAntonyms', antChips], ['fDerivatives', derivChips], ['fRelated', relChips], ['fForms', formsChips]]) {
       const e2 = document.getElementById(el);
       if (e2 && e2.value.trim()) { ch.append(e2.value.trim()); e2.value = ''; }
     }
@@ -1191,7 +1187,7 @@ function openModal(s, word) {
       definition: _defChips.getVal(),
       pos: Array.from(document.querySelectorAll('#fPosGroup .pos-chip.selected')).map(el => el.dataset.pos).join(', '),
       pron: document.getElementById('fPron')?.value.trim() || '',
-      example: exChips.getVal(),
+      example: mergeExamplePhrases(exChips.getVal(), (isEdit && word?.phrases) ? word.phrases : ''),
       description: document.getElementById('fDescription')?.value.trim() || '',
       related: relChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
       forms: formsChips.getVal().split(/[,，]/).map(x => x.trim()).filter(Boolean),
@@ -1200,7 +1196,7 @@ function openModal(s, word) {
       derivative: derivChips.getVal(),
       etymology: document.getElementById('fEtymology')?.value.trim() || '',
       syllables: document.getElementById('fSyllables')?.value.trim() || '',
-      phrases: phrasesChips.getVal(),
+      phrases: '',
       deck: document.getElementById('fDeck')?.value || 'Default',
       tags: Array.from(tagCbs).map(cb => cb.value),
     };
@@ -1255,13 +1251,6 @@ function openModal(s, word) {
     llmFillForms('fForms', w);
   });
 
-  // 片語 sparkle：韋氏優先（有 key），無 key 走 LLM
-  document.getElementById('btnFillPhrases')?.addEventListener('click', () => {
-    const w = document.getElementById('fWord')?.value.trim();
-    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
-    mwFillPhrases('fPhrases', w);
-  });
-
   document.getElementById('btnFillExample')?.addEventListener('click', async () => {
     const w = document.getElementById('fWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
@@ -1278,6 +1267,15 @@ function openModal(s, word) {
             const hasZh = 'translation' in d.senses[0];
             raw = d.senses.flatMap(s => (s.examples || []).map(ex => (hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english))).filter(Boolean));
           }
+        } else if (src === 'merriam') {
+          // 韋氏片語即例句候選（片語已併入例句）
+          try {
+            const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+            if (dk || tk) {
+              const f = merriamToFields(JSON.parse(await lookupMerriam(w, dk, tk)), w);
+              if (f?.phrases) raw = f.phrases.split('\n').map(x => x.trim()).filter(Boolean);
+            }
+          } catch (e) {}
         } else if (src === 'dict-api') {
           const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
           if (r.ok) {
@@ -1378,14 +1376,14 @@ function openModal(s, word) {
       if (id === 'fPos') return _getPosVal();
       if (id === 'fDefinition') return _defChips.getVal();
       if (id === 'fExample') return exChips.getVal();
-      if (id === 'fPhrases') return phrasesChips.getVal();
       return document.getElementById(id)?.value?.trim() || '';
     };
     const s = (id, val) => {
       if (!val) return;
       if (id === 'fDefinition') { if (!g('fDefinition')) _defChips.setVal(val); }
       else if (id === 'fExample') { if (!g('fExample')) exChips.setVal(val); }
-      else if (id === 'fPhrases') { if (!g('fPhrases')) phrasesChips.setVal(val); }
+      // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
+      else if (id === 'fExampleAppend') { if (val) exChips.setVal(mergeExamplePhrases(exChips.getVal(), val)); }
       else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
     };
     const chain = getChain();
@@ -1431,7 +1429,7 @@ function openModal(s, word) {
           }
         } catch (e) {}
       } else if (src === 'llm') {
-        if (!g('fDefinition') || !g('fPos') || !g('fPron') || !g('fExample') || !g('fRelated') || !g('fForms') || !g('fSyllables') || !g('fEtymology') || !g('fPhrases')) {
+        if (!g('fDefinition') || !g('fPos') || !g('fPron') || !g('fExample') || !g('fRelated') || !g('fForms') || !g('fEtymology')) {
           try {
             // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
             const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
@@ -1462,16 +1460,9 @@ function openModal(s, word) {
                 llmFillForms('fForms', w),
                 llmFillSynAntDeriv(w),
                 (async () => {
-                  // 音節＋字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝）
+                  // 字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝；音節只吃韋氏）
                   const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
                   const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
-                  if (!g('fSyllables')) {
-                    try {
-                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                        `Split the English word "${w}" into syllables joined by "·" (e.g. dic·tion·a·ry). Return ONLY the syllabified word, nothing else.`);
-                      if (t) s('fSyllables', t.trim());
-                    } catch (_) {}
-                  }
                   if (!g('fEtymology')) {
                     try {
                       const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
@@ -1479,14 +1470,12 @@ function openModal(s, word) {
                       if (t) s('fEtymology', t.trim());
                     } catch (_) {}
                   }
-                  // 片語 LLM 兜底（只填空欄；韋氏鏈步驟有 key 時走韋氏，此處不搶）
-                  if (!g('fPhrases')) {
-                    try {
-                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                        `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
-                      if (t) s('fPhrases', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
-                    } catch (_) {}
-                  }
+                  // 片語已併入例句：LLM 片語去重接續進例句（韋氏鏈步驟有 key 時走韋氏，此處不搶）
+                  try {
+                    const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
+                      `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
+                    if (t) s('fExampleAppend', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
+                  } catch (_) {}
                 })()
               ]);
             }
@@ -1512,7 +1501,7 @@ function openModal(s, word) {
   });
 
   // Enter 導覽（由上而下；描述/字源 textarea 需 Ctrl+Enter；膠囊欄空 Enter 跳轉、有字就地存膠囊）
-  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fSyllables', 'fExample', 'fDescription', 'fRelated', 'fForms', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fEtymology', 'fPhrases', 'fDeck'];
+  const fieldIds = ['fWord', 'fDefinition', 'fPron', 'fSyllables', 'fExample', 'fDescription', 'fRelated', 'fForms', 'fSynonyms', 'fAntonyms', 'fDerivatives', 'fEtymology', 'fDeck'];
   const _jumpNext = (curId) => {
     const idx = fieldIds.indexOf(curId);
     if (idx === -1) return;
@@ -1555,7 +1544,7 @@ function openModal(s, word) {
   }
 }
 
-/** 韋氏新三欄一鍵（modal 版；韋氏優先、無 key 走 LLM；只填空欄） */
+/** 韋氏三欄一鍵（modal 版；音節/字源填空欄，片語併入例句；有 key 才跑） */
 async function mwFillExtra(s, g, word) {
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
@@ -1565,29 +1554,28 @@ async function mwFillExtra(s, g, word) {
       if (f) {
         if (f.syllables) s('fSyllables', f.syllables);
         if (f.etymology) s('fEtymology', f.etymology);
-        if (f.phrases) s('fPhrases', f.phrases);
+        if (f.phrases) s('fExampleAppend', f.phrases);
         return;
       }
     } catch (_) { /* 掉回 LLM */ }
   }
-  // 無 key：LLM 補片語（音節/字源已在 llm 分支補過，這裡只補片語）
-  try { await mwFillPhrases('fPhrases', word); } catch (_) {}
+  // 無 key：LLM 片語併入例句（音節只吃韋氏，此處不補）
+  try { await mwFillPhrases('fExChips', word); } catch (_) {}
 }
 
-/** 片語 sparkle：韋氏優先（有 key），無 key 走 LLM；只填空欄 */
-async function mwFillPhrases(inputId, word) {
-  const host = document.getElementById(inputId + 'Chips');
-  const cur = host?._tagInputApi ? host._tagInputApi.getVal() : (document.getElementById(inputId)?.value.trim() || '');
-  if (cur) return;
+/** 片語 sparkle／兜底：韋氏優先（有 key），無 key 走 LLM；一律去重併入例句膠囊 */
+async function mwFillPhrases(chipsHostId, word) {
+  const host = document.getElementById(chipsHostId);
+  const api = host?._tagInputApi;
+  if (!api) return;
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
       const raw = await lookupMerriam(word, dk, tk);
       const f = merriamToFields(JSON.parse(raw), word);
-      if (f?.phrases) {
-        if (host && host._tagInputApi) host._tagInputApi.setVal(f.phrases);
-        else document.getElementById(inputId).value = f.phrases;
-        toast('已從韋氏補上片語', 'toast-success');
+      if (f?.phrases?.trim()) {
+        api.setVal(mergeExamplePhrases(api.getVal(), f.phrases));
+        toast('已從韋氏補上片語（併入例句）', 'toast-success');
         return;
       }
     } catch (_) { /* 掉回 LLM */ }
@@ -1600,8 +1588,8 @@ async function mwFillPhrases(inputId, word) {
     );
     if (text && text.trim()) {
       const val = [...new Set(text.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n');
-      if (host && host._tagInputApi) host._tagInputApi.setVal(val);
-      else document.getElementById(inputId).value = val;
+      api.setVal(mergeExamplePhrases(api.getVal(), val));
+      toast('已補上片語（併入例句）', 'toast-success');
     }
   } catch (e) { toast('片語產生失敗: ' + e, 'toast-error'); }
 }

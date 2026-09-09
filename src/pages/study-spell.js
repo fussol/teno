@@ -1,7 +1,7 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts, lastCorrect, userInput, submitAnswer } from '../engine/session-spell-utils.js';
 
-import { splitFieldsHtml, fmtExample } from '../lib/svg.js';
-import { extraFieldsHtml } from '../lib/word-extra.js';
+import { splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
+import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 let _ssVvHandler = null;   // G11: visualViewport resize（常駐節點累積）
@@ -103,13 +103,13 @@ function renderBack(w, cnt) {
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
-      ${wordImageSlotHTML(w.id)}
-      ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${e(w.definition || '(無定義)')}</div>`}
-      ${w.pron ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
-      ${w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
-      ${w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
-      ${w.forms?.length ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
-      ${extraFieldsHtml(w, e)}
+      ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
+      ${visShow('study', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${e(w.definition || '(無定義)')}</div>`) : ''}
+      ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
+      ${(visShow('study', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
+      ${(visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
+      ${(visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
+      ${extraFieldsHtml(w, e, 'study')}
       <div class="study-user-input">你的輸入：<span class="study-user-word">${e(userInput)}</span></div>
     </div>
     <div class="study-buttons">

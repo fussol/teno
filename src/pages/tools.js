@@ -1,4 +1,4 @@
-import { icon } from '../lib/svg.js';
+import { icon, mergeExamplePhrases } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
 import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
 
@@ -1576,7 +1576,7 @@ export function onMount(s) {
     toast(`LLM 反義詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
   }
 
-  // ── 片語（寫入 phrases，新三欄換行分隔）──
+  // ── 片語（併入例句：與例句同一欄、同一規則）──
   window.__genPhrases = async () => {
     const method = _getMethod('phraseMethod', 'merriam');
     if (method === 'merriam') {
@@ -1609,12 +1609,13 @@ export function onMount(s) {
           const f = await _mwLookup(w.word);
           if (f.suggest.length || !f.phrases.trim()) { fail++; }
           else {
-            // 關＝去重後接續，開＝整欄換新
+            // 片語已併入例句：開＝例句留著、舊片語丟掉換新；關＝例句＋舊片語為底去重接續；寫回時 phrases 清空（遷移）
             const fresh = f.phrases.split('\n').map(x => x.trim()).filter(Boolean);
-            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.phrases, fresh);
+            const base = _ow() ? (w.example || '').trim() : mergeExamplePhrases(w.example, w.phrases);
+            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(base, fresh);
             if (unique.length) {
-              const merged = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { phrases: merged }); ok++;
+              const merged = [base, ...unique].filter(Boolean).join('\n');
+              await s.actions.editWord(w.id, { example: merged, phrases: '' }); ok++;
             } else { fail++; }
           }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
@@ -1653,10 +1654,12 @@ export function onMount(s) {
           const arr = JSON.parse(cleaned);
           if (Array.isArray(arr) && arr.length) {
             const fresh = [...new Set(arr.map(x => String(x).trim()).filter(Boolean))];
-            const unique = _ow() ? fresh : _dedupSentences(w.phrases, fresh);
+            // 片語已併入例句：開／關語意同韋氏批次；寫回時 phrases 清空（遷移）
+            const base = _ow() ? (w.example || '').trim() : mergeExamplePhrases(w.example, w.phrases);
+            const unique = _ow() ? fresh : _dedupSentences(base, fresh);
             if (unique.length) {
-              const merged = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { phrases: merged }); ok++;
+              const merged = [base, ...unique].filter(Boolean).join('\n');
+              await s.actions.editWord(w.id, { example: merged, phrases: '' }); ok++;
             } else { fail++; }
           } else { fail++; }
         } catch (e) { fail++; }
@@ -1901,28 +1904,29 @@ export function onMount(s) {
           }
         }
       } catch (e) { bump('ant', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
-      // ── 片語 ──
+      // ── 片語（已併入例句：與例句同一欄、同一規則；寫回時 phrases 清空）──
       try {
         if (_ow() || !w.phrases?.trim()) {
+          // base：覆寫開＝本輪例句＋原例句（舊片語丟掉）；關＝再併舊片語；一律對 base 去重
+          const exBase = _ow()
+            ? [patch.example, w.example].filter(Boolean).join('\n')
+            : mergeExamplePhrases([patch.example, w.example].filter(Boolean).join('\n'), w.phrases);
+          const putPhrase = (fresh) => {
+            const unique = _dedupSentences(exBase, [...new Set(fresh)]);
+            if (!unique.length) { bump('phrase', 'fail'); return; }
+            patch.example = [exBase, ...unique].filter(Boolean).join('\n');
+            patch.phrases = '';
+            bump('phrase', 'ok');
+          };
           if (M.phrase === 'merriam') {
             const f = await getMw();
             const fresh = String(f.phrases || '').split('\n').map(x => x.trim()).filter(Boolean);
-            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.phrases, fresh);
-            if (unique.length) {
-              patch.phrases = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
-              bump('phrase', 'ok');
-            } else bump('phrase', 'fail');
+            if (fresh.length) putPhrase(fresh); else bump('phrase', 'fail');
           } else {
             if (!llmOk) bump('phrase', 'skip');
             else {
               const arr = await llmJson(`Return a JSON array of 3-5 common English phrases or collocations containing the word "${w.word}". Example: ["take advantage of", "make use of"]. Only the JSON array, no markdown.`);
-              if (arr?.length) {
-                const unique = _ow() ? arr : _dedupSentences(w.phrases, arr);
-                if (unique.length) {
-                  patch.phrases = (_ow() ? unique : [(w.phrases || '').trim(), ...unique]).filter(Boolean).join('\n');
-                  bump('phrase', 'ok');
-                } else bump('phrase', 'fail');
-              } else bump('phrase', 'fail');
+              if (arr?.length) putPhrase(arr); else bump('phrase', 'fail');
             }
           }
         }

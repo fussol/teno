@@ -16,6 +16,14 @@ import { renderContent as renderExportContent, onMount as onMountExport } from '
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
 import { ICON_PRESETS } from '../lib/icon-presets.js';
 import { clampLearnAhead } from '../lib/store.js';
+import { FIELD_LABELS, FIELD_KEYS } from '../lib/word-extra.js';
+
+// 欄位顯示三情境（設定頁 master）
+const FIELD_VIS_GROUPS = [
+  ['browser', '瀏覽器', '字庫／字本的字卡面板'],
+  ['study', '學習', '翻卡／多選／拼字學習'],
+  ['exam', '測驗', '翻卡／多選／拼字測驗'],
+];
 
 // ─── 模組級狀態 ───
 let _ankiMode = 'flip'; // 'flip' | 'mc' | 'spell'
@@ -261,6 +269,30 @@ function renderSettingsContent(s) {
           </div>
           <input type="number" id="exampleDisplayMaxInput" min="0" max="50" value="${window.__maxExampleLines ?? 0}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
         </div>
+      </div>
+    </div>
+
+    <!-- 欄位顯示（隱藏或顯示欄位：三情境各一組，取消勾選＝該處不顯示） -->
+    <div class="section">
+      <div class="section-title">${icon('eye')} 欄位顯示</div>
+      <div class="config-section">
+        <div class="config-field-info" style="margin-bottom:var(--s2)">
+          <div class="config-field-hint">三處各別設定要顯示哪些欄位（例句含片語；單字本身一定顯示）</div>
+        </div>
+        ${FIELD_VIS_GROUPS.map(([ctx, name, hint]) => {
+          const cur = Array.isArray(s.state['fieldVis' + ctx[0].toUpperCase() + ctx.slice(1)])
+            ? s.state['fieldVis' + ctx[0].toUpperCase() + ctx.slice(1)]
+            : [...FIELD_KEYS];
+          return `<div style="margin-bottom:var(--s3)">
+            <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:2px">${name}</div>
+            <div class="muted" style="font-size:11px;margin-bottom:6px">${hint}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${FIELD_KEYS.map(k => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);border:1px solid var(--border);border-radius:100px;padding:3px 10px;cursor:pointer">
+                <input type="checkbox" data-fieldvis-ctx="${ctx}" value="${k}" ${cur.includes(k) ? 'checked' : ''}>${FIELD_LABELS[k]}
+              </label>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
       </div>
     </div>
 
@@ -1024,6 +1056,25 @@ export function onMount(s) {
     } catch (e) {
       toast('例句顯示設定儲存失敗: ' + e, 'toast-error');
     }
+  });
+
+  // ── 欄位顯示（三情境各一組；改完即寫 db＋同步 window/state，即時生效）──
+  document.querySelectorAll('[data-fieldvis-ctx]')?.forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const ctx = cb.dataset.fieldvisCtx;
+      const key = 'fieldVis' + ctx[0].toUpperCase() + ctx.slice(1);
+      const vals = Array.from(document.querySelectorAll(`[data-fieldvis-ctx="${ctx}"]:checked`)).map(x => x.value);
+      try {
+        const d = await import('../lib/db.js');
+        await d.setSetting(key, JSON.stringify(vals));
+        s.state[key] = [...vals];
+        window.__fieldVis = window.__fieldVis || {};
+        window.__fieldVis[ctx] = [...vals];
+        toast('欄位顯示已更新', 'toast-success');
+      } catch (e) {
+        toast('欄位顯示儲存失敗: ' + e, 'toast-error');
+      }
+    });
   });
 
   document.getElementById('logRetentionInput')?.addEventListener('change', async () => {

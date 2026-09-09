@@ -1,5 +1,5 @@
-import { icon, splitFieldsHtml, fmtExample } from '../lib/svg.js';
-import { extraFieldsHtml } from '../lib/word-extra.js';
+import { icon, splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
+import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
@@ -150,18 +150,18 @@ function renderExam(s) {
         <div class="study-word-row">
           <div class="study-word" style="font-size:32px">${esc(w.word)}</div>
         </div>
-        ${wordImageSlotHTML(w.id)}
+        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div style="margin-top:10px;font-size:14px;font-weight:600;color:${w._picked === w._correctIdx ? 'var(--green)' : 'var(--red)'}">
           你選了：${esc(w._picked >= 0 ? (w._options[w._picked] ?? '-') : '-')}${w._picked !== w._correctIdx ? `（正確：${esc(w.word)}）` : ''}
         </div>
         <div style="margin-top:16px">
-          ${splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${esc(w.definition || '(無定義)')}</div>`}
-          ${w.example ? `<div class="study-example">${fmtExample(w.example)}</div>` : ''}
-          ${w.pron ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
-          ${w.related?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}
-          ${w.forms?.length ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${esc(f)}</span>`).join('')}</div>` : ''}
-          ${extraFieldsHtml(w, esc)}
-          ${w.description ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
+          ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || `<div class="study-def">${esc(w.definition || '(無定義)')}</div>`) : ''}
+          ${(visShow('exam', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
+          ${(visShow('exam', 'pron') && w.pron) ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
+          ${(visShow('exam', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}
+          ${(visShow('exam', 'forms') && w.forms?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${esc(f)}</span>`).join('')}</div>` : ''}
+          ${extraFieldsHtml(w, esc, 'exam')}
+          ${(visShow('exam', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
         </div>
         ${!e.settings.autoNext ? `
           <button class="study-flip-btn" id="emNextBtn" style="margin-top:20px">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>

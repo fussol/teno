@@ -211,6 +211,25 @@ function esc(s) {
 }
 
 /**
+ * 例句＋片語合併（片語已併入例句：同規則、同顯示上限、同展開）。
+ * 去重保序：例句在前，片語新增行接續。
+ */
+export function mergeExamplePhrases(example, phrases) {
+  const lines = (s) => String(s ?? '').split('\n').map(x => x.trim()).filter(Boolean);
+  const out = [...lines(example)];
+  const seen = new Set(out);
+  for (const l of lines(phrases)) {
+    if (!seen.has(l)) { seen.add(l); out.push(l); }
+  }
+  return out.join('\n');
+}
+
+/** 單字物件 → 合併後的例句全文（顯示層統一入口）。 */
+export function wordExample(w) {
+  return mergeExamplePhrases(w?.example, w?.phrases);
+}
+
+/**
  * Format example text: if it contains English + Chinese translation
  * separated by punctuation boundary, split onto separate lines.
  * 顯示上限只做隱藏不做刪除：超過 max 的句子包在可展開區，
