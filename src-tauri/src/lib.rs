@@ -1743,13 +1743,10 @@ async fn export_backup_dialog(app_handle: tauri::AppHandle, filename: String) ->
     }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    let migrations = vec![
-        Migration {
-            version: 1,
-            description: "create core tables",
-            sql: "
+// ─── D17: v1 原文釘選（与 Migration v1 同一字串，两处永远一致）───
+// sqlx 以 SHA-384(sql) 校验已套用 migration（VersionMismatch）；
+// v1 全文含 `//` 行内注解，SQLite 重放必炸，故只做验证＋补 index＋重盖，绝不重放。
+const V1_SQL: &str = "
                 CREATE TABLE IF NOT EXISTS words (
                     id TEXT PRIMARY KEY,
                     word TEXT NOT NULL,
@@ -1845,7 +1842,182 @@ pub fn run() {
                 CREATE INDEX IF NOT EXISTS idx_words_deck ON words(deck);
                 CREATE INDEX IF NOT EXISTS idx_review_log_word ON review_log(word_id);
                 CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log(reviewed_at);
-            ",
+            ";
+const V1_DESC: &str = "create core tables";
+const V1_TABLES: [&str; 10] = ["words", "cards", "decks", "folders", "additions",
+    "edits", "review_log", "exam_history", "settings", "goal_streak"];
+
+// ─── D17: v13 原文釘選（與 Migration v13 同一字串，兩處永遠一致）───
+// sqlx 以 SHA-384(sql) 校驗已套用 migration，改一字即 VersionMismatch。
+const V13_SQL: &str = "
+                ALTER TABLE words ADD COLUMN etymology TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN syllables TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN phrases TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN synonym TEXT DEFAULT '';
+                ALTER TABLE words ADD COLUMN antonym TEXT DEFAULT '';
+            ";
+const V13_DESC: &str =
+    "add etymology/syllables/phrases/synonym/antonym columns to words (LOG-MW)";
+
+/// D17: migrator 跑之前，修舊庫兩處斷點（冪等；新裝／已升級庫走早退分支零動作）：
+///  (1) v1 指紋：5.2.9 時代文字與現行不同，sqlx 會 VersionMismatch 即死。
+///      v1 全文含 `//` 不可重放，只驗十表＋補五 index＋重蓋 checksum。
+///  (2) v13 欄：歷史 DB 早被 JS 逐欄補過 synonym/antonym，migrator v13 原樣重放
+///      即 `duplicate column` 熔斷；五欄補齊後預登記 v13（checksum＝SHA-384(V13_SQL)，
+///      與 sqlx Migration::new 算法同源；欄位語意鏡 sqlx apply：success=1，
+///      execution_time=-1）。
+///
+/// 實錘：~/下載/teno-backup (15).db（TENOC v1，5.9.45，4934 詞）——raw 在新版
+/// App 必死（v1 VersionMismatch，死在 v13 之前）；修後 migrator no-op
+/// （tools/db-compat.mjs inspect/repair/downgrade＋新舊雙視角模擬全綠）。
+///
+/// 呼叫點：run() 裡 sql plugin 之前的 early plugin（全平台正確路徑，
+/// setup 順序＝註冊順序），migrator 跑時已處理版本顯示為 applied 則跳過。
+/// 不碰：v11/v12（舊庫上乾淨可跑，預補反而撞 duplicate column）、v14（冪等）、
+/// v1 以外指紋不符（不敢自動重蓋，交 migrator 原樣報錯＋日誌）。
+fn preensure_upgrade_columns(app_dir: &std::path::Path) {
+    use rusqlite::Connection;
+    use sha2::{Digest, Sha384};
+    use std::collections::HashSet;
+    let db_path = app_dir.join("teno.db");
+    if !db_path.exists() {
+        return; // 新裝：migrator 建表＋JS migrate 收尾，此處無事可做
+    }
+    let conn = match Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("D17 preensure open fail: {}", e);
+            return;
+        }
+    };
+    let table_exists = |t: &str| -> bool {
+        conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+            [t],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+            > 0
+    };
+    if !table_exists("words") {
+        return; // 非法庫：交給 migrator 原樣報錯，不偽造登記
+    }
+    // (1) v1 指紋對齊：已登記但 checksum 不符，migrator 會 VersionMismatch 即死。
+    //     v1 全文不可重放，只驗十表＋補五 index＋重蓋；缺表＝非 v1 血統，不偽造。
+    if table_exists("_sqlx_migrations") {
+        let v1sum: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT checksum FROM _sqlx_migrations WHERE version=1",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+        if let Some(stored) = v1sum {
+            let mut h = Sha384::new();
+            h.update(V1_SQL.as_bytes());
+            if stored != h.finalize().as_slice() {
+                let tables: HashSet<String> = conn
+                    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+                    .and_then(|mut s| {
+                        s.query_map([], |row| row.get::<_, String>(0))
+                            .map(|rows| rows.flatten().collect())
+                    })
+                    .unwrap_or_default();
+                if V1_TABLES.iter().all(|t| tables.contains(*t)) {
+                    for idx in [
+                        "CREATE INDEX IF NOT EXISTS idx_cards_due ON cards(due)",
+                        "CREATE INDEX IF NOT EXISTS idx_cards_state ON cards(state)",
+                        "CREATE INDEX IF NOT EXISTS idx_words_deck ON words(deck)",
+                        "CREATE INDEX IF NOT EXISTS idx_review_log_word ON review_log(word_id)",
+                        "CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log(reviewed_at)",
+                    ] {
+                        let _ = conn.execute_batch(idx);
+                    }
+                    let mut h2 = Sha384::new();
+                    h2.update(V1_SQL.as_bytes());
+                    let sum2 = h2.finalize();
+                    if conn
+                        .execute(
+                            "UPDATE _sqlx_migrations SET checksum=?1, success=1 WHERE version=1",
+                            rusqlite::params![sum2.as_slice()],
+                        )
+                        .is_ok()
+                    {
+                        log::info!("D17 preensure: v1 checksum restamped (upgrade/import path)");
+                    }
+                } else {
+                    log::warn!("D17 preensure: v1 checksum mismatch + tables missing, leaving for migrator");
+                }
+            }
+        }
+    }
+    let mut cols: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = conn.prepare("PRAGMA table_info(words)") {
+        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(1)) {
+            for c in rows.flatten() {
+                cols.insert(c);
+            }
+        }
+    }
+    // 只補 v13 五欄（其餘交給 migrator 原樣跑）：
+    //  - v11/v12 在舊庫上乾淨可跑（欄/表皆不存在），預補反而會讓 migrator
+    //    撞 duplicate column，絕對不碰；
+    //  - derivative/examples/related/forms 對應已登記的 v9/v10（舊庫既有），不碰。
+    for col in [
+        "etymology",
+        "syllables",
+        "phrases",
+        "synonym",
+        "antonym",
+    ] {
+        if !cols.contains(col) {
+            let sql = format!(
+                "ALTER TABLE words ADD COLUMN {} TEXT NOT NULL DEFAULT ''",
+                col
+            );
+            if conn.execute_batch(&sql).is_ok() {
+                cols.insert(col.to_string());
+            }
+        }
+    }
+    // v13 五欄齊備才可預登記（缺欄＝上面補失敗，不偽造，交給 migrator 原樣報錯）
+    let v13_cols = ["etymology", "syllables", "phrases", "synonym", "antonym"];
+    if !v13_cols.iter().all(|c| cols.contains(*c)) {
+        return;
+    }
+    if !table_exists("_sqlx_migrations") {
+        return; // 無登記表＝migrator 會從 v1 全量跑；v1 建表後 v13 照走（舊库不會到此分支）
+    }
+    let recorded: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM _sqlx_migrations WHERE version=13",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(1);
+    if recorded > 0 {
+        return; // 已登記（新裝／已升級）：migrator 跳過 v13
+    }
+    let mut h = Sha384::new();
+    h.update(V13_SQL.as_bytes());
+    let sum = h.finalize();
+    if let Err(e) = conn.execute(
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (13, ?1, 1, ?2, -1)",
+        rusqlite::params![V13_DESC, sum.as_slice()],
+    ) {
+        log::warn!("D17 preensure record v13 fail: {}", e);
+    } else {
+        log::info!("D17 preensure: v13 columns ensured + recorded (upgrade/import path)");
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: V1_DESC,
+            sql: V1_SQL,
             kind: MigrationKind::Up,
         },
         Migration {
@@ -1943,15 +2115,14 @@ pub fn run() {
         Migration {
             // LOG-MW D段：韋氏三新欄（etymology/syllables/phrases）＋單數
             // synonym/antonym 對齊（JS 層早有欄位＋編輯器＋匯出，Rust 表補上）。
+            // D17 釘選：此 SQL 一字不可改 —— sqlx 以 SHA-384(sql) 校驗已套用
+            // migration（VersionMismatch），改字即炸掉所有已升級用戶的啟動。
+            // 舊庫 duplicate column 問題改由 preensure_upgrade_columns() 解
+            // （migrator 跑之前冪等補欄＋預登記 v13），此處 SQL 與 V13_SQL
+            // 同一 const，兩處永遠一致。
             version: 13,
-            description: "add etymology/syllables/phrases/synonym/antonym columns to words (LOG-MW)",
-            sql: "
-                ALTER TABLE words ADD COLUMN etymology TEXT DEFAULT '';
-                ALTER TABLE words ADD COLUMN syllables TEXT DEFAULT '';
-                ALTER TABLE words ADD COLUMN phrases TEXT DEFAULT '';
-                ALTER TABLE words ADD COLUMN synonym TEXT DEFAULT '';
-                ALTER TABLE words ADD COLUMN antonym TEXT DEFAULT '';
-            ",
+            description: V13_DESC,
+            sql: V13_SQL,
             kind: MigrationKind::Up,
         },
         Migration {
@@ -2005,6 +2176,20 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // D17: 缺欄預補 early plugin —— 必須註冊在 sql plugin 之前
+        // （setup 順序＝註冊順序），拿正確的 app_config_dir 跑
+        // preensure_upgrade_columns，全平台路徑一致。
+        .plugin(
+            tauri::plugin::Builder::new("d17-preensure")
+                .setup(|app, _api: tauri::plugin::PluginApi<tauri::Wry, ()>| {
+                    match app.path().app_config_dir() {
+                        Ok(dir) => preensure_upgrade_columns(&dir),
+                        Err(e) => log::warn!("D17 preensure no app dir: {}", e),
+                    }
+                    Ok(())
+                })
+                .build(),
+        )
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:teno.db", migrations)

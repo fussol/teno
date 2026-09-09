@@ -11,6 +11,9 @@ import { FSRS, generateFuzzFactor, parseStepsStr } from '../src/core/fsrs.js';
 import { getToday, toLocalDateStr, computeDueIso, computeFutureDueCounts } from '../src/core/scheduler.js';
 import { buildCSV, parseCSVTable, resolveField } from '../src/core/import.js';   // D8: CSV 合同單一真值源
 import { clampLearnAhead } from '../src/lib/store.js';
+import { fingerprintFile, prepareImportFile } from './db-compat.mjs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const HOME = process.env.HOME || '';
 const DB = process.env.TENO_DB || `${HOME}/.config/com.teno.app/teno.db`;
@@ -2325,7 +2328,36 @@ function cmdExportDb() {
 function cmdImportDb() {
   const src = args[0];
   if (!src || !existsSync(src)) return console.log(`需: import-db <檔案> (${src ?? ''})`);
-  const data = readFileSync(src);
+  const noAutoRepair = args.includes('--no-auto-repair');
+  // 指紋→路由→修復→匯入：先驗指紋，需要修且未禁用自動修復時走本版修復工具
+  // （修復工具註冊表見 db-compat.mjs REPAIR_TOOLS；目前只有 v14／5.16.11，
+  // 改版加新條目）。修復產物落 tmp，來源檔永遠不動。
+  let effSrc = src, repaired = false, fpNote = '';
+  try {
+    const fp = fingerprintFile(src);
+    fpNote = `指紋: 登記[${fp.migs.join(',')}] ${fp.mismatched.length ? `指紋不符[${fp.mismatched}] ` : ''}${fp.pending.length ? `待跑[${fp.pending}] ` : ''}→路由 ${fp.route}`;
+    if (fp.route === 'manual') {
+      console.log(`❌ 拒絕匯入: ${fp.reason} — 來源 ${src}`);
+      log('ERROR', `import-db rejected: ${fp.reason} ${src}`);
+      process.exitCode = 1; return;
+    }
+    if (fp.route !== 'ok') {
+      if (noAutoRepair) {
+        console.log(`❌ 拒絕匯入: ${fp.reason}（帶 --no-auto-repair 故不自動修復；拿掉該旗標即走修復工具）— 來源 ${src}`);
+        log('ERROR', `import-db rejected: needs ${fp.route}, auto-repair disabled ${src}`);
+        process.exitCode = 1; return;
+      }
+      const tmpOut = join(tmpdir(), `teno-import-prep-${process.pid}-${Date.now()}.db`);
+      const r = prepareImportFile(src, tmpOut);
+      effSrc = tmpOut; repaired = true;
+      log('WRITE', `import-db auto-repair ${fp.route}: ${r.log.join(' / ').slice(0, 300)}`);
+    }
+  } catch (e) {
+    console.log(`❌ 拒絕匯入: 指紋失敗（${e.message}）— 來源 ${src}`);
+    log('ERROR', `import-db rejected: fingerprint fail ${e.message} ${src}`);
+    process.exitCode = 1; return;
+  }
+  const data = readFileSync(effSrc);
   const { teno: tenoBytes, log: logBytes } = unpackContainer(data);
   // D19: magic 守門 —— 垃圾/截斷/損壞容器一律拒絕（守門在全部寫入副作用之前：
   // 拒絕不備份、不 rmWal、不覆寫、零 audit）。l2=0 空 log 段＝無 log（合約
@@ -2347,9 +2379,10 @@ function cmdImportDb() {
   rmWal(DB);
   writeFileSync(DB, tenoBytes);
   if (logBytes?.length) { rmWal(appLogDbPath()); writeFileSync(appLogDbPath(), logBytes); }
-  console.log(`✅ 已匯入 ${src} (teno.db=${(tenoBytes.length / 1024 / 1024).toFixed(2)} MB${logBytes?.length ? `, app-log.db=${(logBytes.length / 1024 / 1024).toFixed(2)} MB` : ', 無操作日誌'})`);
-  log('WRITE', `import-db ${src} teno=${tenoBytes.length}b log=${logBytes?.length ? logBytes.length : 0}b`);
-  audit('import-db', `匯入 DB ${args[0] || ''}`);
+  if (repaired) { try { rmSync(effSrc, { force: true }); } catch {} }
+  console.log(`✅ 已匯入 ${src}${repaired ? '（已自動修復到本版）' : ''} (teno.db=${(tenoBytes.length / 1024 / 1024).toFixed(2)} MB${logBytes?.length ? `, app-log.db=${(logBytes.length / 1024 / 1024).toFixed(2)} MB` : ', 無操作日誌'})`);
+  log('WRITE', `import-db ${src} teno=${tenoBytes.length}b log=${logBytes?.length ? logBytes.length : 0}b${repaired ? ' repaired' : ''} ${fpNote}`);
+  audit('import-db', `匯入 DB ${args[0] || ''}${repaired ? '（指紋→修復工具 v14 自動修復）' : ''}`);
 }
 
 // ─── 自我測試: 一鍵檢查 DB/FSRS/模擬引擎/容器, 並寫入 [TEST] 標記 log ───

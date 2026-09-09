@@ -5623,7 +5623,7 @@ dependencies = [
 
 [[package]]
 name = "teno"
-version = "5.16.5"
+version = "5.16.12"
 dependencies = [
  "cambridge_scraper",
  "chrono",
@@ -5636,6 +5636,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
