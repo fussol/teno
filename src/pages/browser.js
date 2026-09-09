@@ -124,10 +124,14 @@ function renderEmpty(total) {
   </div>`;
 }
 
-function wordRowHtml(w, tagColors, sysTags) {
+function wordRowHtml(w, tagColors, sysTags, deckNames) {
   const tc = tagColors || {};
   const sys = sysTags || [];
   const tagName = (t) => { const st = sys.find(s => s.role === t); return st ? st.name : t; };
+  // 字本名不是標籤：歷史資料把字本名塞進 w.tags（4879/4921 字全是字本名 tag），
+  // 列表只印真標籤，與任何字本同名的 tag 一律過濾（設定定義表也沒有它們）。
+  const deckSet = new Set(deckNames || []);
+  const showTags = (w.tags || []).filter(t => !deckSet.has(t));
   return `<div class="word-row" data-word="${escapeAttr(w.id)}">
     <div style="display:flex;flex-direction:column;flex:1;min-width:0;gap:2px">
       <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
@@ -140,11 +144,11 @@ function wordRowHtml(w, tagColors, sysTags) {
         return parts.map(s => `<span style="display:inline-block;font-size:12px;color:var(--text-primary);background:var(--bg-surface);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px 1px 0">${escapeHtml(s)}</span>`).join('');
       })()}</span>
       <span class="word-row-tags" data-word-id="${escapeAttr(w.id)}" style="margin-top:2px">
-        ${(w.tags || []).map(t => {
+        ${showTags.map(t => {
           const c = tc[t] || 'var(--accent)';
           return `<span class="tag" style="background:${c};color:${tc[t] ? '#fff' : 'var(--accent-on)'}" data-tag-chip="${escapeAttr(t)}">${escapeHtml(tagName(t))}</span>`;
         }).join('')}
-        ${!(w.tags || []).length ? `<span class="muted" style="font-size:11px">無標籤</span>` : ''}
+        ${!showTags.length ? `<span class="muted" style="font-size:11px">無標籤</span>` : ''}
       </span>
     </div>
     <div class="word-row-actions" style="${isMobile ? 'opacity:1' : ''}">
@@ -158,6 +162,7 @@ function wordRowHtml(w, tagColors, sysTags) {
 
 function renderList(words, s, tagColors) {
   const sysTags = s.state.systemTags || [];
+  const deckNames = (s.state.decks || []).map(d => d.name);
   const display = capList(words, _displayLimit);
   return `
     <div id="browserListHead" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--s3)">
@@ -170,7 +175,7 @@ function renderList(words, s, tagColors) {
       </label>
     </div>
     <div class="word-list" id="wordList">
-      ${display.map(w => wordRowHtml(w, tagColors, sysTags)).join('')}
+      ${display.map(w => wordRowHtml(w, tagColors, sysTags, deckNames)).join('')}
     </div>
   `;
 }
@@ -340,10 +345,10 @@ function cardBodyHTML(w, s, st) {
     ${(gv('forms') && w.forms && w.forms.length) ? `<div class="card-panel-desc${fh('forms') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${escapeHtml(f)}</span>`).join('')}</div>` : ''}
     ${(gv('syllables') && w.syllables) ? `<div class="card-panel-desc${fh('syllables') ? ' card-hidden' : ''}" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">音節 </span><span style="font-weight:600;letter-spacing:.04em">${escapeHtml(w.syllables)}</span></div>` : ''}
     ${(gv('etymology') && w.etymology) ? `<div class="card-panel-desc${fh('etymology') ? ' card-hidden' : ''}" style="margin-top:4px;text-align:left"><span style="font-weight:600;color:var(--accent);font-size:11px">字源 </span>${escapeHtml(w.etymology)}</div>` : ''}
-    ${((w.tags || []).length && gv('tags')) ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${w.tags.map(t => {
+    ${((w.tags || []).length && gv('tags')) ? `${(() => { const deckSet = new Set((s.state.decks || []).map(d => d.name)); const showTags = (w.tags || []).filter(t => !deckSet.has(t)); return showTags.length ? `<div class="card-panel-tags${fh('tags') ? ' card-hidden' : ''}">${showTags.map(t => {
       const c = (s.state.tagConfig || {})[t] || 'var(--accent)';
       return `<span class="tag" style="background:${c};color:${(s.state.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${escapeHtml(t)}</span>`;
-    }).join('')}</div>` : ''}
+    }).join('')}</div>` : ''; })()}` : ''}
   </div>`;
 }
 
@@ -842,6 +847,7 @@ function renderListInPlace(s) {
   const filtered = filterWords(words);
   const display = capList(filtered, _displayLimit);
   const sysTags = s.state.systemTags || [];
+  const deckNames = (s.state.decks || []).map(d => d.name);
   headEl.innerHTML = `
     <span style="font-size:12px;color:var(--text-tertiary);font-weight:500">
       ${limitNote(filtered, _displayLimit)}
@@ -850,7 +856,7 @@ function renderListInPlace(s) {
       上限
       ${limitSelectHtml('browserLimitSelect', _displayLimit)}
     </label>`;
-  listEl.innerHTML = display.map(w => wordRowHtml(w, s.state.tagConfig, sysTags)).join('');
+  listEl.innerHTML = display.map(w => wordRowHtml(w, s.state.tagConfig, sysTags, deckNames)).join('');
   bindListEvents(s);   // 清單區 listener 重綁（delegation 一次搞定，見下）
   document.getElementById('browserLimitSelect')?.addEventListener('change', async (e) => {
     _displayLimit = normalizeDisplayLimit(e.target.value);
