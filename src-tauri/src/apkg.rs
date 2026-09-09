@@ -19,13 +19,26 @@ pub struct ApkgInspect {
     pub rows: Vec<Vec<String>>,
     /// 該批 rows 實際引用到的 <img> 檔名（去重、保序）
     pub media_files: Vec<String>,
+    /// 每格圖片出處（row/col 對齊 rows/headers；僅非空項）。
+    /// 前端逐欄開關＋圖片總開關的三層 AND 靠它過濾。
+    pub cell_images: Vec<CellImage>,
     /// 無卡 note 數（跳過不靜默丟失）
     pub skipped_no_cards: usize,
     /// 首欄為空的 note 數
     pub skipped_empty: usize,
 }
 
-const MAX_APKG_BYTES: usize = 50 * 1024 * 1024;
+/// 某格（row, col）引用的圖片檔名們。
+#[derive(serde::Serialize, Debug, PartialEq, Clone)]
+pub struct CellImage {
+    pub row: usize,
+    pub col: usize,
+    pub files: Vec<String>,
+}
+
+// 500MB 守門：真實牌組多帶音檔（實測 25MB～224MB），50MB 不夠。
+// 檔案在 Rust 端讀碟（非 WebView IPC），结果才過 IPC；列數另有 20000 上限。
+const MAX_APKG_BYTES: usize = 500 * 1024 * 1024;
 const MAX_ROWS: usize = 20_000;
 const MAX_MEDIA_BYTES: usize = 5 * 1024 * 1024;
 
@@ -89,7 +102,7 @@ fn read_zip_entry(z: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -
 /// 解析 apkg bytes → 中間表。純函式，command 層只負責選檔/讀檔/守門。
 pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
     if data.len() > MAX_APKG_BYTES {
-        return Err(format!("檔案過大（{}MB > 50MB），拒絕匯入", data.len() / (1024 * 1024)));
+        return Err(format!("檔案過大（{}MB > 500MB），拒絕匯入", data.len() / (1024 * 1024)));
     }
     if data.is_empty() {
         return Err("不是有效的 .apkg（空檔）".to_string());
@@ -156,6 +169,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut media_files: Vec<String> = Vec::new();
     let mut media_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut cell_images: Vec<CellImage> = Vec::new();
     let mut skipped_no_cards = 0usize;
     let mut skipped_empty = 0usize;
 
@@ -191,6 +205,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
             // flds 切欄：與 model 欄位對齊；錯位多餘捨去（不 crash）
             let parts: Vec<&str> = flds.split('\u{1f}').collect();
             let names = model_flds.cloned().unwrap_or_default();
+            let row_idx = rows.len(); // 本列 push 後的索引（cell_images 對齊用）
             for (i, p) in parts.iter().enumerate() {
                 let (text, imgs) = clean_anki_field(p);
                 if i < names.len() {
@@ -200,6 +215,9 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
                         .unwrap_or(usize::MAX);
                     if col != usize::MAX && col < width {
                         row[col] = text;
+                    }
+                    if !imgs.is_empty() && col != usize::MAX {
+                        cell_images.push(CellImage { row: row_idx, col, files: imgs.clone() });
                     }
                 }
                 for img in imgs {
@@ -239,6 +257,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
         headers,
         rows,
         media_files,
+        cell_images,
         skipped_no_cards,
         skipped_empty,
     })
@@ -639,6 +658,25 @@ mod tests {
         for m in &r.media_files {
             assert!(seen.insert(m.clone()), "重複 media: {}", m);
         }
+    }
+
+    #[test]
+    fn inspect_cell_images_align_rows_cols() {
+        let r = inspect_apkg_bytes(&fixture()).unwrap();
+        assert!(!r.cell_images.is_empty());
+        // 每項 row/col 都在 rows/headers 範圍內；files 非空
+        for c in &r.cell_images {
+            assert!(c.row < r.rows.len(), "row {} 越界", c.row);
+            assert!(c.col < r.headers.len(), "col {} 越界", c.col);
+            assert!(!c.files.is_empty());
+        }
+        // 去重一致：cell_images 展開 == media_files 集合
+        let mut flat: Vec<String> = r.cell_images.iter().flat_map(|c| c.files.clone()).collect();
+        flat.sort();
+        flat.dedup();
+        let mut mf = r.media_files.clone();
+        mf.sort();
+        assert_eq!(flat, mf);
     }
 
     #[test]
