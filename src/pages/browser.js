@@ -148,7 +148,6 @@ function wordRowHtml(w, tagColors, sysTags, deckNames) {
           const c = tc[t] || 'var(--accent)';
           return `<span class="tag" style="background:${c};color:${tc[t] ? '#fff' : 'var(--accent-on)'}" data-tag-chip="${escapeAttr(t)}">${escapeHtml(tagName(t))}</span>`;
         }).join('')}
-        ${!showTags.length ? `<span class="muted" style="font-size:11px">無標籤</span>` : ''}
       </span>
     </div>
     <div class="word-row-actions" style="${isMobile ? 'opacity:1' : ''}">
