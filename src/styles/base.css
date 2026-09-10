@@ -638,7 +638,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .btn-tonal{
   background:var(--accent-container);color:var(--accent);border:none;font-weight:700;
 }
-.btn-tonal:hover{background:rgba(182,157,255,.18);color:var(--accent)}
+.btn-tonal:hover{background:var(--accent-container);color:var(--accent)} /* G-HARD1: 原 rgba(182,157,255,.18) 寫死，換 accent 即走 */
 .btn-block{width:100%;justify-content:center}
 .btn-icon{
   width:34px;height:34px;padding:0;border-radius:var(--r-full);justify-content:center;

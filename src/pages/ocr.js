@@ -115,7 +115,7 @@ export function render(s) {
       .ocr-ov-imgbox{position:relative;touch-action:none;flex-shrink:0}
       .ocr-ov-img{display:block;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
       .ocr-ov-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
-      .ocr-ov-handle{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 0 8px rgba(182,157,255,.18);pointer-events:auto;z-index:4;cursor:grab;touch-action:none;transform:translate(-50%,-50%)}
+      .ocr-ov-handle{position:absolute;width:36px;height:36px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 0 8px var(--accent-glow);pointer-events:auto;z-index:4;cursor:grab;touch-action:none;transform:translate(-50%,-50%)}
       .ocr-ov-foot{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom,0));background:var(--bg-surface);border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .ocr-ov-hint{font-size:11px;color:var(--text-tertiary);flex:1;min-width:140px}
       .ocr-img{display:block;width:100%;height:auto}

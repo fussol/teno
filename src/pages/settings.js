@@ -518,7 +518,7 @@ function renderSettingsContent(s) {
                 ${s.state.graylist.slice().sort().map(w => `
                   <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 6px;font-size:12px;border-bottom:1px solid var(--border-subtle)">
                     <span style="font-family:var(--mono)">${w}</span>
-                    <button class="gl-del" data-w="${w}" style="background:none;border:none;color:var(--danger,#f87171);cursor:pointer;font-size:12px;padding:2px 4px">移除</button>
+                    <button class="gl-del" data-w="${w}" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:2px 4px">移除</button><!-- G-HARD1: 原 var(--danger,#f87171)，--danger 全庫未定義， fallback 恆生效；改語意色 --red -->
                   </div>`).join('')}
               </div>
             </div>
