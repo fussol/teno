@@ -245,6 +245,19 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
+    <!-- 介面備註（使用者 2026-09-10 裁示：預設關，設定頁可開） -->
+    <div class="section">
+      <div class="section-title">${icon('info')} 介面備註</div>
+      <div class="config-section">
+        <div class="config-field" style="justify-content:space-between;align-items:center">
+          <div class="config-field-info">
+            <div class="config-field-label">顯示輔助說明文字</div>
+          </div>
+          <div class="switch ${s.state.uiHints ? 'on' : ''}" id="uiHintsToggle" role="switch" aria-checked="${!!s.state.uiHints}"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Exam Saved Sessions Settings -->
     <div class="section">
       <div class="section-title">${icon('clock')} 測驗進度</div>
@@ -931,6 +944,15 @@ export function onMount(s) {
   document.getElementById('devModeOffBtn')?.addEventListener('click', async () => {
     await s.actions.setDevMode(false);
     toast('開發者模式已關閉', '');
+    renderInPlace(s);
+  });
+
+  // ── 介面備註開關（no-hints body class；關＝隱藏全 app 輔助說明） ──
+  document.getElementById('uiHintsToggle')?.addEventListener('click', async () => {
+    const v = await s.actions.setUiHints(!s.state.uiHints);
+    const sw = document.getElementById('uiHintsToggle');
+    if (sw) { sw.classList.toggle('on', v); sw.setAttribute('aria-checked', String(v)); }
+    toast(v ? '介面備註已開啟' : '介面備註已關閉', '');
     renderInPlace(s);
   });
 

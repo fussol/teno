@@ -673,6 +673,16 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   width:84px;text-align:center;flex-shrink:0;font-weight:600;font-feature-settings:"tnum";
 }
 
+/* ─── 介面備註開關（uiHints：關＝no-hints body class，隱藏輔助說明文字） ─── */
+body.no-hints .study-hint,
+body.no-hints .card-flip-hint,
+body.no-hints .config-field-hint,
+body.no-hints .ocr-hint,
+body.no-hints .ocr-ov-hint,
+body.no-hints .drop-zone-sub,
+body.no-hints .page-subtitle,
+body.no-hints .card-desc{display:none}
+
 /* ─── Toggle Row ─── */
 .toggle-row{
   display:flex;align-items:center;justify-content:space-between;

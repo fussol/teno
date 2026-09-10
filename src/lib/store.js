@@ -115,6 +115,7 @@ export function createStore() {
     mwDictKey: '',                             // D段：韋氏 Collegiate Dictionary key（自備，dictionaryapi.com）
     mwThesKey: '',                             // D段：韋氏 Collegiate Thesaurus key（自備）
     ocrCambridgeVerify: true,  // OCR 錄入 Cambridge 查證開關（查得到才入；devMode 可關）
+    uiHints: false,           // 介面備註開關（使用者 2026-09-10 裁示：預設關；設定頁可開）
     buried: new Set(),
     suspended: new Set(),
     buriedMc: new Set(),
@@ -308,6 +309,7 @@ export function createStore() {
             backupKeepMax: await db.getSetting('backupKeepMax'),
             blacklist: await db.getSetting('blacklist'),
             ocrCambridgeVerify: await db.getSetting('ocrCambridgeVerify'),
+            uiHints: await db.getSetting('uiHints'),
           };
           // Android：以系統實際 enabled 的 alias 為準（DB 可能因 crash 沒寫到）
           try {
@@ -483,6 +485,9 @@ export function createStore() {
     state.mwThesKey = typeof settings.mwThesKey === 'string' ? settings.mwThesKey : '';
     state.ocrCambridgeVerify = typeof settings.ocrCambridgeVerify === 'boolean'
       ? settings.ocrCambridgeVerify : true;
+    // 介面備註開關（no-hints body class；預設關＝備註隱藏）
+    state.uiHints = settings.uiHints === true;
+    document.body.classList.toggle('no-hints', !state.uiHints);
     try {
       const { initAppLog } = await import('./app-log.js');
       initAppLog(state.logRetentionDays);
@@ -1323,6 +1328,13 @@ export function createStore() {
       try { await db.setSetting('ocrCambridgeVerify', state.ocrCambridgeVerify); } catch (e) { console.warn('[store] toggle verify error:', e); }
       notify();
       return state.ocrCambridgeVerify;
+    },
+    async setUiHints(v) {
+      state.uiHints = !!v;
+      document.body.classList.toggle('no-hints', !state.uiHints);
+      try { await db.setSetting('uiHints', state.uiHints); } catch (e) { console.warn('[store] setUiHints error:', e); }
+      notify();
+      return state.uiHints;
     },
 
     /**
