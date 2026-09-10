@@ -1,4 +1,5 @@
 import { icon, mergeExamplePhrases } from '../lib/svg.js';
+import { normalizePos } from '../core/import.js'; // G-TOOL1: 詞性正規化單一真相（與匯入頁同語意）
 import { toast } from '../lib/toast.js';
 import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
 
@@ -394,8 +395,10 @@ export function onMount(s) {
   });
   window.__pageCleanup = () => { _unsub(); delete window.__pageCleanup; };
 
-  const _posCN = {noun:'名詞',verb:'動詞',adjective:'形容詞',adverb:'副詞',preposition:'介係詞',conjunction:'連接詞',pronoun:'代名詞',interjection:'感嘆詞',exclamation:'感嘆詞',determiner:'限定詞',article:'冠詞',phrase:'片語',idiom:'慣用語',suffix:'後綴',prefix:'前綴',abbreviation:'縮寫','plural noun':'複數名詞'};
-  const _normalizePos = (pos) => (pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+  // G-TOOL1: 本地 _posCN 表刪除，統一走 core normalizePos（去尾點＋短形映射＋去重）。
+  // 原表遇 `adj.` 原樣寫入，chip 選不中；LLM 偶發點形亦同病。
+  const _normalizePos = (pos) => normalizePos(pos);
+  const _posToks = (s) => normalizePos(s).split(',').map(x => x.trim()).filter(Boolean);
   const _normalizePron = (pron) => (pron || '').trim();
 
   // ponytail: shared LLM model detection
@@ -567,14 +570,14 @@ export function onMount(s) {
           const json = await lookupCambridge(w.word);
           const data = JSON.parse(json);
           const newRaw = [...new Set((data.senses || []).flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
-          const existing = new Set((w.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean));
+          const existing = new Set(_posToks(w.pos));
           // C段覆寫：開＝整欄取代（無視已有），關＝合併補缺
           if (_ow()) {
-            const replaced = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            const replaced = normalizePos(newRaw.join(','));
             if (replaced) { await s.actions.editWord(w.id, { pos: replaced }); count++; }
             else { fail++; }
           } else {
-            const toAdd = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(p => !existing.has(p));
+            const toAdd = _posToks(newRaw.join(',')).filter(p => !existing.has(p));
             if (toAdd.length) {
               const merged = [...existing, ...toAdd].filter(Boolean).join(', ');
               await s.actions.editWord(w.id, { pos: merged }); count++;
@@ -1069,7 +1072,7 @@ export function onMount(s) {
           const f = await _mwLookup(w.word);
           if (f.suggest.length) { nosug++; fail++; }
           else if (f.pos) {
-            const pos = f.pos.split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            const pos = normalizePos(f.pos);
             if (pos) { await s.actions.editWord(w.id, { pos }); count++; }
             else { fail++; }
           } else { fail++; }
@@ -1750,7 +1753,7 @@ export function onMount(s) {
         if (_ow() || !w.pos?.trim()) {
           if (M.pos === 'merriam') {
             const f = await getMw();
-            const pos = String(f.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
+            const pos = normalizePos(String(f.pos || ''));
             if (pos) { patch.pos = pos; bump('pos', 'ok'); } else bump('pos', 'fail');
           } else if (M.pos === 'llm') {
             if (!llmOk) bump('pos', 'skip');
@@ -1762,12 +1765,12 @@ export function onMount(s) {
           } else {
             const data = await getCamEn();
             const newRaw = [...new Set((data.senses || []).flatMap(x => (x.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
-            const mapped = newRaw.map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean);
+            const mapped = _posToks(newRaw.join(','));
             if (_ow()) {
               const replaced = mapped.join(', ');
               if (replaced) { patch.pos = replaced; bump('pos', 'ok'); } else bump('pos', 'fail');
             } else {
-              const existing = new Set((w.pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean));
+              const existing = new Set(_posToks(w.pos));
               const toAdd = mapped.filter(p => !existing.has(p));
               if (toAdd.length) { patch.pos = [...existing, ...toAdd].filter(Boolean).join(', '); bump('pos', 'ok'); } else bump('pos', 'fail');
             }
@@ -1983,8 +1986,7 @@ export function onMount(s) {
         html += `</div>`;
       }
         for (const s of (data.senses || [])) {
-        const posCN = _posCN;
-        const pos = (s.part_of_speech || '').split(',').map(p => posCN[p.trim()] || p.trim()).join(', ');
+        const pos = normalizePos(s.part_of_speech || '');
         html += `<div style="margin-top:4px;padding:6px;background:var(--bg-secondary);border-radius:var(--r1)">`;
         html += `<div style="font-size:12px;color:var(--accent);margin-bottom:2px">${pos}${s.cefr_level ? ` <span style="color:var(--orange)">${s.cefr_level}</span>` : ''}</div>`;
         html += `<div style="font-size:13px;margin-bottom:2px">${icon('info')} ${s.definition}</div>`;
