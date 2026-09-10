@@ -80,6 +80,14 @@ import scrollTextRaw from 'lucide-static/icons/scroll-text.svg?raw';
 import galleryHorizontalEndRaw from 'lucide-static/icons/gallery-horizontal-end.svg?raw';
 import cameraRaw from 'lucide-static/icons/camera.svg?raw';
 import scanRaw from 'lucide-static/icons/scan.svg?raw';
+import activityRaw from 'lucide-static/icons/activity.svg?raw';
+import appWindowRaw from 'lucide-static/icons/app-window.svg?raw';
+import fileRaw from 'lucide-static/icons/file.svg?raw';
+import globeRaw from 'lucide-static/icons/globe.svg?raw';
+import shieldRaw from 'lucide-static/icons/shield.svg?raw';
+import tagRaw from 'lucide-static/icons/tag.svg?raw';
+import languagesRaw from 'lucide-static/icons/languages.svg?raw';
+import circleAlertRaw from 'lucide-static/icons/circle-alert.svg?raw';
 
 /** Extract inner SVG content (strip outer <svg> tag and comments) */
 function inner(raw) {
@@ -171,6 +179,20 @@ export const icons = {
   bookOpen:  () => S(bookOpenRaw),
   scrollText: () => S(scrollTextRaw),
   galleryHorizontalEnd: () => S(galleryHorizontalEndRaw),
+  // G-ICON1: 補 12 個呼叫端已用但表內缺的名（arrow-right 等 kebab 形照原樣收；
+  // error→circle-alert、translate→languages，Lucide 無同名源）
+  activity: () => S(activityRaw),
+  appWindow: () => S(appWindowRaw),
+  'arrow-right': () => S(arrowRightRaw),
+  'chevron-down': () => S(chevronDownRaw),
+  error:     () => S(circleAlertRaw),
+  file:      () => S(fileRaw),
+  globe:     () => S(globeRaw),
+  rotate:    () => S(rotateCwRaw),
+  shield:    () => S(shieldRaw),
+  tag:       () => S(tagRaw),
+  translate: () => S(languagesRaw),
+  trendingDn: () => S(trendingDownRaw),
 };
 
 /**
