@@ -29,6 +29,9 @@ pub struct ApkgInspect {
     /// 選檔的真實檔名（file stem；bytes 版為空字串）。D-NAME1：完成頁
     /// 只剩「牌組（N 列）」分不清連續匯入的兩副牌組，故帶上真名。
     pub file_name: String,
+    /// 媒體取圖綁定 token（temp 檔名 stem；bytes 版為空字串）。F-RACE1：
+    /// 取圖按 token 精確開檔，不再靠 mtime 猜最新檔；重疊 inspect 不再串牌。
+    pub media_token: String,
 }
 
 /// 某格（row, col）引用的圖片檔名們。
@@ -264,6 +267,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
         skipped_no_cards,
         skipped_empty,
         file_name: String::new(),
+        media_token: String::new(),
     })
 }
 
@@ -498,30 +502,38 @@ pub async fn inspect_apkg_dialog(app_handle: tauri::AppHandle) -> Result<ApkgIns
     // temp 存 bytes 供 get_apkg_media 重開 zip（新 inspect 覆蓋舊檔）
     let dir = apkg_temp_dir(&app_handle)?;
     cleanup_old_temp(&dir);
-    let tmp_path = dir.join(format!("{}.apkg", random_temp_name()));
-    std::fs::write(&tmp_path, &data).map_err(|e| format!("寫入暫存失敗: {}", e))?;
-    log::info!("apkg temp saved: {:?}", tmp_path);
+    // F-RACE1: token 即 temp 檔名 stem（32 hex），回傳給前端；取圖帶 token
+    // 精確開檔，不再靠 mtime 猜，重疊 inspect 不串牌。
+    let token = random_temp_name();
+    let tmp_path = dir.join(format!("{token}.apkg"));
+    std::fs::write(&tmp_path, &data).map_err(|e| format!("寫入暫存失敗: {e}"))?;
+    log::info!("apkg temp saved: {tmp_path:?}");
+    res.media_token = token;
 
     Ok(res)
 }
 
-/// 按檔名取媒體 → data URL（base64）。前端入庫後逐張問。
-/// filename 只取 file_name（防 ../ 穿越，對齊 export_backup_data 的 safe_name 寫法）。
-#[tauri::command]
-pub async fn get_apkg_media(filename: String, app_handle: tauri::AppHandle) -> Result<String, String> {
-    let safe_name = std::path::Path::new(&filename)
-        .file_name()
-        .ok_or("非法檔名")?
-        .to_string_lossy()
-        .to_string();
-    if safe_name == "." || safe_name == ".." {
-        return Err("非法檔名".to_string());
+/// F-RACE1: token 即 temp 檔名 stem（[A-Za-z0-9_-]{1,64}）；拒絕一切路徑字元。
+fn valid_media_token(t: &str) -> bool {
+    !t.is_empty()
+        && t.len() <= 64
+        && t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// F-RACE1: token 命中（存在即取）→ 退回 mtime 最新掃描（舊前端／token 檔已被清時）。
+/// 回傳 None 僅當目錄內無任何 .apkg。
+fn resolve_media_tmp(dir: &std::path::Path, token: Option<&str>) -> Option<std::path::PathBuf> {
+    if let Some(t) = token {
+        if valid_media_token(t) {
+            let p = dir.join(format!("{t}.apkg"));
+            if p.is_file() {
+                return Some(p);
+            }
+        }
     }
-    let dir = apkg_temp_dir(&app_handle)?;
-    // temp 目錄內最新的 .apkg（inspect 剛存的）
+    // temp 目錄內最新的 .apkg（inspect 剛存的）——退路，非主路
     let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-    {
-        let entries = std::fs::read_dir(&dir).map_err(|e| format!("讀取暫存目錄失敗: {}", e))?;
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
             let p = e.path();
             if p.extension().map(|x| x == "apkg").unwrap_or(false) {
@@ -535,8 +547,29 @@ pub async fn get_apkg_media(filename: String, app_handle: tauri::AppHandle) -> R
             }
         }
     }
-    let tmp_path = newest
-        .map(|(_, p)| p)
+    newest.map(|(_, p)| p)
+}
+
+/// 按檔名取媒體 → data URL（base64）。前端入庫後逐張問。
+/// filename 只取 file_name（防 ../ 穿越，對齊 export_backup_data 的 safe_name 寫法）。
+/// F-RACE1: token 綁定——前端帶 inspect 回的 media_token，精確開對應 temp 檔；
+/// token 缺失／非法／檔已不在時退回 mtime 最新掃描（舊前端相容）。
+#[tauri::command]
+pub async fn get_apkg_media(
+    filename: String,
+    app_handle: tauri::AppHandle,
+    token: Option<String>,
+) -> Result<String, String> {
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .ok_or("非法檔名")?
+        .to_string_lossy()
+        .to_string();
+    if safe_name == "." || safe_name == ".." {
+        return Err("非法檔名".to_string());
+    }
+    let dir = apkg_temp_dir(&app_handle)?;
+    let tmp_path = resolve_media_tmp(&dir, token.as_deref())
         .ok_or("沒有已解析的 .apkg（請先選檔）".to_string())?;
     let data = std::fs::read(&tmp_path).map_err(|e| format!("讀取暫存失敗: {}", e))?;
 
@@ -768,5 +801,42 @@ mod tests {
         assert_eq!(base64_encode(b"foo"), "Zm9v");
         assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
         assert_eq!(base64_encode(b"Hello, Anki!"), "SGVsbG8sIEFua2kh");
+    }
+
+    /// F-RACE1: token 命中即取（重疊 inspect 不串牌）；非法 token／空目錄退路正確。
+    #[test]
+    fn f_race1_token_resolution() {
+        assert!(valid_media_token(&random_temp_name()));
+        assert!(valid_media_token("abc123"));
+        assert!(!valid_media_token(""));
+        assert!(!valid_media_token("../evil"));
+        assert!(!valid_media_token("a/b"));
+        assert!(!valid_media_token("a.apkg"));
+        assert!(!valid_media_token("中文"));
+        assert!(!valid_media_token(&"x".repeat(65)));
+
+        let dir = std::env::temp_dir().join(format!("teno-race1-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 空目錄 → None（前端報「請先選檔」）
+        assert!(resolve_media_tmp(&dir, None).is_none());
+        assert!(resolve_media_tmp(&dir, Some("abc123")).is_none());
+        // 兩副牌組並存：token 精確命中舊檔，不被「最新檔」帶走
+        std::fs::write(dir.join("victim.apkg"), b"victim").unwrap();
+        std::fs::write(dir.join("other.apkg"), b"other").unwrap();
+        assert_eq!(
+            resolve_media_tmp(&dir, Some("victim")).unwrap(),
+            dir.join("victim.apkg")
+        );
+        // token 檔已被清 → 退回掃描（仍有檔可取）
+        assert!(resolve_media_tmp(&dir, Some("gone")).is_some());
+        // 非法 token → 退回掃描，不逃逸
+        assert!(resolve_media_tmp(&dir, Some("../evil")).is_some());
+        // token 指向的檔存在但目錄另有新檔 → 仍取 token 檔
+        assert_eq!(
+            resolve_media_tmp(&dir, Some("victim")).unwrap(),
+            dir.join("victim.apkg")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

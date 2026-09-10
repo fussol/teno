@@ -30,8 +30,8 @@ export const scrapeQuizlet = (url) =>
 export const inspectApkgDialog = () =>
   invoke('inspect_apkg_dialog')
 
-export const getApkgMedia = (filename) =>
-  invoke('get_apkg_media', { filename })
+export const getApkgMedia = (filename, token) =>
+  invoke('get_apkg_media', token ? { filename, token } : { filename }) // F-RACE1: 帶 token 精確取圖；舊相容省略即退回掃描
 
 // ─── TTS ───────────────────────────────────────────────
 export const speakText = (text, opts = {}) => {

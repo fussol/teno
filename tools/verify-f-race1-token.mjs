@@ -1,0 +1,22 @@
+// verify-f-race1-token.mjs — F-RACE1: 取圖必須按 token 綁定，不靠 mtime 猜
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+let fail = 0;
+const ok = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
+const strip = (s) => s.replace(/\/\/.*$/gm, '');
+const rs = strip(readFileSync(join(root, 'src-tauri/src/apkg.rs'), 'utf8'));
+ok('inspect 回 token', rs.includes('pub media_token: String'), 'ApkgInspect 欄位');
+ok('dialog 發 token', rs.includes('res.media_token = token'), 'temp 檔名即 token');
+ok('取圖收 token 參數', /pub async fn get_apkg_media\(\s*filename: String,\s*app_handle:[^,]+,\s*token: Option<String>/.test(rs), 'Option 舊相容');
+ok('token 校验擋路徑', rs.includes('fn valid_media_token'), '../ 逃逸擋下');
+ok('命中即取＋掃描退路', rs.includes('fn resolve_media_tmp'), '主路精確＋退路');
+ok('rust 測試在庫', rs.includes('f_race1_token_resolution'), 'cargo harness');
+const api = strip(readFileSync(join(root, 'src/lib/api.js'), 'utf8'));
+ok('api 透傳 token', api.includes('getApkgMedia = (filename, token)'), 'invoke 帶 token');
+const im = strip(readFileSync(join(root, 'src/pages/import.js'), 'utf8'));
+ok('前端存 token', im.includes('_apkgToken = (r.media_token'), 'pickApkg 存');
+ok('取圖帶 token', im.includes('getApkgMedia(file, _apkgToken)'), '圖片階段綁定');
+ok('reset 清 token', im.includes('_apkgToken = null'), '不跨牌組殘留');
+process.exit(fail ? 1 : 0);

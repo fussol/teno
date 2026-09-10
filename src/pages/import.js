@@ -23,6 +23,7 @@ let _colEnabled = [];
 let _importImages = true;
 let _apkgInfo = null;
 let _cellImages = [];
+let _apkgToken = null; // F-RACE1: inspect 回的 media_token；取圖帶上綁定牌組
 // Shared state
 let _phase = 'idle';
 let _progress = { done: 0, total: 0, added: 0, skipped: 0 };
@@ -881,6 +882,8 @@ async function pickApkg(s) {
     _colEnabled = r.headers.map(() => true);
     _cellImages = r.cell_images || [];
     _apkgInfo = { skipped_no_cards: r.skipped_no_cards || 0, skipped_empty: r.skipped_empty || 0 };
+    // F-RACE1: 存 media_token（後端 temp 檔名 stem）；圖片階段帶上，綁定本副牌組
+    _apkgToken = (r.media_token && String(r.media_token).trim() !== '') ? r.media_token : null;
     _phase = 'ready';
     toast(`已載入 ${r.rows.length} 列、${r.headers.length} 欄`, '');
     _renderInPlace(s);
@@ -960,7 +963,7 @@ async function importApkgImages(s, res, wordRowIdx) {
     while (queue.length > 0) {
       const { wordId, file } = queue.shift();
       try {
-        const dataUrl = await getApkgMedia(file);
+        const dataUrl = await getApkgMedia(file, _apkgToken); // F-RACE1: 帶 token 綁定牌組
         await addWordImage(wordId, file, dataUrl);
         ok++;
       } catch (e) {
@@ -1015,6 +1018,7 @@ function resetState() {
   _importImages = true;
   _apkgInfo = null;
   _cellImages = [];
+  _apkgToken = null; // F-RACE1: token 隨會話清零，不跨牌組殘留
   _targetDeck = 'Default';
   _forceDeck = false;
   _phase = 'idle';
