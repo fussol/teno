@@ -688,16 +688,29 @@ fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
 }
 
 fn write_db_container(app_dir: &std::path::Path, teno: &[u8], log: &[u8]) -> Result<(), String> {
+    // F-ATOM1: 兩庫皆 tmp＋rename 原子寫（舊碼 log 直接覆寫，中途 crash＝
+    // 新 teno＋舊 log 混合態，兩庫時間線分叉；與 restore_backup 同範式對齊）。
+    // 另各 sync_all 一次（OS crash 窗口收斂；rename 原子性只保系統呼叫級）。
     let _ = std::fs::remove_file(app_dir.join("teno.db-wal"));
     let _ = std::fs::remove_file(app_dir.join("teno.db-shm"));
-    let tmp = app_dir.join("teno.db.tmp");
-    std::fs::write(&tmp, teno).map_err(|e| format!("寫入資料庫失敗: {}", e))?;
-    std::fs::rename(&tmp, app_dir.join("teno.db")).map_err(|e| format!("寫入資料庫失敗: {}", e))?;
+    atomic_write_file(&app_dir.join("teno.db"), teno, "寫入資料庫失敗")?;
     if !log.is_empty() {
         let _ = std::fs::remove_file(app_dir.join("app-log.db-wal"));
         let _ = std::fs::remove_file(app_dir.join("app-log.db-shm"));
-        std::fs::write(app_dir.join("app-log.db"), log).map_err(|e| format!("寫入操作日誌失敗: {}", e))?;
+        atomic_write_file(&app_dir.join("app-log.db"), log, "寫入操作日誌失敗")?;
     }
+    Ok(())
+}
+
+/// F-ATOM1: tmp＋write＋sync_all＋rename 原子落檔。pure 流程，呼叫端錯誤字串自帶。
+fn atomic_write_file(dest: &std::path::Path, data: &[u8], what: &str) -> Result<(), String> {
+    let tmp = dest.with_extension("db.tmp"); // teno.db→teno.db.tmp（舊慣例）；app-log.db 同理
+    let mut f = std::fs::File::create(&tmp).map_err(|e| format!("{what}: {e}"))?;
+    use std::io::Write as _;
+    f.write_all(data).map_err(|e| format!("{what}: {e}"))?;
+    f.sync_all().map_err(|e| format!("{what}: {e}"))?;
+    drop(f);
+    std::fs::rename(&tmp, dest).map_err(|e| format!("{what}: {e}"))?;
     Ok(())
 }
 
@@ -2427,6 +2440,33 @@ mod container_tests {
         let e2 = container_len_prefix(usize::MAX, "app-log.db");
         assert!(e2.is_err());
         assert!(e2.unwrap_err().contains("app-log.db"));
+    }
+
+    /// F-ATOM1: 兩庫皆原子落檔——寫完兩檔正確、無 .tmp 殘留；空 log 不建檔。
+    #[test]
+    fn f_atom1_both_dbs_atomic() {
+        let dir = std::env::temp_dir().join(format!("teno-atom1-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 預置舊檔：寫入後必須被完整取代
+        std::fs::write(dir.join("teno.db"), b"OLD_TENO").unwrap();
+        std::fs::write(dir.join("app-log.db"), b"OLD_LOG").unwrap();
+        write_db_container(&dir, b"NEW_TENO_DATA", b"NEW_LOG_DATA").unwrap();
+        assert_eq!(std::fs::read(dir.join("teno.db")).unwrap(), b"NEW_TENO_DATA");
+        assert_eq!(std::fs::read(dir.join("app-log.db")).unwrap(), b"NEW_LOG_DATA");
+        // 無 tmp 殘留（原子寫的反面證據：半成品永不以真名存在，此處驗 tmp 收尾）
+        let leftovers: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
+        assert!(leftovers.is_empty(), "tmp 殘留: {:?}", leftovers);
+        // 空 log：不建 app-log.db（舊語意保留）
+        let dir2 = std::env::temp_dir().join(format!("teno-atom1-test2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir2);
+        std::fs::create_dir_all(&dir2).unwrap();
+        write_db_container(&dir2, b"T", b"").unwrap();
+        assert!(!dir2.join("app-log.db").exists());
+        assert_eq!(std::fs::read(dir2.join("teno.db")).unwrap(), b"T");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
     }
 
     /// D16: 入口嚴格三守門（version 必為 1／log 欄必在／trailing 必拒）
