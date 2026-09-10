@@ -271,20 +271,72 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
     })
 }
 
-/// collection.anki2 bytes → rusqlite 連線。
-/// ponytail：不開 rusqlite 新 feature，直接寫 temp 檔再 open（讀完即刪）。
-fn restore_anki2(anki2: &[u8]) -> Result<rusqlite::Connection, String> {
-    let tmp = std::env::temp_dir().join(format!(
-        "teno-apkg-{}.anki2",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    std::fs::write(&tmp, anki2).map_err(|e| format!("暫存 collection.anki2 失敗: {}", e))?;
-    let conn = rusqlite::Connection::open(&tmp).map_err(|e| format!("開啟 collection.anki2 失敗: {}", e))?;
-    let _ = std::fs::remove_file(&tmp); // 開啟後即刪（unix fd 語意；win 下刪不掉也無害，下次 temp 清）
-    Ok(conn)
+/// collection.anki2 bytes → temp 檔 SQLite 守衛。
+/// F-TMP1（RAII）：舊碼寫檔→開檔→`let _ = remove` 三段式——開檔失敗早退殘留；
+/// Windows 開檔中刪檔失敗靜默 leak，且系統 temp 的 `teno-apkg-*.anki2` 從無人清。
+/// 新碼：drop 時先 close conn 再刪檔（順序是關鍵）；寫／開失敗路徑亦刪；每次
+/// 進場順手清 24h+ 陳屍（Windows 殘留收斂處）。檔名改 random（nanos 可撞）。
+struct TempAnki2 {
+    path: std::path::PathBuf,
+    conn: Option<rusqlite::Connection>,
+}
+impl std::ops::Deref for TempAnki2 {
+    type Target = rusqlite::Connection;
+    fn deref(&self) -> &Self::Target {
+        self.conn.as_ref().expect("TempAnki2 conn taken")
+    }
+}
+impl Drop for TempAnki2 {
+    fn drop(&mut self) {
+        if let Some(c) = self.conn.take() {
+            let _ = c.close();
+        }
+        if let Err(e) = std::fs::remove_file(&self.path) {
+            log::warn!("remove apkg temp {:?}: {}", self.path, e);
+        }
+    }
+}
+fn restore_anki2(anki2: &[u8]) -> Result<TempAnki2, String> {
+    cleanup_stale_anki2_tmp();
+    let tmp = std::env::temp_dir().join(format!("teno-apkg-{}.anki2", random_temp_name()));
+    if let Err(e) = std::fs::write(&tmp, anki2) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("暫存 collection.anki2 失敗: {e}"));
+    }
+    match rusqlite::Connection::open(&tmp) {
+        Ok(conn) => Ok(TempAnki2 { path: tmp, conn: Some(conn) }),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(format!("開啟 collection.anki2 失敗: {e}"))
+        }
+    }
+}
+
+/// F-TMP1: 系統 temp 內 `teno-apkg-*.anki2` 超過 24h 即清。
+/// 前綴＋後綴雙錨（不誤傷）；新鮮檔不動（年齡門，併發 inspect 安全）。
+fn anki2_tmp_is_stale(modified: std::time::SystemTime, now: std::time::SystemTime) -> bool {
+    now.duration_since(modified).map(|d| d.as_secs() > 24 * 3600).unwrap_or(false)
+}
+fn cleanup_stale_anki2_tmp() {
+    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else { return };
+    let now = std::time::SystemTime::now();
+    for e in entries.flatten() {
+        let p = e.path();
+        let name = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        if !name.starts_with("teno-apkg-") || !name.ends_with(".anki2") {
+            continue;
+        }
+        let stale = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|t| anki2_tmp_is_stale(t, now))
+            .unwrap_or(false);
+        if stale {
+            if let Err(err) = std::fs::remove_file(&p) {
+                log::warn!("remove stale apkg temp {p:?}: {err}");
+            }
+        }
+    }
 }
 
 // ─── Task 4: Anki HTML 清洗（全 repo 唯一實作點）───
@@ -838,5 +890,58 @@ mod tests {
             dir.join("victim.apkg")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// F-TMP1: drop 即刪檔（先 close 再刪）；開檔失敗不殘留；年齡門純函式邊界正確。
+    #[test]
+    fn f_tmp1_guard_cleans_up() {
+        // 做一個真 sqlite 檔，餵 bytes 進守衛
+        let seed = std::env::temp_dir().join(format!("teno-tmp1-seed-{}", std::process::id()));
+        let _ = std::fs::remove_file(&seed);
+        {
+            let c = rusqlite::Connection::open(&seed).unwrap();
+            c.execute("CREATE TABLE t (x TEXT)", []).unwrap();
+        }
+        let bytes = std::fs::read(&seed).unwrap();
+        let guard = restore_anki2(&bytes).unwrap();
+        let path = guard.path.clone();
+        assert!(path.is_file());
+        // 守衛活著時可用（Deref）
+        let n: i64 = guard.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
+        drop(guard);
+        assert!(!path.exists(), "drop 後 temp 檔必須消失");
+        let _ = std::fs::remove_file(&seed);
+        // 成功路徑零殘留：第二輪開→查→drop，該輪自家檔亦消失
+        // （註：全域計數不可斷言——並行測試同掃系統 temp 必 flaky；
+        // sqlite 開檔 lazy，小垃圾 bytes 也開得起來，故失敗路徑不可達；
+        // 寫失敗分支照樣先刪再 Err，見 restore_anki2 兩處 remove_file。）
+        {
+            let g2 = restore_anki2(&bytes).unwrap();
+            let _: i64 = g2.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0)).unwrap();
+            let p2 = g2.path.clone();
+            drop(g2);
+            assert!(!p2.exists(), "第二輪 temp 檔必須消失");
+        }
+    }
+
+    /// F-TMP1: 年齡門邊界（24h）＋新鮮檔不被清＋異名不誤傷。
+    #[test]
+    fn f_tmp1_stale_gate() {
+        use std::time::{Duration, SystemTime};
+        let now = SystemTime::now();
+        assert!(anki2_tmp_is_stale(now - Duration::from_secs(24 * 3600 + 1), now));
+        assert!(!anki2_tmp_is_stale(now - Duration::from_secs(3600), now));
+        assert!(!anki2_tmp_is_stale(now, now));
+        // 新鮮檔進場 → 不被清；異名前綴 → 不碰
+        let fresh = std::env::temp_dir().join(format!("teno-apkg-fresh{}-x.anki2", std::process::id()));
+        let other = std::env::temp_dir().join(format!("teno-apkg-fresh{}-x.anki", std::process::id()));
+        std::fs::write(&fresh, b"fresh").unwrap();
+        std::fs::write(&other, b"other").unwrap();
+        cleanup_stale_anki2_tmp();
+        assert!(fresh.is_file(), "新鮮檔不得被清");
+        assert!(other.is_file(), "異名不得被清");
+        let _ = std::fs::remove_file(&fresh);
+        let _ = std::fs::remove_file(&other);
     }
 }
