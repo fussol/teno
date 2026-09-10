@@ -445,7 +445,7 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
         <button title="朗讀 (P)" id="cardPronBtn">${icon('volume')}</button>
         <button title="編輯標籤" id="cardTagsBtn">${icon('hash')}</button>
         <button title="編輯" id="cardEditBtn" style="color:var(--accent)">${icon('edit')}</button>
-        <button title="${st.autoAdvance ? '暫停自動播放' : '自動播放'}" id="cardPlayBtn" style="color:${st.autoAdvance ? 'var(--accent)' : ''}">${st.autoAdvance ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>' : '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>'}</button>
+        <button title="${st.autoAdvance ? '暫停自動播放' : '自動播放'}" id="cardPlayBtn" style="color:${st.autoAdvance ? 'var(--accent)' : ''}">${icon(st.autoAdvance ? 'pause' : 'play', 16)}</button>
         <button title="${isFull ? '切換半螢幕' : '全螢幕'}" id="cardFullBtn">${icon(isFull ? 'chevronR' : 'chevronL')}</button>
         <button title="關閉" id="cardPreviewClose">${icon('x')}</button>
       </div>
@@ -574,7 +574,7 @@ async function scheduleNext(idx) {
     if (!_cardState) return;
     const next = idx + 1;
     if (next < _cardState.words.length) showCard(next);
-    else { stopAuto(); const el = document.getElementById('cardPlayBtn'); if (el) el.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>'; }
+    else { stopAuto(); const el = document.getElementById('cardPlayBtn'); if (el) el.innerHTML = icon('play', 16); }
   }, delay * 1000);
 }
 

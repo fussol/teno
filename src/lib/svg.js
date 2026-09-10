@@ -14,6 +14,7 @@ import settingsRaw from 'lucide-static/icons/settings.svg?raw';
 import wrenchRaw from 'lucide-static/icons/wrench.svg?raw';
 import chartNoAxesColumnRaw from 'lucide-static/icons/chart-no-axes-column.svg?raw';
 import playRaw from 'lucide-static/icons/play.svg?raw';
+import pauseRaw from 'lucide-static/icons/pause.svg?raw';
 import checkRaw from 'lucide-static/icons/check.svg?raw';
 import xRaw from 'lucide-static/icons/x.svg?raw';
 import plusRaw from 'lucide-static/icons/plus.svg?raw';
@@ -114,6 +115,7 @@ export const icons = {
 
   // Actions
   play:      () => S(playRaw),
+  pause:     () => S(pauseRaw), // G-SVG1: 播/暫停 toggle 走體系（原手寫三角方塊）
   check:     () => S(checkRaw),
   x:         () => S(xRaw),
   plus:      () => S(plusRaw),
@@ -198,12 +200,15 @@ export const icons = {
 /**
  * Render an SVG icon inline.
  * @param {string} name - Icon name from the `icons` object
+ * @param {number} [px=0] - G-SVG1: 固定像素尺寸（0＝跟 1em 體系走；傳 16/48 等鎖死原手寫尺寸）
+ * @param {string} [cls=''] - G-SVG1: 額外 class（如下拉 cs-a 開合旋轉鉤子）
  * @returns {string} HTML string
  */
-export function icon(name) {
+export function icon(name, px = 0, cls = '') {
   const fn = icons[name];
   if (!fn) return '';
-  return `<span class="ic">${fn()}</span>`;
+  const style = px ? ` style="font-size:${px}px"` : '';
+  return `<span class="ic${cls ? ' ' + cls : ''}"${style}>${fn()}</span>`;
 }
 
 /**

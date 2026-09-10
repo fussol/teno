@@ -1,6 +1,6 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts, lastCorrect, mcOptions } from '../engine/session-mc-utils.js';
 
-import { splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
+import { icon, splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
 import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
@@ -28,7 +28,7 @@ function renderEmpty(s) {
 
   return `<div class="study-wrap" style="justify-content:center;padding-bottom:40px">
     <div class="study-card" style="max-width:480px;padding:40px 32px;text-align:center">
-      <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--green)" stroke-width="2" style="margin-bottom:8px"><path d="M20 6 9 17l-5-5"/></svg>
+      <span style="font-size:48px;color:var(--green);margin-bottom:8px;display:inline-block">${icon('check')}</span>
       <h2 style="color:var(--text-primary);margin:0 0 4px;font-size:22px">多選完成！</h2>
       ${pendingMsg}
       <div style="display:flex;gap:24px;margin-top:16px;justify-content:center">

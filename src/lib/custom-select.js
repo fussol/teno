@@ -1,3 +1,5 @@
+import { icon } from './svg.js';
+
 export function initCustomSelects(root) {
   ensureGlobalDocListener();   // G5: 確保 document listener 只綁一次
   root.querySelectorAll('select').forEach(el => {
@@ -41,7 +43,7 @@ function build(select) {
 
   const chevron = document.createElement('span');
   chevron.className = 'cs-chevron';
-  chevron.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';
+  chevron.innerHTML = icon('chevron-down', 14); // G-SVG1: 走 Lucide 體系（原手寫 path）
 
   trigger.appendChild(label);
   trigger.appendChild(chevron);

@@ -15,7 +15,7 @@ export function render(s) {
   const tasks = s.state.backgroundTasks || [];
   const running = tasks.filter(t => t.status === 'running');
   const done = tasks.filter(t => t.status !== 'running');
-  const _selHtml = (id, opts, fallback) => `<div class="cs" id="${id}Cs"><button class="cs-t" data-id="${id}" data-value="${fallback}">${opts.find(o=>o[1]===fallback)[0]}<svg class="cs-a" width="10" height="6" viewBox="0 0 10 6"><path d="M0 0l5 6 5-6z" fill="#888"/></svg></button><div class="cs-m">${opts.map(o=>`<div class="cs-o${o[1]===fallback?' s':''}" data-value="${o[1]}">${o[0]}</div>`).join('')}</div></div>`;
+  const _selHtml = (id, opts, fallback) => `<div class="cs" id="${id}Cs"><button class="cs-t" data-id="${id}" data-value="${fallback}">${opts.find(o=>o[1]===fallback)[0]}${icon('chevron-down', 10, 'cs-a')}</button><div class="cs-m">${opts.map(o=>`<div class="cs-o${o[1]===fallback?' s':''}" data-value="${o[1]}">${o[0]}</div>`).join('')}</div></div>`;
   return `
     <style>
       .tool-progress{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)}

@@ -194,7 +194,7 @@ function renderResult(s) {
 
   return `<div class="study-wrap" style="padding-bottom:40px;justify-content:center">
     <div class="study-card" style="max-width:480px;padding:40px 32px;text-align:center">
-      <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="${pct>=60?'var(--green)':'var(--red)'}" stroke-width="2" style="margin-bottom:8px"><path d="M20 6 9 17l-5-5"/></svg>
+      <span style="font-size:48px;color:${pct>=60?'var(--green)':'var(--red)'};margin-bottom:8px;display:inline-block">${icon('check')}</span>
       <h2 style="color:var(--text-primary);margin:0 0 4px;font-size:22px">拼字測驗完成！</h2>
       <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px">${total} 題 · ${mins}:${String(secs).padStart(2,'0')}</div>
       <div style="font-size:48px;font-weight:800;color:${pct>=60?'var(--green)':'var(--red)'};margin-bottom:20px">${pct}<span style="font-size:20px">%</span></div>
