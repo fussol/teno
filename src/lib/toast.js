@@ -6,7 +6,9 @@ export function toast(message, type = '') {
   if (!container) return;
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = message;
+  // G-XSS0: sink 走純文字 — 全 repo toast 呼叫皆純文字（零 icon/HTML 用法，
+  // 已全量 grep 實錘），innerHTML 即 stored XSS（w.word／deck.name／tag.name 可控）。
+  el.textContent = String(message ?? '');
   container.appendChild(el);
   setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 300); }, 2600);
 }
