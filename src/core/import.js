@@ -211,7 +211,9 @@ const POS_MAP = {
   'prep': '介係詞', 'preposition': '介係詞', '介系词': '介係詞', '介词': '介係詞',
   'conj': '連接詞', 'conjunction': '連接詞', 'cj': '連接詞', '连接词': '連接詞',
   'pron': '代名詞', 'pronoun': '代名詞', 'pn': '代名詞', '代名词': '代名詞',
-  'interj': '感嘆詞', 'interjection': '感嘆詞', 'int': '感嘆詞', 'excl': '感嘆詞', 'exclamation': '感嘆詞', '感叹词': '感嘆詞',
+  // D-POS1: 獨立 `int.` 不強制轉感嘆詞（不及物動詞 intransitive 同縮寫，無上下文不可解 → 保 raw）。
+  // interj./interjection 照轉；其餘未知 token 同樣保 raw（見 normalizePos）。
+  'interj': '感嘆詞', 'interjection': '感嘆詞', 'excl': '感嘆詞', 'exclamation': '感嘆詞', '感叹词': '感嘆詞',
   'det': '限定詞', 'determiner': '限定詞', '限定词': '限定詞',
   'art': '冠詞', 'article': '冠詞', '冠词': '冠詞',
   'phrase': '片語', 'phr': '片語', 'ph': '片語', '片语': '片語',
