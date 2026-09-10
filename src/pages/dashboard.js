@@ -10,6 +10,12 @@ import { STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../co
 let _dashboardMode = 'flip'; // 'flip' | 'mc' | 'spell'
 let _dashboardRange = '1m'; // '1m' | '3m' | '1y' | 'all' (charts time range)
 
+// G-XSS5: 本地 escape（全檔原零設施；browser.js:1644 同形）
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 const RANGE_DAYS = { '1m': 31, '3m': 92, '1y': 365, 'all': null }; // null = 不限
 
 /** Filter reviewLog to the selected time range (by reviewed_at). */
@@ -911,10 +917,10 @@ function renderDeckGrid(decks, words, cards, s, dueSet) {
       const due = deckWords.filter(w => isDue(w.id)).length;
       const pct = total > 0 ? Math.round((learned / total) * 100) : 0;
       return `
-        <div class="deck-card" data-deck="${d.name}">
+        <div class="deck-card" data-deck="${esc(d.name)}">
           <div class="deck-card-accent" style="background:${d.color}"></div>
           <div class="deck-card-header">
-            <div class="deck-card-name">${d.name}</div>
+            <div class="deck-card-name">${esc(d.name)}</div>
             <div class="deck-card-header-right">
               <div class="deck-card-count">${total} 詞</div>
               ${due > 0 ? `<div class="deck-card-badge">${due} 待複習</div>` : ''}
