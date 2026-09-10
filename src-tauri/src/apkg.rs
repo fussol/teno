@@ -26,6 +26,9 @@ pub struct ApkgInspect {
     pub skipped_no_cards: usize,
     /// 首欄為空的 note 數
     pub skipped_empty: usize,
+    /// 選檔的真實檔名（file stem；bytes 版為空字串）。D-NAME1：完成頁
+    /// 只剩「牌組（N 列）」分不清連續匯入的兩副牌組，故帶上真名。
+    pub file_name: String,
 }
 
 /// 某格（row, col）引用的圖片檔名們。
@@ -260,6 +263,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
         cell_images,
         skipped_no_cards,
         skipped_empty,
+        file_name: String::new(),
     })
 }
 
@@ -487,7 +491,9 @@ pub async fn inspect_apkg_dialog(app_handle: tauri::AppHandle) -> Result<ApkgIns
     let src = file.into_path().map_err(|_| "無法取得路徑".to_string())?;
     let data = std::fs::read(&src).map_err(|e| format!("讀取檔案失敗: {}", e))?;
     log::info!("inspect_apkg_dialog src={:?} bytes={}", src, data.len());
-    let res = inspect_apkg_bytes(&data)?;
+    let mut res = inspect_apkg_bytes(&data)?;
+    // D-NAME1: 真實檔名（stem；取不到退回空字串，前端再退回列數標籤）
+    res.file_name = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
 
     // temp 存 bytes 供 get_apkg_media 重開 zip（新 inspect 覆蓋舊檔）
     let dir = apkg_temp_dir(&app_handle)?;

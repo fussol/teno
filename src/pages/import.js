@@ -865,7 +865,10 @@ async function pickApkg(s) {
       toast('牌組為空或格式錯誤', 'toast-error');
       return;
     }
-    _fileName = '牌組（' + r.rows.length + ' 列）';
+    // D-NAME1: 真實檔名優先（後端 file_name）；取不到退回列數標籤
+    _fileName = (r.file_name && String(r.file_name).trim() !== '')
+      ? r.file_name
+      : '牌組（' + r.rows.length + ' 列）';
     // Anki tags 以空格分隔；mapWords 吃逗號分隔 → 就地轉換（Anki tag 不可含空白，安全）
     const tagsIdx = r.headers.indexOf('_tags');
     if (tagsIdx !== -1) {
