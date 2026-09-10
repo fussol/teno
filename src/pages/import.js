@@ -162,7 +162,7 @@ function renderImportBar(s) {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--s4);flex-wrap:wrap;gap:var(--s3)">
           <div style="font-size:13px;color:var(--text-secondary)">
             將匯入 <span class="tnum" style="color:var(--green);font-weight:700">${newCount}</span> 詞
-            ${_table.rows.length - newCount > 0 ? `· 跳過 <span class="tnum">${_table.rows.length - newCount}</span> 重複` : ''}
+            ${skipLabel(skipBreakdown(s, _fields))}
           </div>
           <button class="btn-primary" id="importRunBtn" ${newCount === 0 || _phase === 'importing' ? 'disabled' : ''}>
             ${icon('check')} 開始匯入
@@ -343,7 +343,7 @@ function renderApkgImportBar(s) {
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--s4);flex-wrap:wrap;gap:var(--s3)">
           <div style="font-size:13px;color:var(--text-secondary)">
             將匯入 <span class="tnum" style="color:var(--green);font-weight:700">${newCount}</span> 詞 · ${effCount} 欄
-            ${_table.rows.length - newCount > 0 ? `· 跳過 <span class="tnum">${_table.rows.length - newCount}</span> 重複` : ''}
+            ${skipLabel(skipBreakdown(s, effectiveApkgFields()))}
           </div>
           <button class="btn-primary" id="importRunBtn" ${newCount === 0 || _phase === 'importing' ? 'disabled' : ''}>
             ${icon('check')} 開始匯入
@@ -536,6 +536,27 @@ function computeMappedCsv(s) {
   if (_forceDeck) mapped.forEach(w => { w.deck = _targetDeck || 'Default'; });
   const existing = new Set(s.state.words.map(w => w.word.toLowerCase()));
   return mapped.filter(w => !existing.has(w.word.toLowerCase()));
+}
+
+// D-CNT1: 跳過數拆分 — mapWords 產不出的列（空字／全欄未映射）是 empty，
+// 庫中已有的才是 dup；舊 `rows.length - newCount` 全標重複是誤標。
+function skipBreakdown(s, effFields) {
+  if (!_table) return { dup: 0, empty: 0 };
+  const all = mapWords(_table.headers, _table.rows, effFields, { deck: _targetDeck || 'Default' });
+  const existing = new Set(s.state.words.map(w => w.word.toLowerCase()));
+  return {
+    dup: all.filter(w => existing.has(w.word.toLowerCase())).length,
+    empty: _table.rows.length - all.length,
+  };
+}
+
+// D-CNT1: 跳過標籤 — 有跳過才顯示，dup／empty 分開標（皆 0 不顯示）。
+function skipLabel(skip) {
+  const parts = [];
+  if (skip.dup > 0) parts.push(`重複 ${skip.dup}`);
+  if (skip.empty > 0) parts.push(`空字／無效 ${skip.empty}`);
+  if (!parts.length) return '';
+  return `· 跳過 <span class="tnum">${skip.dup + skip.empty}</span>（${parts.join(' · ')}）`;
 }
 
 function computeMappedQuizlet(s) {
