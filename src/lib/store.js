@@ -441,6 +441,9 @@ export function createStore() {
     const _parseVis = (v, fallback) => {
       const fb = fallback || _FV_KEYS;
       if (v == null || v === '') return [...fb];
+      // FVPERSIST1: getSetting 對 JSON 字串會先 parse 成 array 回來——array 本身就是
+      // 合法結果直接用（舊碼 JSON.parse(array) 必 throw → 恆 fallback → 使用者設定記不住）
+      if (Array.isArray(v)) return v.filter(k => _FV_KEYS.includes(k));
       try {
         const a = JSON.parse(v);
         if (Array.isArray(a)) return a.filter(k => _FV_KEYS.includes(k));
