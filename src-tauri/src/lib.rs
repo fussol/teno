@@ -1497,6 +1497,13 @@ fn backup_db(app_handle: tauri::AppHandle) -> Result<String, String> {
         .min(u64::MAX as u128) as u64;
     let (mut dest_file, dest) = unique_backup_dest(&backups_dir, ts)?;
     log::info!("backup_db src={:?} dst={:?}", db_path, dest);
+    // IMPORT-NODB: 機上無 teno.db（新裝／清過資料）→無檔可備，直接放行。
+    // 舊碼 File::open 先炸 os error 2，連帶卡死匯入／還原／Drive 下載三條路
+    // （三者皆先 backupDb 做安全網）；回 Ok("")——四處呼叫皆不讀回傳值。
+    if (!db_path.exists()) {
+        log::info!("backup_db SKIP (no teno.db to back up)");
+        return Ok(String::new());
+    }
     let mut src = std::fs::File::open(&db_path).map_err(|e| format!("複製資料庫失敗: {}", e))?;
     std::io::copy(&mut src, &mut dest_file)
         .map_err(|e| { let _ = std::fs::remove_file(&dest); format!("複製資料庫失敗: {}", e) })?;
