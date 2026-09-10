@@ -133,7 +133,10 @@ export function renderContent(s) {
       .tag-colors .tag-custom-color label{display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:1.5px dashed var(--border);font-size:11px;color:var(--text-tertiary);cursor:pointer;transition:border-color .1s;background:var(--bg-elevated)}
       .tag-colors .tag-custom-color label:hover{border-color:var(--accent);color:var(--accent)}
       .tag-add-area{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap;margin-top:var(--s1)}
-      .tag-add-area input{width:140px;height:30px;font-size:13px}
+      /* TAG-ADD1: 縮到 .form-input——舊裸 input 通殺把自訂顏色圓鈕內透明
+         color input 撐成 140px 向右溢出蓋住新增鈕（點新增＝點到透明 input
+         ＝取色框彈出＋新增沒觸發）；color input 靠 inset 填滿 22px 圓鈕。 */
+      .tag-add-area input.form-input{width:140px;height:30px;font-size:13px}
       .tag-add-area .btn-sm{height:30px}
       .tag-add-swatch{border:1.5px solid transparent;width:22px;height:22px;border-radius:50%;cursor:pointer;padding:0;transition:transform .1s,border-color .1s}
       .tag-add-swatch.active{border-color:#fff;box-shadow:0 0 0 1.5px var(--accent)}
