@@ -113,28 +113,38 @@ fn urlencode_form(pairs: &[(&str, &str)]) -> String {
 }
 
 fn urlencode(s: &str) -> String {
-    s.chars().map(|c| match c {
-        'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-        ' ' => '+'.to_string(),
-        _ => format!("%{:02X}", c as u8),
-    }).collect()
+    // F-ENC1: 按 UTF-8 bytes 逐 byte 編碼（原 `c as u8` 把非 ASCII 截成低 8 位，
+    // 中文等多位元組全爛；現呼叫點全 ASCII 故潛伏，一碰中文檔名即爆）。
+    let mut out = String::new();
+    for &b in s.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 fn url_decode(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        match c {
-            '+' => result.push(' '),
-            '%' => {
-                let hi = chars.next().and_then(|c| c.to_digit(16)).unwrap_or(0);
-                let lo = chars.next().and_then(|c| c.to_digit(16)).unwrap_or(0);
-                result.push((hi as u8 * 16 + lo as u8) as char);
+    // F-ENC1: 先收 bytes 再整段 UTF-8 解（原逐 byte `as char` 把多位元組拆成
+    // 拉丁碎字；非法 % 序列保留字面，不再吞成 NUL）。
+    let bytes = s.as_bytes();
+    let mut buf: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => { buf.push(b' '); i += 1; }
+            b'%' if i + 2 < bytes.len() && (bytes[i + 1] as char).is_ascii_hexdigit() && (bytes[i + 2] as char).is_ascii_hexdigit() => {
+                let hi = (bytes[i + 1] as char).to_digit(16).unwrap_or(0);
+                let lo = (bytes[i + 2] as char).to_digit(16).unwrap_or(0);
+                buf.push((hi as u8) * 16 + lo as u8);
+                i += 3;
             }
-            _ => result.push(c),
+            b => { buf.push(b); i += 1; }
         }
     }
-    result
+    String::from_utf8_lossy(&buf).into_owned()
 }
 
 // D9: OAuth 授權成功/失敗回頁（Content-Length 以 .len() 動態計算，避免手數誤差）
@@ -486,6 +496,21 @@ mod tests {
             parse_oauth_query("code=a%2Bb+c"),
             (Some("a+b c".into()), None) // %2B→'+'、'+'→' '
         );
+    }
+
+    /// F-ENC1: 非 ASCII 按 UTF-8 bytes 編解碼，roundtrip 不丟字；
+    /// 非法 % 序列保留字面（舊碼吞成 NUL／拆成拉丁碎字）。
+    #[test]
+    fn f_enc1_utf8_roundtrip() {
+        assert_eq!(urlencode("中文 測試"), "%E4%B8%AD%E6%96%87+%E6%B8%AC%E8%A9%A6");
+        assert_eq!(url_decode("%E4%B8%AD%E6%96%87+%E6%B8%AC%E8%A9%A6"), "中文 測試");
+        for s in ["中文 測試", "teno.db", "a+b c", "核心單字L3", "emoji 🎉 ok"] {
+            assert_eq!(url_decode(&urlencode(s)), s, "roundtrip: {s}");
+        }
+        assert_eq!(url_decode("a%2Bb+c"), "a+b c"); // 舊行為保留
+        assert_eq!(url_decode("100%"), "100%"); // 尾 % 不 panic
+        assert_eq!(url_decode("a%2"), "a%2"); // 半截序列不 panic
+        assert_eq!(url_decode("a%zzb"), "a%zzb"); // 非法 hex 保留字面
     }
 
     #[test]

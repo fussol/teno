@@ -5737,7 +5737,7 @@ dependencies = [
 
 [[package]]
 name = "teno"
-version = "5.16.53"
+version = "5.16.54"
 dependencies = [
  "cambridge_scraper",
  "chrono",
