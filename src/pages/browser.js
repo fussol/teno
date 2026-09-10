@@ -1643,6 +1643,22 @@ async function llmFillSynAntDeriv(word) {
 }
 
 async function llmFillForms(inputId, word) {
+  // MWFORMS1: 韋氏優先（有 key 走 inflected forms；無 key/查無 才掉 LLM）
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      if (f?.forms?.trim()) {
+        const chipsHost = document.getElementById(inputId + 'Chips');
+        const val = f.forms;
+        if (chipsHost && chipsHost._tagInputApi) chipsHost._tagInputApi.setVal(val);
+        else document.getElementById(inputId).value = val;
+        toast('已從韋氏補上詞形變化', 'toast-success');
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
   try {
     const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
     const model = store.state.ollamaModel || 'qwen2.5-coder:7b';

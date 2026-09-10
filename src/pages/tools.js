@@ -151,7 +151,7 @@ export function render(s) {
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}</div>
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞形</span><span style="font-size:12px;color:var(--text-tertiary)">本地 LLM（固定）</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞形</span>${_selHtml('comboForms', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}</div>
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
           <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
@@ -226,8 +226,11 @@ export function render(s) {
     <!-- Generate Forms -->
         <div class="card">
           <div class="card-title">${icon('sparkle')} 自動產生詞形變化</div>
-          <div class="card-desc">用 LLM 為缺少詞形變化（過去式、-ing、-ed、派生名詞等）的單字自動生成</div>
-        <button class="btn" onclick="window.__genFormsLLM()">${icon('sparkle')} 開始產生</button>
+          <div class="card-desc">用韋氏或 LLM 為缺少詞形變化（過去式、-ing、-ed、派生名詞等）的單字自動生成</div>
+        <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+          <button class="btn" onclick="window.__genFormsMw()">${icon('book')} 韋氏</button>
+          <button class="btn" onclick="window.__genFormsLLM()">${icon('brain')} LLM</button>
+        </div>
         <div class="tool-output" id="formsResult" style="margin-top:var(--s3);display:none"></div>
         </div>
 
@@ -1260,6 +1263,44 @@ export function onMount(s) {
     toast(`LLM 相關詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
   };
 
+  // ─── MWFORMS1: 韋氏詞形變化（inflected forms；變化欄位唯一權威來源之一） ───
+  window.__genFormsMw = async () => {
+    if (_mwKeyMissing()) return;
+    const words = s.state.words;
+    const noForms = _ow() ? [...words] : words.filter(w => !w.forms || !Array.isArray(w.forms) || w.forms.length === 0);
+    const el = document.getElementById('formsResult');
+    if (noForms.length === 0) {
+      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有詞形變化了！</div>`; }
+      return;
+    }
+    const taskId = 'gen-forms-mw-' + Date.now();
+    s.actions.startBackgroundTask(taskId, '韋氏抓取詞形變化' + _owTag(), noForms.length);
+    let count = 0, fail = 0;
+    const CON = 2;
+    const queue = [...noForms.entries()];
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const [, w] = queue.shift();
+        try {
+          const f = await _mwLookup(w.word);
+          if (f?.forms?.trim()) {
+            const arr = [...new Set(f.forms.split(/,\s*/).map(x => x.trim()).filter(Boolean))];
+            if (arr.length) { await s.actions.editWord(w.id, { forms: arr }); count++; }
+            else fail++;
+          } else { fail++; }
+        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
+        await new Promise(r => setTimeout(r, 400));
+        s.actions.updateBackgroundTask(taskId, count + fail, noForms.length);
+      }
+    }));
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}` });
+    if (el) {
+      el.style.display = 'block';
+      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}</div>`;
+    }
+    toast(`韋氏詞形變化完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  };
+
   window.__genFormsLLM = async () => {
     const words = s.state.words;
     // C段覆寫：開＝全量重跑，關＝只做缺失
@@ -1701,6 +1742,7 @@ export function onMount(s) {
       example: _getMethod('comboExample', 'dictionary-api'),
       pron: _getMethod('comboPron', 'cambridge'),
       related: _getMethod('comboRelated', 'llm'),
+      forms: _getMethod('comboForms', 'merriam'),
       trans: _getMethod('comboTrans', 'cambridge'),
       syn: _getMethod('comboSyn', 'merriam'),
       ant: _getMethod('comboAnt', 'merriam'),
@@ -1849,13 +1891,21 @@ export function onMount(s) {
           }
         }
       } catch (e) { bump('related', 'fail'); if (quotaHit(e)) { abortMw(e); return null; } }
-      // ── 詞形（固定 LLM）──
+      // ── 詞形（MWFORMS1: merriam=韋氏 ins; llm=本地）──
       try {
         if (_ow() || !w.forms?.length) {
-          if (!llmOk) bump('forms', 'skip');
-          else {
-            const arr = await llmJson(`Return a JSON array of inflections/derivations (past tense, -ing, -s, past participle) for "${w.word}". Example: ["gets","got","getting"]. Only the JSON array, no markdown.`);
-            if (arr?.length) { patch.forms = arr; bump('forms', 'ok'); } else bump('forms', 'fail');
+          if (M.forms === 'merriam') {
+            const f = await getMw();
+            if (f.forms?.trim()) {
+              const arr = [...new Set(f.forms.split(/,\s*/).map(x => x.trim()).filter(Boolean))];
+              if (arr.length) { patch.forms = arr; bump('forms', 'ok'); } else bump('forms', 'fail');
+            } else bump('forms', 'fail');
+          } else {
+            if (!llmOk) bump('forms', 'skip');
+            else {
+              const arr = await llmJson(`Return a JSON array of inflections/derivations (past tense, -ing, -s, past participle) for "${w.word}". Example: ["gets","got","getting"]. Only the JSON array, no markdown.`);
+              if (arr?.length) { patch.forms = arr; bump('forms', 'ok'); } else bump('forms', 'fail');
+            }
           }
         }
       } catch (e) { bump('forms', 'fail'); }

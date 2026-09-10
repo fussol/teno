@@ -148,6 +148,8 @@ export function parseDictionaryEntries(arr) {
       et,
       date: typeof e.date === 'string' ? e.date.replace(/\{[^}]*\}/g, '') : '',
       phrases,
+      // MWFORMS1: 韋氏 inflected forms（e.ins[].if = 詞形變化字串）——變化欄位唯一來源
+      forms: Array.isArray(e.ins) ? [...new Set(e.ins.map(x => (x && typeof x.if === 'string') ? stripMwTokens(x.if) : '').filter(Boolean))] : [],
     });
   }
   return { entries, suggest: [] };
@@ -198,6 +200,7 @@ export function merriamToFields(payload, word) {
   const out = {
     pos: '', definition: '', pron: '', pronAudio: '', example: '',
     etymology: '', syllables: '', phrases: '', synonym: '', antonym: '',
+    forms: '',
     suggest: [],
   };
   const dict = payload?.dictionary;
@@ -216,6 +219,7 @@ export function merriamToFields(payload, word) {
     out.etymology = [pick.et, pick.date ? `首次使用：${pick.date}` : ''].filter(Boolean).join('\n');
     out.syllables = pick.syllables || '';
     out.phrases = pick.phrases.map(p => (p.def ? `${p.phrase} — ${p.def}` : p.phrase)).join('\n');
+    out.forms = (pick.forms || []).join(', ');
   }
   const t = parseThesaurusEntries(thes);
   out.synonym = t.synonyms.join(', ');
