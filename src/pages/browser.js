@@ -104,7 +104,7 @@ export function render(s) {
       ${decks.map(d => `
         <button class="exam-deck-chip ${_deckFilter === d.name ? 'selected' : ''}" data-deck="${escapeAttr(d.name)}">
           <span style="width:7px;height:7px;border-radius:50%;background:${d.color};display:inline-block"></span>
-          ${d.name}
+          ${escapeHtml(d.name)}
           <span style="font-size:10px;opacity:.6;margin-left:4px">${deckCounts[d.name] || 0}</span>
         </button>
       `).join('')}
