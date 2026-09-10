@@ -644,7 +644,6 @@ export function createStore() {
       try {
         await Promise.all([loadScheduler(), loadSimulator(), loadFilterEngine()]);
         await db.initDB();
-        await this.seedIfEmpty();
         await loadAll();
 
         // Restore human-data backup from DB to localStorage after DB import
@@ -666,62 +665,6 @@ export function createStore() {
         console.error('[store] init error:', e);
         state.ready = true;  // still mark ready so UI renders
         notify();
-      }
-    },
-
-    /** Seed DB with CSV data if empty */
-    async seedIfEmpty() {
-      if (localStorage.getItem('teno_no_seed') === '1') return;
-      let count;
-      try {
-        count = await db.getWordCount();
-      } catch (e) {
-        console.warn('[store] seedIfEmpty getWordCount error:', e);
-        return;
-      }
-      if (count > 0) return;
-
-      try {
-        const resp = await fetch('/seed-data.csv');
-        if (!resp.ok) return;
-        const text = await resp.text();
-        const { parseCSV } = await import('../core/import.js');
-        const parsed = parseCSV(text);
-        if (parsed.length === 0) return;
-
-        const words = parsed.map((w, i) => ({
-          id: 'seed_' + (i + 1),
-          word: w.word,
-          definition: w.definition || '',
-          pos: w.pos || '',
-          pron: w.pron || '',
-          example: w.example || '',
-          deck: w.deck || 'Default',
-          tags: w.tags || [],
-          image: w.image || '',
-          description: w.description || '',
-          related: w.related || [],
-          forms: w.forms || [],
-          synonym: w.synonym || '',
-          antonym: w.antonym || '',
-          derivative: w.derivative || '',
-          examples: w.examples || [],
-          createdAt: new Date().toISOString(),
-        }));
-        await db.bulkSaveWords(words);
-
-        // Derive decks from unique deck names so the dashboard has something to show.
-        const palette = ['#a78bfa', '#22d3ee', '#4ade80', '#fbbf24', '#fb7185', '#fb923c', '#f0ecf5'];
-        const deckNames = [...new Set(words.map(w => w.deck || 'Default'))];
-        for (let i = 0; i < deckNames.length; i++) {
-          const name = deckNames[i];
-          const id = 'deck_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-          await db.saveDeck({ id, name, color: palette[i % palette.length] });
-        }
-
-        console.log(`[seed] Imported ${words.length} words across ${deckNames.length} decks`);
-      } catch (e) {
-        console.warn('[seed] Error:', e);
       }
     },
 
@@ -2101,7 +2044,6 @@ export function createStore() {
       try { await d.executeSQL("VACUUM"); } catch (_) {}
       await d.closeDB();
       try { localStorage.clear(); } catch (e) {}
-      try { localStorage.setItem('teno_no_seed', '1'); } catch (e) {}
       location.reload();
     },
 

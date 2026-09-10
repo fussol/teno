@@ -21,8 +21,8 @@ import { FSRS, AGAIN, HARD, GOOD, EASY, STATE_REVIEW } from '../src/core/fsrs.js
 
 // easter-eggs（flip rateCard 呼叫鏈）在 node 沒有 localStorage
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
-// store.actions.init 的 seedIfEmpty 會 fetch('/seed-data.csv')（瀏覽器相對路徑）—
-// node 下必然 Invalid URL、store 已 catch；stub 掉消噪音，不影響本測試斷言
+// NO-DEMO：seedIfEmpty 已切除；此 fetch stub 保留（store.init 內其他 fetch
+// 若有殘留照樣消噪音，不影響本測試斷言）
 globalThis.fetch = async () => ({ ok: false });
 // loadAll 內 window.__maxExampleLines / addEventListener 等 — node 無 window，別名 stub 讓 init 走完
 globalThis.window = globalThis;

@@ -70,3 +70,11 @@
 2. 修復 commit 落地（`fix: <ID>`＋版本號）→ 該列改 ✅ 後移入 §3 歸檔，或刪列並在 §3 留一行。
 3. 一 bug 一 commit；動手前先報修法（既有治理）。
 4. 每波結束核帳：`git log --grep 'fix: <ID>'` 對拍本檔。
+
+### 2026-09-10 追打（4 修，使用者回報波）
+| ID | commit | 備註 |
+|---|---|---|
+| G-SIZE2b | 9eed3e7 前一顆 | 匯出頁色點橢圓：count 規則縮到 .deck-count |
+| TAG-ADD1 | 同上上 | 新增鈕被透明 color input 蓋住：規則縮到 .form-input |
+| IMPORT-NODB | 同上上上 | 無 teno.db 時備份放行，匯入不再被安全網卡死 |
+| NO-DEMO | 9eed3e7 | 展示模式切除（使用者裁示）：db 分流49處＋demo-data＋banner＋seedIfEmpty 全清 |

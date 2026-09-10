@@ -453,7 +453,7 @@ store.subscribe((state) => {
   import('./lib/easter-eggs.js').then(m => m.initKonami());
   renderAppShell();
 
-  // Show a loading state while the store boots (DB load + seed)
+  // Show a loading state while the store boots (DB load)
   const boot = $('pageContainer');
   if (boot) boot.innerHTML = `
     <div class="boot-state">
@@ -491,11 +491,8 @@ store.subscribe((state) => {
   applyTheme(store.state.themeMode, store.state.themeAccent, store.state.themeAccentIntensity);
 
   // Show a non-blocking toast if DB isn't available
-  // WEB-DEMO（2026-09-08）：展示模式給中性提示，不報錯
   const dbMod = await import('./lib/db.js');
-  if (dbMod.isDemoMode && dbMod.isDemoMode()) {
-    toast('網頁展示模式：內建示範資料（重整重置，不影響實機資料）');
-  } else if (!dbMod.isReady()) {
+  if (!dbMod.isReady()) {
     toast('資料庫無法連線，部分功能可能受限', 'toast-error');
   }
 })();
