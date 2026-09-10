@@ -609,6 +609,16 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .btn-primary:hover{box-shadow:0 6px 20px var(--accent-glow);transform:translateY(-1px)}
 .btn-primary:active{transform:translateY(0)}
 .btn-sm{padding:5px var(--s3);font-size:12px;border-radius:var(--r-full)}
+/* G-BTN1: 次按鈕＋超小尺寸主定義（原全缺；settings/simulator 裸 btn-sm 即滅） */
+.btn-secondary{
+  display:inline-flex;align-items:center;gap:var(--s1);padding:8px var(--s5);
+  border-radius:var(--r-full);border:1px solid var(--border);background:var(--bg-surface);
+  color:var(--text-secondary);font-size:13px;font-weight:600;
+  transition:background-color var(--t-fast),color var(--t-fast),border-color var(--t-fast),opacity var(--t-fast),transform var(--t-fast),box-shadow var(--t-fast);text-decoration:none;white-space:nowrap;
+}
+.btn-secondary:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-strong)}
+.btn-secondary:active{transform:scale(.97)}
+.btn-xs{padding:3px var(--s2);font-size:11px;border-radius:var(--r-full)}
 .btn-ghost{border:none;color:var(--text-tertiary);padding:5px var(--s2);background:transparent}
 .btn-ghost:hover{background:var(--state-hover);color:var(--text-primary)}
 .btn-danger{border-color:rgba(248,138,138,.25);color:var(--red);background:transparent}

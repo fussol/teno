@@ -153,8 +153,8 @@ function renderSettingsContent(s) {
             <div class="config-field-label">${icon('layers')} 模式</div>
           </div>
           <div style="display:flex;gap:var(--s2)">
-            <button id="modeDarkBtn" class="btn-sm ${s.state.themeMode === 'dark' ? 'btn-primary' : 'btn-secondary'}" data-mode="dark">${icon('moon')} 深色</button>
-            <button id="modeLightBtn" class="btn-sm ${s.state.themeMode === 'light' ? 'btn-primary' : 'btn-secondary'}" data-mode="light">${icon('sun')} 淺色</button>
+            <button id="modeDarkBtn" class="btn btn-sm ${s.state.themeMode === 'dark' ? 'btn-primary' : 'btn-secondary'}" data-mode="dark">${icon('moon')} 深色</button>
+            <button id="modeLightBtn" class="btn btn-sm ${s.state.themeMode === 'light' ? 'btn-primary' : 'btn-secondary'}" data-mode="light">${icon('sun')} 淺色</button>
           </div>
         </div>
         <div class="config-field config-field-stack">
@@ -994,13 +994,13 @@ export function onMount(s) {
   // ── Theme (beta-d: mode + accent) ──
   document.getElementById('modeDarkBtn')?.addEventListener('click', async () => {
     await s.actions.setThemeMode('dark');
-    document.getElementById('modeDarkBtn').className = 'btn-sm btn-primary';
-    document.getElementById('modeLightBtn').className = 'btn-sm btn-secondary';
+    document.getElementById('modeDarkBtn').className = 'btn btn-sm btn-primary';
+    document.getElementById('modeLightBtn').className = 'btn btn-sm btn-secondary';
   });
   document.getElementById('modeLightBtn')?.addEventListener('click', async () => {
     await s.actions.setThemeMode('light');
-    document.getElementById('modeDarkBtn').className = 'btn-sm btn-secondary';
-    document.getElementById('modeLightBtn').className = 'btn-sm btn-primary';
+    document.getElementById('modeDarkBtn').className = 'btn btn-sm btn-secondary';
+    document.getElementById('modeLightBtn').className = 'btn btn-sm btn-primary';
   });
   document.querySelectorAll('.swatch[data-accent]').forEach(el => {
     el.addEventListener('click', async () => {

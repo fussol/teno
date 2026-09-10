@@ -472,7 +472,7 @@ export function render(s) {
 
     <div style="display:flex;gap:var(--s2);margin-bottom:var(--s4)">
       ${['flip', 'mc', 'spell'].map(m => `
-        <button class="btn-sm ${_simMode === m ? 'btn-primary' : 'btn-secondary'}" data-sim-mode="${m}" style="padding:6px 14px">${MODE_LABELS[m]}</button>
+        <button class="btn btn-sm ${_simMode === m ? 'btn-primary' : 'btn-secondary'}" data-sim-mode="${m}" style="padding:6px 14px">${MODE_LABELS[m]}</button>
       `).join('')}
     </div>
 
