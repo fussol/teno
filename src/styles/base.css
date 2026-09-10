@@ -681,7 +681,8 @@ body.no-hints .ocr-hint,
 body.no-hints .ocr-ov-hint,
 body.no-hints .drop-zone-sub,
 body.no-hints .page-subtitle,
-body.no-hints .card-desc{display:none}
+body.no-hints .card-desc,
+body.no-hints .mode-desc{display:none}
 
 /* ─── Toggle Row ─── */
 .toggle-row{
