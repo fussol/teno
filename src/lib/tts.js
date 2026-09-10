@@ -234,7 +234,7 @@ export function bindSpeakClick(root, getSettings) {
   if (root.__speakBound) return;
   root.__speakBound = true;
   root.addEventListener('click', (ev) => {
-    const el = ev.target.closest('.study-word, .study-example, .chip-accent, .chip-subtle, .tts-click, .word-row-word, .deck-word, .card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc');
+    const el = ev.target.closest('.study-word, .study-example, .chip-accent, .chip-subtle, .tts-click, .word-row-word, .deck-word, .card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .split-badge');
     if (!el) return;
     if (el.closest('button, input, a, select, textarea')) return;
     ev.stopPropagation();

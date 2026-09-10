@@ -10,6 +10,7 @@ import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { speak, stopSpeech } from '../lib/tts.js';
+import { bindSpeakClick } from '../lib/tts.js';
 import { isMobile } from '../lib/platform.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
 import { fetchGet, fetchLLM, lookupCambridge, lookupMerriam } from '../lib/api.js';
@@ -337,9 +338,12 @@ function flipCardBody(body) {
   if (hint) hint.textContent = toBack ? '點一下回正面' : '點一下看背面';
 }
 
-function onCardBodyClick() {
+function onCardBodyClick(e) {
   // 滑動換字後接著觸發的 click 不翻面（touchend 已記 _swiped）
   if (_cardState && _cardState._swiped) { _cardState._swiped = false; return; }
+  // TAPFLIP1: 點到「文字內容」只發音不翻面（bindSpeakClick 委派處理並 stopPropagation）；
+  // 只有點到卡片空白處（body 背景／face padding／提示列）才翻面
+  if (e.target.closest('.card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .card-panel-tags, .split-badge, .chip-accent, .chip-subtle, .ex-toggle, .wimg-slot-wrap')) return;
   flipCardBody(document.getElementById('cardPreviewBody'));
 }
 
@@ -660,6 +664,8 @@ function initScrollTop() {
 
 export function onMount(s) {
   initScrollTop();
+  // TAPFLIP1: 字卡點文字發音（bindSpeakClick 委派 pageContainer，__speakBound 防重複綁）
+  bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
   // 顯示上限：db 還原（設定記憶）＋ selector 變更寫回
   import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
     const n = normalizeDisplayLimit(v);
