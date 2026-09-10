@@ -532,8 +532,10 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   display:flex;align-items:center;gap:var(--s1);font-weight:600;flex-shrink:0;
   white-space:nowrap; /* G-SIZE2: chip 內不換行（窄屏不再 1 行↔2 行跳高） */
 }
-/* G-SIZE2: count 數字等寬＋保底寬（0→N／9→100 不跳寬，每次刷新不重播） */
-.exam-deck-chip > span:last-child{
+/* G-SIZE2: count 數字等寬＋保底寬（0→N／9→100 不跳寬，每次刷新不重播）。
+   G-SIZE2b: 綁 .deck-count class——舊 `> span:last-child` 誤命中匯出頁 7px 色點
+   （無數字 chip 的末 span）撐成橢圓；色點無 class 永不命中。 */
+.exam-deck-chip > span.deck-count{
   display:inline-block;min-width:3ch;text-align:right;font-variant-numeric:tabular-nums;
 }
 .exam-deck-chip:hover{border-color:var(--border-strong);color:var(--text-primary);background:var(--bg-elevated)}
