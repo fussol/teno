@@ -935,6 +935,15 @@ async function importApkgImages(s, res, wordRowIdx) {
   }
   const { addWordImage } = await import('../lib/db.js');
   let ok = 0, skipped = 0;
+  // D-PROG1: 圖片階段併入同一進度條 — 逐張更新文字＋bar（_phase 仍為
+  // importing，完成前不進 done；單張失敗計入 skipped，尾 toast 一併報數）。
+  const paintImg = () => {
+    const sub = document.getElementById('importProgressText');
+    if (sub) sub.textContent = `圖片進度 ${ok + skipped} / ${jobs.length} · 成功 ${ok} · 跳過 ${skipped}`;
+    const bar = document.getElementById('importProgressBar');
+    if (bar && jobs.length) bar.style.width = Math.round(((ok + skipped) / jobs.length) * 100) + '%';
+  };
+  paintImg();
   for (const { wordId, file } of jobs) {
     try {
       const dataUrl = await getApkgMedia(file);
@@ -944,6 +953,7 @@ async function importApkgImages(s, res, wordRowIdx) {
       console.warn('[import] apkg image skip:', file, e);
       skipped++;
     }
+    paintImg();
   }
   toast(`圖片 ${ok} 張${skipped ? `、跳過 ${skipped} 張` : ''}${colSkipped ? `（關閉欄 ${colSkipped} 張未抓）` : ''}`, ok ? 'toast-success' : '');
 }
