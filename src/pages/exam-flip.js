@@ -76,7 +76,7 @@ function renderConfig(s) {
             const selected = e.decks.includes(d.id);
             return `<div class="study-opt${selected?' selected':''}" style="padding:8px 14px;margin:0" data-ef-deck="${d.id}">
               <span class="dot" style="width:6px;height:6px;border-radius:50%;background:${d.color};display:inline-block;flex-shrink:0"></span>
-              <span class="study-opt-text" style="font-size:13px">${d.name}</span>
+              <span class="study-opt-text" style="font-size:13px">${esc(d.name)}</span>
             </div>`;
           }).join('')}
         </div>
@@ -101,10 +101,10 @@ function renderConfig(s) {
               <select id="efTagCorrect" class="form-input" style="width:130px">
                 <option value="">-- 自動建立 --</option>
                 <optgroup label="系統標籤">
-                ${(systemTags||[]).map(t => `<option value="${t.role}" ${e.settings.tagCorrect === t.role ? 'selected':''}>${t.name}</option>`).join('')}
+                ${(systemTags||[]).map(t => `<option value="${t.role}" ${e.settings.tagCorrect === t.role ? 'selected':''}>${esc(t.name)}</option>`).join('')}
                 </optgroup>
                 <optgroup label="自訂標籤">
-                ${(userTags||[]).map(t => `<option value="${t.name}" ${e.settings.tagCorrect === t.name ? 'selected':''}>${t.name}</option>`).join('')}
+                ${(userTags||[]).map(t => `<option value="${esc(t.name)}" ${e.settings.tagCorrect === t.name ? 'selected':''}>${esc(t.name)}</option>`).join('')}
                 </optgroup>
               </select>
             </label>
@@ -113,10 +113,10 @@ function renderConfig(s) {
               <select id="efTagWrong" class="form-input" style="width:130px">
                 <option value="">-- 自動建立 --</option>
                 <optgroup label="系統標籤">
-                ${(systemTags||[]).map(t => `<option value="${t.role}" ${e.settings.tagWrong === t.role ? 'selected':''}>${t.name}</option>`).join('')}
+                ${(systemTags||[]).map(t => `<option value="${t.role}" ${e.settings.tagWrong === t.role ? 'selected':''}>${esc(t.name)}</option>`).join('')}
                 </optgroup>
                 <optgroup label="自訂標籤">
-                ${(userTags||[]).map(t => `<option value="${t.name}" ${e.settings.tagWrong === t.name ? 'selected':''}>${t.name}</option>`).join('')}
+                ${(userTags||[]).map(t => `<option value="${esc(t.name)}" ${e.settings.tagWrong === t.name ? 'selected':''}>${esc(t.name)}</option>`).join('')}
                 </optgroup>
               </select>
             </label>
