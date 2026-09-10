@@ -523,9 +523,14 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ─── A5: 跨天自動 unbury — Android 背景化過夜 resume 的補檢查（guard 一天一次）───
+// ─── A-DASH1: 同場補 refreshDerived＋dashboard 重繪（開著 app 過換日線，首頁額度／到期數不再是昨天）───
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     store._autoUnburyIfNewDay?.().catch(e => console.warn('[main] autoUnbury:', e));
+    store._refreshDerivedIfNewDay?.().then((refreshed) => {
+      // 僅 dashboard 重繪（學習／測驗進行中不碰，當前會話不受擾；側欄由 notify 訂閱自刷）
+      if (refreshed && store.state.currentPage === 'dashboard') renderPage();
+    }).catch(e => console.warn('[main] refreshDerived:', e));
   }
 });
 

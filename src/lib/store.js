@@ -224,6 +224,7 @@ export function createStore() {
   }
 
   let _lastUnburyCheckDay = null;   // A5: 每日一次 guard（掃描成功後才設；失敗當天可重試）
+  let _lastDerivedDay = null;       // A-DASH1: 衍生數計算日（resume 跨日比對用）
 
   /** A5: 每日自動解除 — buriedAt < 當日（跨過 dayCutoff 日界線）的卡從 buried/buriedAt 原地移除 + DB 同步。
    *  now 參數僅供測試/跨日模擬（getToday 既有支援），production 不傳。 */
@@ -573,6 +574,18 @@ export function createStore() {
     state.dueCountSpell = dueSpell.count;
     state.stats = computeCombinedStats(state.words, state.cards, state.cardsMc, state.cardsSpell, state.buried, state.suspended, state.buriedMc, state.suspendedMc, state.buriedSpell, state.suspendedSpell, state.ankiSettings.cardsPerDay, state.dayCutoff, tzOffset, state.newRatedToday, state.ankiSettingsMc.cardsPerDay, state.ankiSettingsSpell.cardsPerDay, state.newRatedTodayMc, state.newRatedTodaySpell);
     state.retention = computeRetention(state.reviewLog);
+    _lastDerivedDay = today; // A-DASH1: 衍生日戳（resume 跨日比對用）
+  }
+
+  /** A-DASH1: resume 可見時若已換日，重算衍生數＋通知訂閱者；回報是否刷新。
+   *  now 參數僅供測試（getToday 既有支援），production 不傳。 */
+  async function refreshDerivedIfNewDay(now) {
+    const { getToday } = requireScheduler();
+    const today = getToday(state.dayCutoff, state.ankiSettings?.timezoneOffset, now);
+    if (_lastDerivedDay === today) return false;
+    await refreshDerived();
+    notify();
+    return true;
   }
 
   // Lazy import to avoid circular deps at module level
@@ -2284,6 +2297,7 @@ export function createStore() {
     // For testing
     async _refreshDerived() { await refreshDerived(); },
     async _autoUnburyIfNewDay(now) { await autoUnburyIfNewDay(now); },
+    async _refreshDerivedIfNewDay(now) { return refreshDerivedIfNewDay(now); },
     async _migrateBuriedAt() { await migrateBuriedAt(); },
     _resetUnburyGuard() { _lastUnburyCheckDay = null; },
   };

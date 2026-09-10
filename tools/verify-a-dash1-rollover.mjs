@@ -1,0 +1,21 @@
+// verify-a-dash1-rollover.mjs — A-DASH1: resume 跨日必須重算＋重繪
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+let fail = 0;
+const ok = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
+const strip = (s) => s.replace(/\/\/.*$/gm, '');
+const st = strip(readFileSync(join(root, 'src/lib/store.js'), 'utf8'));
+ok('衍生日戳在庫', st.includes('let _lastDerivedDay = null'), '比對基準');
+ok('refreshDerived 蓋戳', st.includes('_lastDerivedDay = today'), '每次重算更新');
+ok('IfNewDay 比對換日', st.includes('async function refreshDerivedIfNewDay(now)'), 'guard');
+ok('刷新後 notify', /refreshDerivedIfNewDay\(now\)[\s\S]{0,400}?notify\(\)/.test(st), '側欄訂閱自刷');
+ok('回報是否刷新', st.includes('return false') && st.includes('return true'), '呼叫端決策');
+ok('測試鉤子暴露', st.includes('_refreshDerivedIfNewDay(now)'), '可測');
+const mn = strip(readFileSync(join(root, 'src/main.js'), 'utf8'));
+ok('resume 接刷新', mn.includes('_refreshDerivedIfNewDay?.()'), 'visibilitychange');
+ok('dashboard 重繪', mn.includes("currentPage === 'dashboard') renderPage()"), '頁面數字更新');
+const mnRaw = readFileSync(join(root, 'src/main.js'), 'utf8');
+ok('學習測驗不擾', mnRaw.includes('學習／測驗進行中不碰'), '會話安全');
+process.exit(fail ? 1 : 0);
