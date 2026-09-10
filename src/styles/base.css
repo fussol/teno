@@ -622,7 +622,6 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   box-shadow:none;transform:none;background:var(--bg-surface);color:var(--text-secondary);border-color:var(--border);
 }
 .btn-primary:disabled:hover{background:var(--accent);color:var(--accent-on);border:none;}
-.btn-sm{padding:5px var(--s3);font-size:12px;border-radius:var(--r-full)}
 /* G-BTN1: 次按鈕＋超小尺寸主定義（原全缺；settings/simulator 裸 btn-sm 即滅） */
 .btn-secondary{
   display:inline-flex;align-items:center;gap:var(--s1);padding:8px var(--s5);
@@ -632,7 +631,6 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 }
 .btn-secondary:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-strong)}
 .btn-secondary:active{transform:scale(.97)}
-.btn-xs{padding:3px var(--s2);font-size:11px;border-radius:var(--r-full)}
 .btn-ghost{border:none;color:var(--text-tertiary);padding:5px var(--s2);background:transparent}
 .btn-ghost:hover{background:var(--state-hover);color:var(--text-primary)}
 .btn-danger{border-color:rgba(248,138,138,.25);color:var(--red);background:transparent}
@@ -647,6 +645,11 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);
 }
 .btn-icon:hover{background:var(--bg-hover);color:var(--text-primary);border-color:var(--border-strong)}
+/* G-SIZE4: 尺寸類置於全部 variant 之後（specificity 相同，後寫者贏）。
+   先前 .btn-sm 夾在 primary 與 secondary 之間，切態換盒模型（8px/13px↔5px/12px）。
+   此後 size 永遠贏，切態只換色不換尺寸。 */
+.btn-sm{padding:5px var(--s3);font-size:12px;border-radius:var(--r-full)}
+.btn-xs{padding:3px var(--s2);font-size:11px;border-radius:var(--r-full)}
 
 /* ─── Config Section ─── */
 .config-section{
