@@ -257,14 +257,104 @@ export function wordExample(w) {
 }
 
 /**
+ * EXNEXT1: 例句抽樣入口——首渲染抽 N 句記帳；之後按「下一組」重抽。
+ * 狀態掛在 word 物件（_exShown=當前顯示、_exCounts=出現次數記帳），
+ * 生命週期＝該 word 物件（進卡/換字新物件自然重置）。
+ * @returns {string[]} 已選句子（fmtExample 直接吃）
+ */
+export function examplePoolFor(w) {
+  const full = mergeExamplePhrases(w?.example, w?.phrases);
+  if (!full) return [];
+  const lines = String(full).split('\n').filter(Boolean);
+  const max = window.__maxExampleLines || 0;
+  // 無上限或句數未超：全部顯示，免按鈕
+  if (!(max > 0 && lines.length > max)) return lines;
+  // 已有抽樣狀態：沿用（按鈕刷新走 rotateExamples）
+  if (Array.isArray(w._exShown) && w._exShown.length) return w._exShown;
+  // 首次：隨機抽 N（Fisher-Yates 無偏）
+  const shuffled = [...lines];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  w._exCounts = w._exCounts || {};
+  const picked = shuffled.slice(0, max);
+  for (const p of picked) w._exCounts[p] = (w._exCounts[p] || 0) + 1;
+  w._exShown = picked;
+  return picked;
+}
+
+import { pickNextExamples } from './example-rotation.js';
+
+/**
+ * EXNEXT1: 按下「下一組」——排除當前顯示、優先出現次數最少、
+ * 不足從已顯示補、周而復始（example-rotation.js 演算法）。
+ * @returns {string[]} 新一組句子
+ */
+export function rotateExamples(w) {
+  const full = mergeExamplePhrases(w?.example, w?.phrases);
+  if (!full) return [];
+  const lines = String(full).split('\n').filter(Boolean);
+  const max = window.__maxExampleLines || 0;
+  if (!(max > 0 && lines.length > max)) return lines;
+  const counts = w._exCounts || {};
+  const prev = Array.isArray(w._exShown) ? w._exShown : [];
+  const picked = pickNextExamples(lines, max, prev, counts);
+  w._exCounts = counts;
+  w._exShown = picked;
+  return picked;
+}
+
+/**
+ * EXNEXT1: 「下一組例句」事件委派——綁在 root（pageContainer），
+ * 點 .ex-corner / .ex-next-btn 時刷新最近 .study-example / .card-panel-example。
+ * @param {Element} root 委派根（如 pageContainer；字卡面板則傳面板元素）
+ * @param {() => object} getWord 回傳當前 word 物件（含 _exShown/_exCounts）
+ */
+export function bindExNext(root, getWord) {
+  if (!root || root.__exNextBound) return;
+  root.__exNextBound = true;
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ex-corner, .ex-next-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    const w = getWord && getWord();
+    if (!w) return;
+    const next = rotateExamples(w);
+    const box = btn.closest('.study-example, .card-panel-example');
+    if (!box) return;
+    const btnHtml = btn.outerHTML;
+    box.innerHTML = fmtExample(next) + (btn.classList.contains('ex-corner') ? btnHtml : '');
+    // 刷新後重綁（innerHTML 重建按鈕節點；委派在 root 上其實免重綁——btnHtml 僅視覺）
+  });
+}
+
+/**
+ * EXNEXT1: study/exam 卡例句渲染（含右上角「下一組」浮鈕）。
+ * 超過 exampleDisplayMax 且有旋轉空間時，.study-card（position:relative）
+ * 右上角浮一顆鈕；按鈕刷新由各頁 onMount 綁（.ex-corner）。
+ */
+export function studyExampleHtml(w) {
+  if (!w) return '';
+  const full = wordExample(w);
+  if (!full) return '';
+  const lines = String(full).split('\n').filter(Boolean);
+  const max = (typeof window !== 'undefined' && window.__maxExampleLines) || 0;
+  const rotatable = max > 0 && lines.length > max;
+  if (!rotatable) return `<div class="study-example">${fmtExample(lines)}</div>`;
+  const shown = examplePoolFor(w);
+  return `<div class="study-example" style="width:100%">${fmtExample(shown)}<button class="ex-corner" title="下一組例句" style="position:absolute;top:8px;right:8px;z-index:5;font-size:12px;color:var(--accent);background:var(--bg-surface);border:1px solid var(--border);border-radius:100px;cursor:pointer;padding:4px 12px">${icon('shuffle', 14)} 下一組</button></div>`;
+}
+
+/**
  * Format example text: if it contains English + Chinese translation
  * separated by punctuation boundary, split onto separate lines.
  * 顯示上限只做隱藏不做刪除：超過 max 隨機抽 max 句顯示，其餘不渲染
- * （DB 全文不動；使用者 2026-09-10 裁示：不需要「展開全部句型」入口）。
- * 每次渲染重抽，所以重開卡片看到的 N 句會不一樣。
+ * （DB 全文不動；抽樣池見 example-rotation.js，本函式只渲染「已選」句子）。
  */
 export function fmtExample(ex) {
   if (!ex) return '';
+  const shown = Array.isArray(ex) ? ex : String(ex).split('\n').filter(Boolean);
   const row = (html) => `<div style="display:flex;gap:.4em"><span>•</span><span>${html}</span></div>`;
   const fmtLine = (l) => {
     const m = l.match(/^(.+[.!?])\s*[,，]\s*([\u4e00-\u9fff].+)$/);
@@ -273,16 +363,5 @@ export function fmtExample(ex) {
     }
     return row(esc(l));
   };
-  const lines = ex.split('\n').filter(Boolean);
-  const max = window.__maxExampleLines || 0;
-  if (!(max > 0 && lines.length > max)) {
-    return lines.map(fmtLine).join('');
-  }
-  // Fisher-Yates 洗牌後取前 max 句（無偏版本；舊 sort(()=>Math.random()-0.5) 有 bias）
-  const shuffled = [...lines];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled.slice(0, max).map(fmtLine).join('');
+  return shown.map(fmtLine).join('');
 }

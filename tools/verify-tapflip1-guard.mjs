@@ -22,14 +22,14 @@ chk('browser: onCardBodyClick(e) 收 event', /function onCardBodyClick\(e\)/.tes
 chk('browser: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.wimg-slot-wrap'\)/.test(browser));
 chk('deck: onDeckCardBodyClick(e) 收 event', /function onDeckCardBodyClick\(e\)/.test(deck));
 chk('deck: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.wimg-slot-wrap'\)/.test(deck));
-chk('browser: guard 後才 flipCardBody', /TAPFLIP1[\s\S]*?flipCardBody\(document\.getElementById\('cardPreviewBody'\)\)/.test(browser));
-chk('deck: guard 後才 flipDeckCardBody', /TAPFLIP1[\s\S]*?flipDeckCardBody\(document\.getElementById\('deckCardPreviewBody'\)\)/.test(deck));
+chk('browser: guard 後才 flipCardBody', /onCardBodyClick\(e\)[\s\S]{0,600}flipCardBody\(document\.getElementById\('cardPreviewBody'\)\)/.test(browser));
+chk('deck: guard 後才 flipDeckCardBody', /onDeckCardBodyClick\(e\)[\s\S]{0,600}flipDeckCardBody\(document\.getElementById\('deckCardPreviewBody'\)\)/.test(deck));
 
 console.log('[T2] bindSpeakClick 綁定');
 chk('browser: import bindSpeakClick', /import \{ bindSpeakClick \} from '\.\.\/lib\/tts\.js'/.test(browser));
 chk('deck: import bindSpeakClick', /import \{ bindSpeakClick \} from '\.\.\/lib\/tts\.js'/.test(deck));
-chk('browser: onMount 呼叫 bindSpeakClick', /TAPFLIP1[\s\S]*?bindSpeakClick\(document\.getElementById\('pageContainer'\), \(\) => s\.state\)/.test(browser));
-chk('deck: onMount 呼叫 bindSpeakClick', /TAPFLIP1[\s\S]*?bindSpeakClick\(document\.getElementById\('pageContainer'\), \(\) => s\.state\)/.test(deck));
+chk('browser: 發音監聽直綁面板（bindCardEvents 內）', /bindCardEvents[\s\S]{0,300}bindSpeakClick\(document\.getElementById\('cardPreviewModal'\)/.test(browser));
+chk('deck: 發音監聽直綁面板（bindCardEvents 內）', /bindCardEvents[\s\S]{0,300}bindSpeakClick\(document\.getElementById\('deckCardPreview'\)/.test(deck));
 
 console.log('[T3] tts selector');
 const sel = tts.match(/ev\.target\.closest\('([^']*)'\)/)?.[1] || '';

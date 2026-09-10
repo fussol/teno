@@ -1,4 +1,4 @@
-import { icon, splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
+import { icon, splitFieldsHtml, fmtExample, wordExample, studyExampleHtml, bindExNext } from '../lib/svg.js';
 import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
@@ -155,7 +155,7 @@ function renderExam(s) {
         ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div style="margin-top:16px">
           ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
-          ${(visShow('exam', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
+          ${(visShow('exam', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
           ${(visShow('exam', 'pron') && w.pron) ? `<div class="study-pron" style="margin-top:10px">${esc(w.pron)}</div>` : ''}
           ${(visShow('exam', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${esc(r)}</span>`).join('')}</div>` : ''}
           ${(visShow('exam', 'forms') && w.forms?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${esc(f)}</span>`).join('')}</div>` : ''}
@@ -471,6 +471,7 @@ export function onMount(s) {
     });
     document.getElementById('efPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
+  bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
     document.getElementById('efNextBtn')?.addEventListener('click', () => {
       if (e.idx < e.words.length - 1) {
         nextWord(s);

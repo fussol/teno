@@ -64,15 +64,23 @@ export function cardFaceHtml(w, s, face, h) {
   const e = h.escapeHtml || ((x) => String(x ?? ''));
   const exMerged = h.wordExample(w);
   const out = [];
-  if (gv('word')) out.push(`<div class="card-panel-word">${e(w.word)}</div>`);
+  // IMGTOP1: 圖片顯示於英文單字上方（使用者 2026-09-10 裁示）
   if (gv('image')) out.push(`<div style="width:100%;max-width:440px;justify-content:center" class="wimg-slot-wrap">${h.wordImageSlotHTML(w.id)}</div>`);
+  if (gv('word')) out.push(`<div class="card-panel-word">${e(w.word)}</div>`);
   if (gv('pron') && w.pron) out.push(`<div class="card-panel-pron">${e(w.pron)}</div>`);
   // 空欄位整塊隱藏（含標題）：定義＋詞性都空就不渲染，不塞 '-' 佔位
   if (gv('definition') && (String(w.definition || '').trim() || String(w.pos || '').trim())) {
     const sf = h.splitFieldsHtml(w.pos, w.definition);
     out.push(`<div>${sf || (w.pos ? '<div style="font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:3px 12px;border-radius:8px;display:inline-block">' + e(w.pos) + '</div>' : '') + (w.definition ? '<div class="card-panel-def">' + e(w.definition) + '</div>' : '')}</div>`);
   }
-  if (gv('example') && exMerged) out.push(`<div class="card-panel-example">${h.fmtExample(exMerged)}</div>`);
+  if (gv('example') && exMerged) {
+    // EXNEXT1: 抽樣池（超上限時可按鈕換下一組）
+    const shown = h.examplePoolFor ? h.examplePoolFor(w) : [exMerged];
+    const full = String(exMerged).split('\n').filter(Boolean);
+    const max = (typeof window !== 'undefined' && window.__maxExampleLines) || 0;
+    const rotatable = max > 0 && full.length > max && h.rotateExamples;
+    out.push(`<div class="card-panel-example">${h.fmtExample(shown)}${rotatable ? `<button class="ex-next-btn" title="下一組例句" style="margin-top:6px;font-size:12px;color:var(--accent);background:none;border:1px solid var(--border);border-radius:100px;cursor:pointer;padding:3px 12px">${h.exNextIcon || '↻ 下一組'}</button>` : ''}</div>`);
+  }
   if (gv('description') && w.description) out.push(`<div class="card-panel-desc">${e(w.description)}</div>`);
   if (gv('related') && w.related && w.related.length) out.push(`<div class="card-panel-desc" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${e(r)}</span>`).join('')}</div>`);
   if (gv('forms') && w.forms && w.forms.length) out.push(`<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">詞形變化 </span>${w.forms.map(f => `<span style="display:inline-block;font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px">${e(f)}</span>`).join('')}</div>`);

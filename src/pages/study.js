@@ -30,7 +30,6 @@ function modeCard(s, m) {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:600;color:var(--text-primary)">${m.label}</div>
-        <div class="mode-desc" style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${m.desc}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:20px;font-weight:700;color:${due > 0 ? 'var(--text-primary)' : 'var(--text-tertiary)'};font-family:var(--mono);font-feature-settings:'tnum'">${due}</div>

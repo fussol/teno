@@ -26,7 +26,6 @@ function modeCard(s, m) {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:600;color:var(--text-primary)">${m.label}</div>
-        <div class="mode-desc" style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${m.desc}</div>
       </div>
       <div style="font-size:12px;color:var(--text-tertiary);flex-shrink:0">開始測驗 ›</div>
     </div>

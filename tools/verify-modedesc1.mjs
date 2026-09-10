@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MODEDESC1: 學習/測驗六張模式卡說明納入 uiHints 備註開關
+// MODEDESC1: 學習/測驗六張模式卡說明——2026-09-10 v2 裁示：直接刪除（非隱藏）
 // 用法: node tools/verify-modedesc1.mjs
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -11,36 +11,30 @@ const study = readFileSync('src/pages/study.js', 'utf8');
 const exam = readFileSync('src/pages/exam.js', 'utf8');
 const css = readFileSync('src/styles/base.css', 'utf8');
 
-console.log('[M1] 六張卡掛 mode-desc');
-chk('study modeCard desc 掛 mode-desc', /class="mode-desc"[^>]*>\$\{m\.desc\}/.test(study));
-chk('exam modeCard desc 掛 mode-desc', /class="mode-desc"[^>]*>\$\{m\.desc\}/.test(exam));
-chk('study 三模式說明存在（翻卡/多選/拼字）', /FSRS 排程/.test(study) && /四選一/.test(study) && /訓練拼字/.test(study));
-chk('exam 三模式說明存在', /核對正確/.test(exam) && /四個選項/.test(exam) && /字母級驗證/.test(exam));
+console.log('[M1] 六張卡說明已刪除（渲染層無 desc）');
+chk('study modeCard 無 desc 行', !/class="mode-desc"/.test(study));
+chk('exam modeCard 無 desc 行', !/class="mode-desc"/.test(exam));
+chk('study MODES desc 資料保留（未來可復用不炸 build）', /desc: '看單字回想定義/.test(study));
+chk('exam MODES desc 資料保留', /desc: '聽發音拼寫單字，字母級驗證'/.test(exam));
 
-console.log('[M2] CSS 隱藏規則');
-chk('body.no-hints .mode-desc → none', /body\.no-hints \.mode-desc\{display:none\}/.test(css) || /body\.no-hints [\s\S]*?\.mode-desc[\s\S]*?\{display:none\}/.test(css));
+console.log('[M2] CSS no-hints 規則可留（desc 已不渲染，規則無作用但無害）');
+chk('body.no-hints .mode-desc 規則存在（歷史相容）', /body\.no-hints[\s\S]{0,200}\.mode-desc/.test(css));
 
-console.log('[M3] 標題/待複習數字不受影響');
-chk('study 模式標題不掛 class', /font-size:15px;font-weight:600;color:var\(--text-primary\)\">\$\{m\.label\}/.test(study));
-chk('study 待複習數字不在 desc 行', !/mode-desc[\s\S]{0,120}待複習/.test(study));
-
-// NEG: HEAD 已含則跳
 console.log('[NEG] 反向驗證');
 let headHas;
-try { headHas = /mode-desc/.test(execSync('git show HEAD:src/pages/study.js', { encoding: 'utf8' })); }
+try { headHas = /class="mode-desc"/.test(execSync('git show HEAD:src/pages/study.js', { encoding: 'utf8' })); }
 catch { headHas = false; }
-if (headHas) { console.log('  NEG-SKIP: 特徵已在 HEAD'); }
-else {
+if (headHas) {
   execSync('git stash push -q -- src/pages/study.js src/pages/exam.js src/styles/base.css');
   try {
     const s2 = readFileSync('src/pages/study.js', 'utf8');
-    const c2 = readFileSync('src/styles/base.css', 'utf8');
-    // 精確比對：class="mode-desc"（HEAD 既有 .study-mode-desc 是另一顆舊類，勿誤傷）
-    const gone = !/class="mode-desc"/.test(s2) && !/body\.no-hints \.mode-desc/.test(c2);
-    if (gone) { pass++; console.log('  NEG-OK: stash 後特徵全滅'); }
-    else { fail++; console.log('  NEG-FAIL: stash 後特徵仍在'); }
+    if (/class="mode-desc"/.test(s2)) { pass++; console.log('  NEG-OK: stash 後 desc 行復活（harness 有效）'); }
+    else { fail++; console.log('  NEG-FAIL'); }
   } finally { execSync('git stash pop -q'); }
+} else {
+  console.log('  NEG-SKIP: HEAD 已無 desc 行（已 commit 刪除）');
 }
 
 console.log(`\nMODEDESC1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);
+

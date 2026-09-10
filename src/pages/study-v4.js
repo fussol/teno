@@ -1,5 +1,5 @@
 import { session, state, intervals, e, ensureSession, ensureQueue, mount, getCounts } from '../engine/session-utils.js';
-import { icon, splitFieldsHtml, fmtExample, wordExample } from '../lib/svg.js';
+import { icon, splitFieldsHtml, fmtExample, wordExample, studyExampleHtml, bindExNext } from '../lib/svg.js';
 import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
@@ -74,7 +74,7 @@ function renderCard(s) {
       ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
       ${(isAns && visShow('study', 'definition')) ? splitFieldsHtml(w.pos, w.definition) || '' : ''}
       ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
-      ${(isAns && visShow('study', 'example') && wordExample(w)) ? `<div class="study-example">${fmtExample(wordExample(w))}</div>` : ''}
+      ${(isAns && visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
       ${(isAns && visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${(isAns && visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
       ${isAns ? extraFieldsHtml(w, e, 'study') : ''}
@@ -98,6 +98,7 @@ function renderCard(s) {
 export function onMount(s) {
   mount(s, 's4FlipBtn', () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
+  bindExNext(document.getElementById('pageContainer'), () => session?.current?.word);
   // IMG1: 卡面圖片占位填充（翻卡 rip → 重 render → onMount 重跑 → 換圖自然更新）
   if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
   const wid = session?.current?.word?.id;

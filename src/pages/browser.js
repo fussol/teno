@@ -3,7 +3,7 @@
 // v05.01.00.0010
 // ═══════════════════════════════════════════════════════════════
 
-import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample } from '../lib/svg.js';
+import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
@@ -335,14 +335,14 @@ function flipCardBody(body) {
   f.hidden = toBack;
   b.hidden = !toBack;
   const hint = body.querySelector('[data-flip-hint]');
-  if (hint) hint.textContent = toBack ? '點一下回正面' : '點一下看背面';
+  if (hint) hint.textContent = toBack ? '點兩下回正面' : '點兩下看背面';
 }
 
 function onCardBodyClick(e) {
   // 滑動換字後接著觸發的 click 不翻面（touchend 已記 _swiped）
   if (_cardState && _cardState._swiped) { _cardState._swiped = false; return; }
-  // TAPFLIP1: 點到「文字內容」只發音不翻面（bindSpeakClick 委派處理並 stopPropagation）；
-  // 只有點到卡片空白處（body 背景／face padding／提示列）才翻面
+  // DBLFLIP1: 連點兩下才翻面（單擊留給點字發音；使用者 2026-09-10 裁示）
+  // 點到「文字內容」不翻面（bindSpeakClick 委派發音並 stopPropagation）
   if (e.target.closest('.card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .card-panel-tags, .split-badge, .chip-accent, .chip-subtle, .wimg-slot-wrap')) return;
   flipCardBody(document.getElementById('cardPreviewBody'));
 }
@@ -353,11 +353,11 @@ function markSwipeMoved(dx, dy) {
 
 function cardBodyHTML(w, s) {
   // 正反面欄位由設定頁 master 控制（cardFaceHtml＋browserFront／browserBack）
-  const H = { escapeHtml, wordImageSlotHTML, splitFieldsHtml, fmtExample, wordExample };
+  const H = { escapeHtml, wordImageSlotHTML, splitFieldsHtml, fmtExample, wordExample, examplePoolFor, rotateExamples };
   return `<div class="card-panel-body" id="cardPreviewBody">
     <div class="card-face" data-face="front">${cardFaceHtml(w, s, 'browserFront', H)}</div>
     <div class="card-face" data-face="back" hidden>${cardFaceHtml(w, s, 'browserBack', H)}</div>
-    <div class="card-flip-hint" data-flip-hint style="font-size:11px;color:var(--text-quaternary);margin-top:4px">點一下看背面</div>
+    <div class="card-flip-hint" data-flip-hint style="font-size:11px;color:var(--text-quaternary);margin-top:4px">點兩下看背面</div>
   </div>`;
 }
 
@@ -385,7 +385,7 @@ function showCard(idx) {
     const newBody = body;
     if (!newBody.dataset._listeners) {
       newBody.dataset._listeners = '1';
-      newBody.addEventListener('click', onCardBodyClick);
+      newBody.addEventListener('dblclick', onCardBodyClick);
       newBody.addEventListener('touchstart', (e) => { _cardState._sx = e.touches[0].clientX; _cardState._sy = e.touches[0].clientY; }, { passive: true });
       newBody.addEventListener('touchend', (e) => {
         const dx = _cardState._sx - e.changedTouches[0].clientX;
@@ -446,7 +446,7 @@ function mkPanelHTML(w, s, st, idx, total, words, isFull) {
           <label><span>發音後停頓</span><select id="csPausePron">${[0,0.5,1,1.5,2,3].map(v => `<option value="${v}" ${st.pauseAfterPron===v?'selected':''}>${v}s</option>`).join('')}</select></label>
           <label><span>卡間停頓</span><select id="csPauseBet">${[1,2,3,4,5,8].map(v => `<option value="${v}" ${st.pauseBetweenCards===v?'selected':''}>${v}s</option>`).join('')}</select></label>
         </div>
-        <button title="朗讀 (P)" id="cardPronBtn">${icon('volume')}</button>
+        <button title="下一組例句" id="cardExNextBtn">${icon('shuffle')}</button>
         <button title="編輯標籤" id="cardTagsBtn">${icon('hash')}</button>
         <button title="編輯" id="cardEditBtn" style="color:var(--accent)">${icon('edit')}</button>
         <button title="${st.autoAdvance ? '暫停自動播放' : '自動播放'}" id="cardPlayBtn" style="color:${st.autoAdvance ? 'var(--accent)' : ''}">${icon(st.autoAdvance ? 'pause' : 'play', 16)}</button>
@@ -491,7 +491,9 @@ function scrollBrowserRuler(idx) {
 
 function bindCardEvents(s, w, st) {
   const body = document.getElementById('cardPreviewBody');
-  body.addEventListener('click', onCardBodyClick);
+  body.addEventListener('dblclick', onCardBodyClick);
+  // TAPFLIP1: 點文字發音——面板掛 document.body（pageContainer 外），發音監聽直接綁面板
+  bindSpeakClick(document.getElementById('cardPreviewModal'), () => s.state);
   document.getElementById('cardPreviewClose').addEventListener('click', closeCardPreview);
   document.getElementById('cardEditBtn')?.addEventListener('click', (e) => { e.stopPropagation(); closeCardPreview(); openEditModal(s, w.id); });
   document.getElementById('cardTagsBtn')?.addEventListener('click', (e) => { e.stopPropagation(); closeCardPreview(); openEditTags(s, w.id); });
@@ -514,9 +516,27 @@ function bindCardEvents(s, w, st) {
   document.getElementById('cardFullBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _cardState.fullscreen = !_cardState.fullscreen; showCard(_cardState.idx); });
   document.getElementById('cardPrev')?.addEventListener('click', () => { stopAuto(); showCard(_cardState.idx - 1); });
   document.getElementById('cardNext')?.addEventListener('click', () => { stopAuto(); showCard(_cardState.idx + 1); });
+  // EXNEXT1: 下一組例句——head 鈕（原發音鈕位置）與例句區內鈕共用同一刷新
+  const refreshExamples = () => {
+    const w = _cardState?.words?.[_cardState.idx];
+    if (!w) return;
+    const next = rotateExamples(w);
+    document.querySelectorAll('#cardPreviewBody .card-panel-example').forEach(el => {
+      if (el.querySelector('.ex-next-btn')) el.innerHTML = fmtExample(next) + el.dataset.btnHtml;
+    });
+  };
+  document.getElementById('cardExNextBtn')?.addEventListener('click', (e) => { e.stopPropagation(); refreshExamples(); });
+  document.querySelectorAll('#cardPreviewBody .ex-next-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const box = btn.closest('.card-panel-example');
+      if (box) box.dataset.btnHtml = btn.outerHTML;
+      refreshExamples();
+    });
+  });
   scrollBrowserRuler(_cardState.idx);
   if (st.pronManual && w.pron) playCardTTS(s, w.word);
-  document.getElementById('cardPronBtn')?.addEventListener('click', (e) => { e.stopPropagation(); playCardTTS(s, w.word); });
+  // 發音鈕已由「下一組例句」鈕取代（EXNEXT1）；朗讀保留 P 鍵（keydown handler）
   let sx = 0, sy = 0;
   body.addEventListener('touchstart', (e) => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
   body.addEventListener('touchend', (e) => {
@@ -664,8 +684,6 @@ function initScrollTop() {
 
 export function onMount(s) {
   initScrollTop();
-  // TAPFLIP1: 字卡點文字發音（bindSpeakClick 委派 pageContainer，__speakBound 防重複綁）
-  bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
   // 顯示上限：db 還原（設定記憶）＋ selector 變更寫回
   import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
     const n = normalizeDisplayLimit(v);

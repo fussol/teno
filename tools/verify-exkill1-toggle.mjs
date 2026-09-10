@@ -48,8 +48,8 @@ for (let t = 0; t < 5 && !diff; t++) {
   if (new Set(s2.slice(0, 3)).size !== 0 && [...new Set(s2.slice(0, 3))].some(x => !shownSet.has(x))) diff = true;
 }
 chk('多次渲染會重抽', diff);
-chk('svg.js Fisher-Yates 洗牌存在', /for \(let i = shuffled\.length - 1; i > 0; i--\)/.test(svg));
-chk('svg.js slice(0, max) 收尾', /shuffled\.slice\(0, max\)\.map\(fmtLine\)\.join\(''\)/.test(svg));
+chk('svg.js Fisher-Yates 洗牌存在（examplePoolFor 首抽）', /examplePoolFor[\s\S]{0,700}for \(let i = shuffled\.length - 1; i > 0; i--\)/.test(svg));
+chk('svg.js 抽樣收尾 slice(0, max)（examplePoolFor 內）', /examplePoolFor[\s\S]{0,900}shuffled\.slice\(0, max\)/.test(svg));
 
 console.log('[E3] max=0 全顯示');
 chk('max gate 保留 (!(max > 0 && ...))', /if \(!\(max > 0 && lines\.length > max\)\)/.test(svg));
