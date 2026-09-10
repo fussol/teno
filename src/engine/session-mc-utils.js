@@ -1,5 +1,6 @@
 import { Session, queueDayRolledOver, countNewRatedToday } from './session-v4.js';
 import { toLocalDateStr } from '../core/scheduler.js';
+import { mulberry32, hashCode } from '../lib/rng.js';
 import { FSRS, AGAIN, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../core/fsrs.js';
 import { toast } from '../lib/toast.js';
 
@@ -109,13 +110,20 @@ export function ensureQueue(filter, storeState) {
 }
 
 function generateOptions(word, allWords) {
-  const others = allWords.filter(w => w.id !== word.id && w.word !== word.word);
-  const shuffled = [...others].sort(() => Math.random() - 0.5);
-  const wrong = shuffled.slice(0, 7).map(w => w.word);
+  // B-SHUF1: seeded Fisher-Yates（session-v4.js:99 同語意：mode＋當天＋題目 id；
+  // 同天同題選項穩定，跨天重抽；無 seed 的 sort(()=>Math.random()-0.5) 有 bias 且不可重現）。
+  const day = toLocalDateStr(new Date(), session?.timezoneOffset, session?.dayCutoff);
+  const rng = mulberry32(hashCode('mc_' + day + '_' + (word.id || word.word)));
+  const pool = allWords.filter(w => w.id !== word.id && w.word !== word.word);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const wrong = pool.slice(0, 7).map(w => w.word);
   const correct = word.word;
   const options = [...wrong, correct];
   for (let i = options.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rng() * (i + 1));
     [options[i], options[j]] = [options[j], options[i]];
   }
   mcOptions = options;

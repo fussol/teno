@@ -3,6 +3,7 @@ import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
+import { mulberry32, hashCode } from '../lib/rng.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
 
 let e = {
@@ -221,10 +222,26 @@ function startExam(s) {
   //     寫在副本上，不污染 state.words（跨頁殘留 / 排序過濾序列化誤讀）
   let words = shuffle(pool.map(w => ({ ...w })));
   if (e.settings.count > 0 && e.settings.count < words.length) words = words.slice(0, e.settings.count);
+  // B-SHUF1 seed 用「本地天」：建場當下結算一次，全場同值（重渲染／resume 不變）。
+  const _d = new Date();
+  const todayStr = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
   for (const w of words) {
-    const wrong = pool.filter(x => x.word !== w.word).sort(() => Math.random() - 0.5).slice(0, 3).map(x => x.word);
+    // B-SHUF1（測驗路徑同病）: 干擾項挑選＋排位同一顆 seeded rng（seed 形與
+    // study 會話同構，前綴 'em_' 區分 mode；同天同題穩定，跨天重抽；
+    // 選項存 w._options，重渲染／resume 不重抽）。題序 shuffle 維持每場隨機（無 bias，不屬本案）。
+    const rng = mulberry32(hashCode('em_' + todayStr + '_' + (w.id || w.word)));
+    const pool2 = pool.filter(x => x.word !== w.word);
+    for (let i = pool2.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pool2[i], pool2[j]] = [pool2[j], pool2[i]];
+    }
+    const wrong = pool2.slice(0, 3).map(x => x.word);
     while (wrong.length < 3) wrong.push('???');
-    const options = shuffle([w.word, ...wrong]);
+    const options = [w.word, ...wrong];
+    for (let i = options.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [options[i], options[j]] = [options[j], options[i]];
+    }
     w._options = options;
     w._correctIdx = options.indexOf(w.word);
     w._answered = false;
