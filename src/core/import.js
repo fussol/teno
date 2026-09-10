@@ -279,7 +279,8 @@ export function mapWords(headers, rows, fields, defaults = {}) {
       } else if (key === 'examples') {
         try { w.examples = JSON.parse(val); } catch { w.examples = val.split(';').map(e => ({ en: e.trim(), zh: '' })); }
       } else if (key === 'word') {
-        w.word = val.toLowerCase();
+        // H-CASE1: 匯入保大小寫（val 已 trim；去重在 importWords 兩端 lower）。
+        w.word = val;
       } else if (key === 'pos') {
         w.pos = normalizePos(val);
       } else if (key === 'related' || key === 'forms') {

@@ -1267,7 +1267,9 @@ export function createStore() {
     async addWord(wordData) {
       const word = {
         id: nextWordId(),
-        word: wordData.word.toLowerCase().trim(),
+        // H-CASE1: 存檔保大小寫（僅 trim；搜尋／去重本已兩端 lower，無需存檔端正規化；
+        // 編輯頁 spread 原樣，三路至此一致）。舊庫既有小寫字不遷移（顯示即資料，不重寫用戶庫）。
+        word: wordData.word.trim(),
         definition: wordData.definition || '',
         pos: wordData.pos || '',
         pron: wordData.pron || '',
