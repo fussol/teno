@@ -1449,7 +1449,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   .topbar{height:52px;padding:0 var(--s3)}
   .topbar-title{font-size:15px}
   .topbar-streak{font-size:12px;padding:3px 10px}
-  .btn,.btn-primary,.btn-sm,.btn-xs{min-height:40px}
+  .btn,.btn-primary,.btn-sm,.btn-xs{min-height:44px} /* G-TINY1: 40→44（WCAG 觸控線；桌機不動，僅 600px 內） */
   .nav-item,.deck-item{padding:10px var(--s3);min-height:44px}
   .page-title{font-size:22px}
   .section{padding:var(--s3)}
@@ -1472,7 +1472,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   .study-buttons{gap:4px;padding:8px 10px 6px;bottom:56px;z-index:100}
   .study-btn{padding:8px 18px;font-size:12px}
   .study-btn-lbl{font-size:13px}
-  .study-btn-time{font-size:9px}
+  .study-btn-time{font-size:11px} /* G-TINY1: 9→11（行動最小可讀；桌機另有基座不動） */
   .study-hint{font-size:12px}
   .study-exit{display:flex}
   .study-undo-btn{padding:8px 14px;font-size:13px}
@@ -1491,5 +1491,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 @media(max-width:600px){
   .search-box{min-width:0!important;max-width:100%}
   .exam-deck-chip{font-size:12px;padding:4px 10px}
+  /* G-TINY1: 字卡 ‹ › 換字鈕 36→44（button 前綴提權，壓過頁內 <style> 同名規則；桌機 36px 不動） */
+  button.card-panel-nav-btn{min-width:44px;min-height:44px}
   .content-area .page-subtitle + div[style*="flex-wrap:wrap"] .form-input{max-width:100%!important}
 }
