@@ -44,7 +44,14 @@ console.log('[H4] boot 防閃腿');
 chk('index.html body 預掛 no-hints', /<body class="no-hints">/.test(index));
 
 // 反向驗證: stash 掉工作區改動後必須紅 (證明 harness 真的在看這些行)
+// HEAD 已含特徵（已 commit）→ 跳過；僅未 commit 時 stash 驗證
 console.log('[NEG] 反向驗證 (stash 後應紅)');
+let headHasUiHints;
+try { headHasUiHints = /uiHints/.test(execSync('git show HEAD:src/lib/store.js', { encoding: 'utf8' })); }
+catch { headHasUiHints = false; }
+if (headHasUiHints) {
+  console.log('  NEG-SKIP: 特徵已在 HEAD（已 commit），stash 拔 HEAD 不可能 — 跳過');
+} else {
 execSync('git stash push -q -- src/lib/store.js src/pages/settings.js src/styles/base.css index.html');
 let negFail = 0;
 try {
@@ -61,6 +68,7 @@ try {
 }
 if (negFail === 0) { pass++; console.log('  NEG-OK: stash 後四腿全滅 (harness 有效)'); }
 else { fail++; }
+}
 
 console.log(`\nUIHINTS1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

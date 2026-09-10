@@ -259,8 +259,8 @@ export function wordExample(w) {
 /**
  * Format example text: if it contains English + Chinese translation
  * separated by punctuation boundary, split onto separate lines.
- * 顯示上限只做隱藏不做刪除：超過 max 隨機抽 max 句顯示，其餘包在可展開區，
- * 使用者點「展開其餘 N 句」即看全文（全域設定 exampleDisplayMax，0＝全顯示）。
+ * 顯示上限只做隱藏不做刪除：超過 max 隨機抽 max 句顯示，其餘不渲染
+ * （DB 全文不動；使用者 2026-09-10 裁示：不需要「展開全部句型」入口）。
  * 每次渲染重抽，所以重開卡片看到的 N 句會不一樣。
  */
 export function fmtExample(ex) {
@@ -278,16 +278,11 @@ export function fmtExample(ex) {
   if (!(max > 0 && lines.length > max)) {
     return lines.map(fmtLine).join('');
   }
-  // Fisher-Yates 洗牌後取前 max 句（舊寫法 sort(()=>Math.random()-0.5) 有 bias，這裡用無偏版本）
+  // Fisher-Yates 洗牌後取前 max 句（無偏版本；舊 sort(()=>Math.random()-0.5) 有 bias）
   const shuffled = [...lines];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  const shown = shuffled.slice(0, max).map(fmtLine).join('');
-  const rest = shuffled.slice(max).map(fmtLine).join('');
-  const hiddenCount = lines.length - max;
-  return `${shown}<div class="ex-extra" style="display:none">${rest}</div>`
-    + `<button class="ex-toggle" style="margin-top:4px;font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer;padding:2px 0" `
-    + `onclick="var x=this.previousElementSibling;var open=x.style.display!=='none';x.style.display=open?'none':'';this.textContent=open?'展開其餘 ${hiddenCount} 句 ▾':'收起 ▴'">展開其餘 ${hiddenCount} 句 ▾</button>`;
+  return shuffled.slice(0, max).map(fmtLine).join('');
 }

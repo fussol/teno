@@ -278,7 +278,7 @@ function renderSettingsContent(s) {
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">${icon('list')} 例句顯示句數</div>
-            <div class="config-field-hint">瀏覽器字卡／學習／測驗共用同一設定，超過的隱藏可展開（0＝全部顯示）</div>
+            <div class="config-field-hint">瀏覽器字卡／學習／測驗共用同一設定，超過的隨機抽樣隱藏（0＝全部顯示）</div>
           </div>
           <input type="number" id="exampleDisplayMaxInput" min="0" max="50" value="${window.__maxExampleLines ?? 0}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
         </div>
@@ -1078,7 +1078,7 @@ export function onMount(s) {
     try {
       const d = await import('../lib/db.js');
       await d.setSetting('exampleDisplayMax', String(val));
-      toast(val === 0 ? '例句顯示：全部顯示' : `例句顯示：最多 ${val} 句（其餘可展開）`, 'toast-success');
+      toast(val === 0 ? '例句顯示：全部顯示' : `例句顯示：最多 ${val} 句`, 'toast-success');
     } catch (e) {
       toast('例句顯示設定儲存失敗: ' + e, 'toast-error');
     }

@@ -343,7 +343,7 @@ function onCardBodyClick(e) {
   if (_cardState && _cardState._swiped) { _cardState._swiped = false; return; }
   // TAPFLIP1: 點到「文字內容」只發音不翻面（bindSpeakClick 委派處理並 stopPropagation）；
   // 只有點到卡片空白處（body 背景／face padding／提示列）才翻面
-  if (e.target.closest('.card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .card-panel-tags, .split-badge, .chip-accent, .chip-subtle, .ex-toggle, .wimg-slot-wrap')) return;
+  if (e.target.closest('.card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .card-panel-tags, .split-badge, .chip-accent, .chip-subtle, .wimg-slot-wrap')) return;
   flipCardBody(document.getElementById('cardPreviewBody'));
 }
 

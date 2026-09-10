@@ -19,9 +19,9 @@ const tts = readFileSync('src/lib/tts.js', 'utf8');
 
 console.log('[T1] 翻面 guard');
 chk('browser: onCardBodyClick(e) 收 event', /function onCardBodyClick\(e\)/.test(browser));
-chk('browser: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.ex-toggle, \.wimg-slot-wrap'\)/.test(browser));
+chk('browser: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.wimg-slot-wrap'\)/.test(browser));
 chk('deck: onDeckCardBodyClick(e) 收 event', /function onDeckCardBodyClick\(e\)/.test(deck));
-chk('deck: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.ex-toggle, \.wimg-slot-wrap'\)/.test(deck));
+chk('deck: guard closest 檔文字', /e\.target\.closest\('\.card-panel-word, \.card-panel-pron, \.card-panel-def, \.card-panel-example, \.card-panel-desc, \.card-panel-tags, \.split-badge, \.chip-accent, \.chip-subtle, \.wimg-slot-wrap'\)/.test(deck));
 chk('browser: guard 後才 flipCardBody', /TAPFLIP1[\s\S]*?flipCardBody\(document\.getElementById\('cardPreviewBody'\)\)/.test(browser));
 chk('deck: guard 後才 flipDeckCardBody', /TAPFLIP1[\s\S]*?flipDeckCardBody\(document\.getElementById\('deckCardPreviewBody'\)\)/.test(deck));
 
@@ -39,7 +39,7 @@ for (const c of ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.ca
 
 console.log('[T4] guard ⊆ 可發音 ∪ 純功能');
 // guard 擋的元素: 文字類必須 tts 吃得到; button/image 類是純功能（不翻面不發音為正確行為）
-const guardClasses = ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.card-panel-tags', '.split-badge', '.chip-accent', '.chip-subtle', '.ex-toggle', '.wimg-slot-wrap'];
+const guardClasses = ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.card-panel-tags', '.split-badge', '.chip-accent', '.chip-subtle', '.wimg-slot-wrap'];
 const ttsSet = new Set(sel.split(', '));
 for (const g of guardClasses) {
   const speakable = ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.split-badge', '.chip-accent', '.chip-subtle'].includes(g);
@@ -47,8 +47,14 @@ for (const g of guardClasses) {
   else chk(`${g} 純功能（guard 檔翻面；tts 不誤收）`, !ttsSet.has(g));
 }
 
-// 反向驗證
+// 反向驗證：HEAD 已含特徵（已 commit）→ 跳過；僅工作區有未 commit 改動時 stash 驗證
 console.log('[NEG] 反向驗證 (stash 後應紅)');
+let headHas;
+try { headHas = /TAPFLIP1/.test(execSync('git show HEAD:src/pages/browser.js', { encoding: 'utf8' })); }
+catch { headHas = false; }
+if (headHas) {
+  console.log('  NEG-SKIP: 特徵已在 HEAD（已 commit），stash 拔 HEAD 不可能 — 跳過');
+} else {
 execSync('git stash push -q -- src/pages/browser.js src/pages/deck-browser.js src/lib/tts.js');
 let negFail = 0;
 try {
@@ -64,6 +70,7 @@ try {
 }
 if (negFail === 0) { pass++; console.log('  NEG-OK: stash 後 guard/綁定全滅 (harness 有效)'); }
 else fail++;
+}
 
 console.log(`\nTAPFLIP1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);
