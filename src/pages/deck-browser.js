@@ -76,7 +76,7 @@ export function render(s) {
         <input id="deckBrowserSearch" type="text" placeholder="搜尋單字、定義、例句...（Enter 執行）" value="${escapeAttr(_query)}">
       </div>
       <button class="btn-ghost btn-sm" id="deckSearchBtn" title="執行搜尋">${icon('search')} 搜尋</button>
-      <button class="btn-ghost btn-sm" id="deckBrowserScopeToggle" style="font-size:11px;border:1px solid var(--border);padding:5px 10px">${_searchScope === 'worddef' ? '單字+定義' : '全部欄位'}</button>
+      <button class="btn-ghost btn-sm" id="deckBrowserScopeToggle" style="font-size:11px;border:1px solid var(--border);padding:5px 10px;min-width:10ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換搜尋範圍">${_searchScope === 'worddef' ? '單字+定義' : '全部欄位'}</button>
       <select id="deckBrowserTagFilter" class="form-input" style="max-width:170px">
         <option value="">標籤：全部</option>
         <optgroup label="系統標籤">
@@ -86,9 +86,9 @@ export function render(s) {
         ${(s.state.tags || []).map(t => `<option value="${escapeAttr(t.name)}" ${_tagFilter === t.name ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
         </optgroup>
       </select>
-      <button class="btn-ghost btn-sm" id="deckBrowserSortToggle" style="font-size:11px">${_sortRandom ? '隨機' : 'A-Z'}</button>
+      <button class="btn-ghost btn-sm" id="deckBrowserSortToggle" style="font-size:11px;min-width:6ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換排序">${_sortRandom ? '隨機' : 'A-Z'}</button>
       ${_sortRandom ? `<input id="deckBrowserSeed" type="text" placeholder="seed" value="${escapeAttr(_sortSeed)}" style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;font-family:var(--mono)">` : ''}
-      <button class="btn-ghost btn-sm ${_selectMode ? 'selected' : ''}" id="deckBrowserSelectToggle" style="font-size:11px">${icon('check')} ${_selectMode ? '取消選擇' : '選擇'}</button>
+      <button class="btn-ghost btn-sm ${_selectMode ? 'selected' : ''}" id="deckBrowserSelectToggle" style="font-size:11px;min-width:10ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換選擇模式">${icon('check')} ${_selectMode ? '取消選擇' : '選擇'}</button>
       <button class="btn-primary btn-sm" id="deckBrowserAdd">${icon('plus')} 新增</button>
     </div>
 

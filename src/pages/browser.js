@@ -76,7 +76,7 @@ export function render(s) {
         <input id="browserSearch" type="text" placeholder="搜尋單字、定義、例句...（Enter 執行）" value="${escapeAttr(_query)}">
       </div>
       <button class="btn-ghost btn-sm" id="browserSearchBtn" title="執行搜尋">${icon('search')} 搜尋</button>
-      <button class="btn-ghost btn-sm" id="browserScopeToggle" style="font-size:11px;border:1px solid var(--border);padding:5px 10px">${_searchScope === 'worddef' ? '單字+定義' : '全部欄位'}</button>
+      <button class="btn-ghost btn-sm" id="browserScopeToggle" style="font-size:11px;border:1px solid var(--border);padding:5px 10px;min-width:10ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換搜尋範圍">${_searchScope === 'worddef' ? '單字+定義' : '全部欄位'}</button>
        <div class="cs-wrap" style="position:relative;max-width:170px" id="browserTagDropdown">
          <button class="cs-trigger" type="button" id="browserTagTrigger" style="display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:12px;cursor:pointer;width:100%;white-space:nowrap;overflow:hidden">
            <span id="browserTagLabel">${_tagFilter || '標籤：全部'}</span>
@@ -89,7 +89,7 @@ export function render(s) {
            ${(s.state.tags || []).length > 0 ? `<div style="padding:4px 12px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase">自訂標籤</div>` + (s.state.tags || []).map(t => `<div class="cs-option" data-tag-value="${escapeAttr(t.name)}" style="padding:8px 12px;cursor:pointer;font-size:12px;color:var(--text-primary)">${escapeHtml(t.name)}</div>`).join('') : ''}
          </div>
        </div>
-      <button class="btn-ghost btn-sm" id="browserSortToggle" style="font-size:11px">${_sortRandom ? '隨機' : 'A-Z'}</button>
+      <button class="btn-ghost btn-sm" id="browserSortToggle" style="font-size:11px;min-width:6ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換排序">${_sortRandom ? '隨機' : 'A-Z'}</button>
       ${_sortRandom ? `<input id="browserSeed" type="text" placeholder="seed" value="${escapeAttr(_sortSeed)}" style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;font-family:var(--mono)">` : ''}
       <button class="btn-primary btn-sm" id="browserAddWord">${icon('plus')} 新增</button>
     </div>
