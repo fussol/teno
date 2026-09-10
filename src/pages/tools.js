@@ -5,6 +5,12 @@ import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
 // OCR token 白名單（計畫 v1.3 §5，與 store.importOcrText 端同一正則）
 const _OCR_TOKEN_RE = /^[a-z][a-z'-]{1,30}$/i;
 
+// G-XSS6: 本地 escape（全檔原零設施；體檢 issues 列表插使用者字串）
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 export function render(s) {
   const tasks = s.state.backgroundTasks || [];
   const running = tasks.filter(t => t.status === 'running');
@@ -462,18 +468,18 @@ export function onMount(s) {
     for (const w of words) {
       const lower = w.word?.toLowerCase().trim();
       if (!lower) continue;
-      if (seen.has(lower)) issues.push(`${icon('info')} 重複: 「${lower}」(${seen.get(lower)} / ${w.id})`);
+      if (seen.has(lower)) issues.push(`${icon('info')} 重複: 「${esc(lower)}」(${esc(seen.get(lower))} / ${esc(w.id)})`);
       seen.set(lower, w.id);
     }
     const noDef = words.filter(w => !w.definition || w.definition.trim() === '');
     if (noDef.length > 0) {
       issues.push(`${icon('edit')} 缺少定義: ${noDef.length} 詞`);
-      noDef.forEach(w => issues.push(`<span style="padding-left:1.5em;font-size:11px;color:var(--text-tertiary)">${w.word}</span>`));
+      noDef.forEach(w => issues.push(`<span style="padding-left:1.5em;font-size:11px;color:var(--text-tertiary)">${esc(w.word)}</span>`));
     }
     const noPos = words.filter(w => !w.pos);
     if (noPos.length > 0) {
       issues.push(`${icon('hash')} 缺少詞性: ${noPos.length} 詞`);
-      noPos.forEach(w => issues.push(`<span style="padding-left:1.5em;font-size:11px;color:var(--text-tertiary)">${w.word}</span>`));
+      noPos.forEach(w => issues.push(`<span style="padding-left:1.5em;font-size:11px;color:var(--text-tertiary)">${esc(w.word)}</span>`));
     }
     container.style.display = 'block';
     if (issues.length === 0) {
