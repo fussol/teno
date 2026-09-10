@@ -602,7 +602,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .btn:active{transform:scale(.97)}
 .btn-primary{
   display:inline-flex;align-items:center;gap:var(--s1);padding:9px var(--s6);
-  border-radius:var(--r-full);border:none;
+  border-radius:var(--r-full);border:none;white-space:nowrap; /* G-SIZE1: 補 nowrap（.btn 有，主鈕漏抄） */
   background:var(--accent);
   color:var(--accent-on);font-size:13px;font-weight:700;transition:background-color var(--t-fast),color var(--t-fast),border-color var(--t-fast),opacity var(--t-fast),transform var(--t-fast),box-shadow var(--t-fast);
 }
