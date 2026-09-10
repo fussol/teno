@@ -629,11 +629,20 @@ fn pack_db_container(app_dir: &std::path::Path, include_log: bool) -> Result<Vec
     } else { Vec::new() };
     let mut out = CONTAINER_MAGIC.to_vec();
     out.push(1u8);
-    out.extend_from_slice(&(teno.len() as u32).to_le_bytes());
+    // F-PACK1: 段長經 try-U32 守門（舊碼 `as u32` 4GB+ 靜默截斷→損壞容器）。
+    out.extend_from_slice(&container_len_prefix(teno.len(), "teno.db")?);
     out.extend_from_slice(&teno);
-    out.extend_from_slice(&(log.len() as u32).to_le_bytes());
+    out.extend_from_slice(&container_len_prefix(log.len(), "app-log.db")?);
     out.extend_from_slice(&log);
     Ok(out)
+}
+
+/// F-PACK1: 容器 v1 長度欄為 u32（格式鎖死；放大即換格式斷相容）。
+/// 超限寧可拒絕打包，不寫「解不回」的壞檔。pure fn，邊界可測。
+fn container_len_prefix(len: usize, what: &str) -> Result<[u8; 4], String> {
+    u32::try_from(len)
+        .map(|v| v.to_le_bytes())
+        .map_err(|_| format!("{what} 超過 4GB（{len} bytes），容器 v1 長度欄裝不下，拒絕打包以防損壞備份"))
 }
 
 fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -2402,6 +2411,22 @@ mod container_tests {
         assert!(unpack_db_container(b"TENOC\x01\x00").is_err());
 
         let _ = std::fs::remove_dir_all(&app_dir);
+    }
+
+    /// F-PACK1: 長度欄邊界——u32::MAX 可過，+1 必拒且報段名，不再靜默截斷。
+    #[test]
+    fn f_pack1_len_prefix_gate() {
+        assert_eq!(container_len_prefix(0, "teno.db").unwrap(), 0u32.to_le_bytes());
+        assert_eq!(
+            container_len_prefix(u32::MAX as usize, "teno.db").unwrap(),
+            u32::MAX.to_le_bytes()
+        );
+        let e = container_len_prefix(u32::MAX as usize + 1, "teno.db");
+        assert!(e.is_err());
+        assert!(e.unwrap_err().contains("teno.db"), "拒訊息須報段名");
+        let e2 = container_len_prefix(usize::MAX, "app-log.db");
+        assert!(e2.is_err());
+        assert!(e2.unwrap_err().contains("app-log.db"));
     }
 
     /// D16: 入口嚴格三守門（version 必為 1／log 欄必在／trailing 必拒）
