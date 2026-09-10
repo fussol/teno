@@ -309,6 +309,12 @@ export function createStore() {
             backupKeepMax: await db.getSetting('backupKeepMax'),
             blacklist: await db.getSetting('blacklist'),
             ocrCambridgeVerify: await db.getSetting('ocrCambridgeVerify'),
+            // MWKEYS1: loadAll 漏讀五鍵——hydrate 端有消費、上游沒餵 → 重啟後恆空
+            mwDictKey: await db.getSetting('mwDictKey'),
+            mwThesKey: await db.getSetting('mwThesKey'),
+            graylist: await db.getSetting('graylist'),
+            ocrMode: await db.getSetting('ocrMode'),
+            ocrRestoreModel: await db.getSetting('ocrRestoreModel'),
             uiHints: await db.getSetting('uiHints'),
           };
           // Android：以系統實際 enabled 的 alias 為準（DB 可能因 crash 沒寫到）
