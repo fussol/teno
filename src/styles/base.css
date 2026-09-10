@@ -530,6 +530,11 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   padding:5px 13px;border-radius:var(--r-full);border:1px solid var(--border);
   font-size:12px;color:var(--text-secondary);cursor:pointer;transition:background-color var(--t-fast),color var(--t-fast),border-color var(--t-fast),opacity var(--t-fast),transform var(--t-fast),box-shadow var(--t-fast);
   display:flex;align-items:center;gap:var(--s1);font-weight:600;flex-shrink:0;
+  white-space:nowrap; /* G-SIZE2: chip 內不換行（窄屏不再 1 行↔2 行跳高） */
+}
+/* G-SIZE2: count 數字等寬＋保底寬（0→N／9→100 不跳寬，每次刷新不重播） */
+.exam-deck-chip > span:last-child{
+  display:inline-block;min-width:3ch;text-align:right;font-variant-numeric:tabular-nums;
 }
 .exam-deck-chip:hover{border-color:var(--border-strong);color:var(--text-primary);background:var(--bg-elevated)}
 .exam-deck-chip.selected{border-color:var(--accent);color:var(--accent);background:var(--accent-container)}
