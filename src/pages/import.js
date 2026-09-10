@@ -915,16 +915,24 @@ async function importApkgImages(s, res, wordRowIdx) {
     return;
   }
   const eff = effectiveApkgFields();
-  const jobs = [];
+  // D-IMG1: 兩處 O(n·m) 改索引＋序列 IPC 改 CON=5 worker-pool（tools.js:609 前例）。
+  // (1) id→word 一次建 Map（原逐 addedId 全表 find）。
+  const byId = new Map((s.state.words || []).map(w => [w.id, w]));
+  // (2) cell 按 row 建索引（原逐列全表掃 _cellImages）；欄開關在此刻結算。
+  const cellsByRow = new Map();
   let colSkipped = 0;
+  for (const c of (_cellImages || [])) {
+    if (!eff[c.col]) { colSkipped += (c.files || []).length; continue; }
+    if (!cellsByRow.has(c.row)) cellsByRow.set(c.row, []);
+    cellsByRow.get(c.row).push(c);
+  }
+  const jobs = [];
   for (const id of (res.addedIds || [])) {
-    const w = s.state.words.find(x => x.id === id);
+    const w = byId.get(id);
     if (!w) continue;
     const ri = wordRowIdx.get((w.word || '').toLowerCase());
     if (ri == null) continue;
-    for (const c of (_cellImages || [])) {
-      if (c.row !== ri) continue;
-      if (!eff[c.col]) { colSkipped += (c.files || []).length; continue; }
+    for (const c of (cellsByRow.get(ri) || [])) {
       for (const f of (c.files || [])) jobs.push({ wordId: id, file: f });
     }
   }
@@ -944,17 +952,24 @@ async function importApkgImages(s, res, wordRowIdx) {
     if (bar && jobs.length) bar.style.width = Math.round(((ok + skipped) / jobs.length) * 100) + '%';
   };
   paintImg();
-  for (const { wordId, file } of jobs) {
-    try {
-      const dataUrl = await getApkgMedia(file);
-      await addWordImage(wordId, file, dataUrl);
-      ok++;
-    } catch (e) {
-      console.warn('[import] apkg image skip:', file, e);
-      skipped++;
+  // D-IMG1 (3): 取圖＋寫庫 CON=5 併發（tools.js:611 同形 worker-pool；
+  // 單線程交錯 await，計數器無競態；單張失敗照舊記 skipped 不整批掛）。
+  const CON = 5;
+  const queue = [...jobs];
+  await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const { wordId, file } = queue.shift();
+      try {
+        const dataUrl = await getApkgMedia(file);
+        await addWordImage(wordId, file, dataUrl);
+        ok++;
+      } catch (e) {
+        console.warn('[import] apkg image skip:', file, e);
+        skipped++;
+      }
+      paintImg();
     }
-    paintImg();
-  }
+  }));
   toast(`圖片 ${ok} 張${skipped ? `、跳過 ${skipped} 張` : ''}${colSkipped ? `（關閉欄 ${colSkipped} 張未抓）` : ''}`, ok ? 'toast-success' : '');
 }
 
