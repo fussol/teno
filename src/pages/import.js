@@ -3,7 +3,7 @@ import { toast } from '../lib/toast.js';
 import { scrapeQuizlet, inspectApkgDialog, getApkgMedia } from '../lib/api.js';
 import { isMobile } from '../lib/platform.js';
 import {
-  parseCSVTable, parseAnkiTSV, mapWords,
+  parseCSVTable, parseAnkiTSV, mapWords, hasHeaderRow,
   resolveField, CANONICAL_FIELDS, FIELD_LABELS,
 } from '../core/import.js';
 
@@ -736,9 +736,21 @@ async function handleFile(s, file) {
         _renderInPlace(s);
         return;
       }
+      // D-TSV1: 無標頭偵測 — 首列無一格能 resolve 即為資料列，不可吃掉；
+      // 無標頭時 headers 取位置回退標籤，全部列入 rows。
+      const headered = hasHeaderRow(rows[0]);
+      const dataRows = (headered ? rows.slice(1) : rows)
+        .filter(r => r.some(c => String(c).trim() !== ''));
+      if (dataRows.length === 0) {
+        toast(headered ? 'TSV 為空或格式錯誤' : 'TSV 只有標頭、無資料列', 'toast-error');
+        _fileName = headered ? '' : file.name;
+        _table = null;
+        _renderInPlace(s);
+        return;
+      }
       _table = {
-        headers: rows[0],
-        rows: rows.slice(1).filter(r => r.some(c => String(c).trim() !== '')),
+        headers: headered ? rows[0] : rows[0].map((_, i) => `欄${i + 1}`),
+        rows: dataRows,
       };
       // D12：Anki TSV 標準標頭（Front/Back/Notes 等）不在 FIELD_MAP → resolveField 全 null，
       // 列整欄靜默丟失。用位置式回退（mapAnkiRows 語意）：col0→word、col1→definition、col2→description。
@@ -760,8 +772,17 @@ async function handleFile(s, file) {
         _renderInPlace(s);
         return;
       }
-      _table = table;
-      _fields = _table.headers.map(h => resolveField(h));
+      // D-CSV1（D-TSV1 同族）: 無標頭偵測 — 首列無一格能 resolve 即為
+      // 資料列；headers 取位置回退標籤，首列併回 rows。有標頭時維持
+      // 原語意（resolveField only），不擴大位置回退。
+      if (!hasHeaderRow(table.headers)) {
+        table = { headers: table.headers.map((_, i) => `欄${i + 1}`), rows: [table.headers, ...table.rows] };
+        _table = table;
+        _fields = _table.headers.map((h, i) => (i === 0 ? 'word' : i === 1 ? 'definition' : i === 2 ? 'description' : null));
+      } else {
+        _table = table;
+        _fields = _table.headers.map(h => resolveField(h));
+      }
     }
     _phase = 'ready';
     toast(`已載入 ${_table.rows.length} 列、${_table.headers.length} 欄`, '');

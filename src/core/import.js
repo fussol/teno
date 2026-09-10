@@ -165,6 +165,24 @@ export function resolveField(raw) {
 }
 
 /**
+ * D-TSV1/D-CSV1: 標頭偵測 — 首列任一格能 resolve（FIELD_MAP／Anki
+ * Front-Back-Notes 模式）即視為有標頭；全列無一命中＝無標頭資料列，
+ * 不可吃掉。Anki 模式與 import.js 位置回退同形（front→word 等）。
+ * @param {string[]} cells
+ * @returns {boolean}
+ */
+export function hasHeaderRow(cells) {
+  if (!Array.isArray(cells) || !cells.length) return false;
+  return cells.some((c) => {
+    const h = String(c || '').trim();
+    if (!h) return false;
+    if (resolveField(h)) return true;
+    if (/^fro?nt$/i.test(h) || /^back$/i.test(h) || /note/i.test(h)) return true;
+    return false;
+  });
+}
+
+/**
  * Parse CSV text into a raw table: header row + data rows.
  * @param {string} text
  * @returns {{ headers: string[], rows: string[][] }}
