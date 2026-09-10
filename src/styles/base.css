@@ -608,6 +608,15 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 }
 .btn-primary:hover{box-shadow:0 6px 20px var(--accent-glow);transform:translateY(-1px)}
 .btn-primary:active{transform:translateY(0)}
+/* G-DIS1: 主按鈕 disabled 視覺（原全缺；僅 .exam-opt／.option-btn 有禁態）。
+   禁態降透明＋鎖 cursor＋禁 hover 位移，用戶不再對灰不掉的鈕反覆點擊。 */
+.btn:disabled,.btn-primary:disabled,.btn-secondary:disabled,.btn-tonal:disabled,.btn-danger:disabled{
+  opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;
+}
+.btn:disabled:hover,.btn-primary:disabled:hover,.btn-secondary:disabled:hover,.btn-tonal:disabled:hover,.btn-danger:disabled:hover{
+  box-shadow:none;transform:none;background:var(--bg-surface);color:var(--text-secondary);border-color:var(--border);
+}
+.btn-primary:disabled:hover{background:var(--accent);color:var(--accent-on);border:none;}
 .btn-sm{padding:5px var(--s3);font-size:12px;border-radius:var(--r-full)}
 /* G-BTN1: 次按鈕＋超小尺寸主定義（原全缺；settings/simulator 裸 btn-sm 即滅） */
 .btn-secondary{
