@@ -125,7 +125,9 @@ export function pieChart(data, opts = {}) {
   const cy = height / 2;
   const r = Math.min(cx, cy) - 20;
   const total = data.reduce((s, d) => s + d.value, 0);
-  if (total === 0) return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;max-height:${height}px"><text x="${cx}" y="${cy}" text-anchor="middle" fill="rgba(128,120,153,0.5)" font-size="12">No data</text></svg>`;
+  // G-I18N1: 空態繁中＋跟主題色（原 `No data`＋硬編碼 rgba，與全繁中 UI 斷裂；
+  // fill attribute 吃不到 var()，改 style 寫法；OCR 區已全中文，此處為唯一英文殘留）。
+  if (total === 0) return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;max-height:${height}px"><text x="${cx}" y="${cy}" text-anchor="middle" style="fill:var(--text-disabled)" font-size="12">暫無資料</text></svg>`;
 
   let angle = -Math.PI / 2;
   const slices = data.filter(d => d.value > 0).map(d => {
@@ -165,7 +167,7 @@ export function pieChart(data, opts = {}) {
     return `<rect x="${x}" y="${y - 6}" width="8" height="8" rx="2" fill="${d.color}" opacity="0.85"/>
       <text x="${x + 11}" y="${y + 1}" font-size="9" fill="rgba(128,120,153,0.9)">${escapeXml(d.label)} (${d.value})</text>`;
   }).join('') + (legendItems.length > maxLegend
-    ? `<text x="${8 + maxLegend * (width / maxLegend)}" y="${height - 10 + 1}" font-size="9" fill="rgba(128,120,153,0.6)">+${legendItems.length - maxLegend} more</text>`
+    ? `<text x="${8 + maxLegend * (width / maxLegend)}" y="${height - 10 + 1}" font-size="9" fill="rgba(128,120,153,0.6)">+${legendItems.length - maxLegend} 項</text>`
     : '');
 
   return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:auto;max-height:${height}px;display:block">
