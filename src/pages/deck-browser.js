@@ -2283,14 +2283,23 @@ function cssEscape(str) {
   return String(str ?? '').replace(/["\\]/g, '\\$&');
 }
 
+/** ENGINE2 共用：編輯器 sparkle 的韋氏分支一律走 fillWordFields（單次 fetch 多欄；LLM 兜底不動） */
+async function _engineMw(word, methods, existing = {}) {
+  const { fillWordFields } = await import('../lib/autofill-engine.js');
+  const { lookupMerriam } = await import('../lib/api.js');
+  const { merriamToFields } = await import('../lib/merriam.js');
+  return fillWordFields({ wordText: word, methods, existing, overwrite: false,
+    fetchers: { getMw: async () => merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word) },
+    onStat: () => {} });
+}
 async function llmFillRelated(inputId, word) {
-  // ETERNAL1: 韋氏優先（synonym＋related union 取 12；有 key 才跑，有料即返）
+  // ENGINE2: 韋氏優先走共用引擎（synonym＋related union 取 12；有 key 才跑，有料即返）
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
-      const raw = await lookupMerriam(word, dk, tk);
-      const f = merriamToFields(JSON.parse(raw), word);
-      const rel = [...new Set([...String(f.synonym || '').split(',').map(x => x.trim()).filter(Boolean), ...(f.related || [])])].slice(0, 12);
+      // ENGINE2: 相關詞走共用引擎
+      const r = await _engineMw(word, { related: 'merriam' });
+      const rel = r.patch?.related || [];
       if (rel.length) {
         const chipsHost = document.getElementById(inputId + 'Chips');
         if (chipsHost && chipsHost._tagInputApi) chipsHost._tagInputApi.setVal(rel.join(', '));
@@ -2325,15 +2334,16 @@ async function llmFillRelated(inputId, word) {
 }
 
 async function llmFillForms(inputId, word) {
-  // MWFORMS1: 韋氏優先（有 key 走 inflected forms；無 key/查無 才掉 LLM）
+  // ENGINE2: 韋氏優先走共用引擎（有 key 走 inflected forms；無 key/查無 才掉 LLM）
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
-      const raw = await lookupMerriam(word, dk, tk);
-      const f = merriamToFields(JSON.parse(raw), word);
-      if (f?.forms?.trim()) {
+      // ENGINE2: 詞形走共用引擎
+      const _fr = await _engineMw(word, { forms: 'merriam' });
+      const _fv = (_fr.patch?.forms || []).join(', ');
+      if (_fv) {
         const chipsHost = document.getElementById(inputId + 'Chips');
-        const val = f.forms;
+        const val = _fv;
         if (chipsHost && chipsHost._tagInputApi) chipsHost._tagInputApi.setVal(val);
         else document.getElementById(inputId).value = val;
         toast('已從韋氏補上詞形變化', 'toast-success');
@@ -2368,12 +2378,13 @@ async function llmFillForms(inputId, word) {
 /** LLM 填相似詞/反義詞/衍生物（autoFill 鏈用；只填空欄，尊重已填值）。
  *  prefix: 'deckAdd' | 'deckEdit'（modal 前綴） */
 async function llmFillSynAntDeriv(prefix, word) {
-  // ETERNAL1: 韋氏優先（同/反義吃 thesaurus；衍生吃 collegiate stems；只填空欄）
+  // ENGINE2: 韋氏優先走共用引擎（同/反義吃 thesaurus；衍生吃 collegiate stems；只填空欄由下方迴圈維持）
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
-      const raw = await lookupMerriam(word, dk, tk);
-      const f = merriamToFields(JSON.parse(raw), word);
+      // ENGINE2: 同／反／衍生走共用引擎
+      const _sr = await _engineMw(word, { syn: 'merriam', ant: 'merriam', derivative: 'merriam' });
+      const f = { synonym: _sr.patch?.synonym || '', antonym: _sr.patch?.antonym || '', derivative: _sr.patch?.derivative || '' };
       let n = 0;
       for (const [suffix, val] of [['Synonym', f.synonym], ['Antonym', f.antonym], ['Derivative', f.derivative]]) {
         if (!val) continue;
@@ -2426,12 +2437,14 @@ async function mwFillExtra(prefix, s, g, word) {
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
-      const raw = await lookupMerriam(word, dk, tk);
-      const f = merriamToFields(JSON.parse(raw), word);
-      if (f) {
+      // ENGINE2: 音節／字源／片語走共用引擎（單次 fetch；片語以空底取新句再走 ExampleAppend 追加通道）
+      const r = await _engineMw(word, { syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' },
+        { syllables: g(`${prefix}Syllables`), etymology: g(`${prefix}Etymology`), example: '', phrases: '' });
+      if (!r.aborted) {
+        const f = r.patch || {};
         if (f.syllables) s(`${prefix}Syllables`, f.syllables);
         if (f.etymology) s(`${prefix}Etymology`, f.etymology);
-        if (f.phrases) s(`${prefix}ExampleAppend`, f.phrases);
+        if (f.example) s(`${prefix}ExampleAppend`, f.example);
         return;
       }
     } catch (_) { /* 掉回 LLM */ }
@@ -2448,10 +2461,10 @@ async function mwFillPhrases(chipsHostId, word) {
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
   if (dk || tk) {
     try {
-      const raw = await lookupMerriam(word, dk, tk);
-      const f = merriamToFields(JSON.parse(raw), word);
-      if (f?.phrases?.trim()) {
-        api.setVal(mergeExamplePhrases(api.getVal(), f.phrases));
+      // ENGINE2: 片語走共用引擎（併入例句；去重語意由引擎維持）
+      const r = await _engineMw(word, { phrase: 'merriam' }, { example: api.getVal(), phrases: '' });
+      if (r.patch?.example) {
+        api.setVal(r.patch.example);
         toast('已從韋氏補上片語（併入例句）', 'toast-success');
         return;
       }

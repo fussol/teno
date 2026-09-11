@@ -61,11 +61,12 @@ const dk = readFileSync('src/pages/deck-browser.js', 'utf8');
 chk('parseStems 匯出', /export function parseStems/.test(mw));
 chk('collectSenseLists 存在', /function collectSenseLists/.test(mw));
 chk('merriamToFields 產 derivative', /out\.derivative = parseStems\(dict, word\)/.test(mw));
-chk('browser llmFillRelated 韋氏優先', /async function llmFillRelated[\s\S]{0,400}ETERNAL1/.test(br));
-chk('browser llmFillSynAntDeriv 韋氏優先', /async function llmFillSynAntDeriv[\s\S]{0,400}ETERNAL1/.test(br));
+const _win = (src, fn, look) => { const i = src.indexOf('async function ' + fn); return i >= 0 && src.slice(i, i + 800).includes(look); };
+chk('browser llmFillRelated 韋氏優先（ENGINE2 起走引擎）', _win(br, 'llmFillRelated', "_engineMw(word, { related"));
+chk('browser llmFillSynAntDeriv 韋氏優先（ENGINE2 起走引擎）', _win(br, 'llmFillSynAntDeriv', '_engineMw(word, { syn'));
 chk('browser 衍生寫 fDerivativeChips', /'fDerivatives', 'fDerivativeChips', f\.derivative/.test(br));
-chk('deck llmFillRelated 韋氏優先', /async function llmFillRelated[\s\S]{0,400}ETERNAL1/.test(dk));
-chk('deck llmFillSynAntDeriv 韋氏優先（prefix 版）', /async function llmFillSynAntDeriv\(prefix[\s\S]{0,500}ETERNAL1/.test(dk));
+chk('deck llmFillRelated 韋氏優先（ENGINE2 起走引擎）', _win(dk, 'llmFillRelated', "_engineMw(word, { related"));
+chk('deck llmFillSynAntDeriv 韋氏優先（prefix 版，ENGINE2 起走引擎）', _win(dk, 'llmFillSynAntDeriv', '_engineMw(word, { syn'));
 chk('兩檔 LLM fallback 保留', /fetchLLM\(`\$\{baseUrl\}\/api\/generate`, model,\s+`Return a JSON array of synonyms\/similar words/.test(br) && /Return a JSON array of word derivations/.test(dk));
 
 console.log('[NEG] 反向驗證');

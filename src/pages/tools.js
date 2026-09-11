@@ -1056,6 +1056,13 @@ export function onMount(s) {
     if (/timed out/.test(m)) return '韋氏請求逾時，請重試';
     return `韋氏查詢失敗：${m.slice(0, 80)}`;
   }
+  // ── ENGINE2：獨立卡韋氏單欄填充（八張卡共用 fillWordFields；計數／toast 語意由呼叫端維持）──
+  async function _mwFillOne(field, w, extra = {}) {
+    const { fillWordFields } = await import('../lib/autofill-engine.js');
+    const { getMw, ...rest } = extra;
+    return fillWordFields({ wordText: w.word, methods: { [field]: 'merriam' }, existing: w, overwrite: _ow(), ...rest,
+      fetchers: { getMw: getMw || (() => _mwLookup(w.word)) }, onStat: () => {} });
+  }
 
   async function genPosViaMerriam(s) {
     hideLlmRow();
@@ -1074,13 +1081,12 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const f = await _mwLookup(w.word);
-          if (f.suggest.length) { nosug++; fail++; }
-          else if (f.pos) {
-            const pos = normalizePos(f.pos);
-            if (pos) { await s.actions.editWord(w.id, { pos }); count++; }
-            else { fail++; }
-          } else { fail++; }
+          // ENGINE2: 詞性走共用引擎（suggest 照舊計 nosug，語意不變）
+          const r = await _mwFillOne('pos', w, { getMw: async () => { const f = await _mwLookup(w.word); if (f.suggest.length) throw new Error('suggest'); return f; } });
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.pos) { await s.actions.editWord(w.id, { pos: r.patch.pos }); count++; }
+          else if (/suggest/.test(r.errors?.pos || '')) { nosug++; fail++; }
+          else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
         s.actions.updateBackgroundTask(taskId, count + fail, words.length);
@@ -1113,13 +1119,11 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const f = await _mwLookup(w.word);
-          const fresh = String(f.example || '').split('\n').map(x => x.trim()).filter(Boolean);
-          const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
-          if (unique.length) {
-            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
-            await s.actions.editWord(w.id, { example: merged }); ok++;
-          } else { fail++; }
+          // ENGINE2: 例句走共用引擎（門檻語意由 threshold 參數沿用）
+          const r = await _mwFillOne('example', w, { threshold });
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.example) { await s.actions.editWord(w.id, { example: r.patch.example }); ok++; }
+          else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
         s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
@@ -1153,8 +1157,10 @@ export function onMount(s) {
       while (queue.length > 0) {
         const { w } = queue.shift();
         try {
-          const f = await _mwLookup(w.word);
-          if (f.pron) { await s.actions.editWord(w.id, { pron: `/${f.pron.replace(/^\/+|\/+$/g, '')}/` }); count++; }
+          // ENGINE2: 發音走共用引擎
+          const r = await _mwFillOne('pron', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.pron) { await s.actions.editWord(w.id, { pron: r.patch.pron }); count++; }
           else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
@@ -1197,13 +1203,10 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const { lookupMerriam } = await import('../lib/api.js');
-          const { parseThesaurusEntries } = await import('../lib/merriam.js');
-          const raw = await lookupMerriam(w.word, s.state.mwDictKey || '', s.state.mwThesKey || '');
-          const payload = JSON.parse(raw);
-          const t = parseThesaurusEntries(payload.thesaurus);
-          const rel = [...new Set([...t.synonyms, ...t.related])].slice(0, 12);
-          if (rel.length) { await s.actions.editWord(w.id, { related: rel }); count++; }
+          // ENGINE2: 相關詞走共用引擎（synonym 字串＋related union 取 12，與組合包／批量／編輯器一致）
+          const r = await _mwFillOne('related', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.related) { await s.actions.editWord(w.id, { related: r.patch.related }); count++; }
           else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
@@ -1284,12 +1287,11 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const f = await _mwLookup(w.word);
-          if (f?.forms?.trim()) {
-            const arr = [...new Set(f.forms.split(/,\s*/).map(x => x.trim()).filter(Boolean))];
-            if (arr.length) { await s.actions.editWord(w.id, { forms: arr }); count++; }
-            else fail++;
-          } else { fail++; }
+          // ENGINE2: 詞形走共用引擎
+          const r = await _mwFillOne('forms', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.forms) { await s.actions.editWord(w.id, { forms: r.patch.forms }); count++; }
+          else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
         s.actions.updateBackgroundTask(taskId, count + fail, noForms.length);
@@ -1476,16 +1478,10 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const { lookupMerriam } = await import('../lib/api.js');
-          const { parseThesaurusEntries } = await import('../lib/merriam.js');
-          const raw = await lookupMerriam(w.word, s.state.mwDictKey || '', s.state.mwThesKey || '');
-          const payload = JSON.parse(raw);
-          const t = parseThesaurusEntries(payload.thesaurus);
-          const fresh = [...new Set(t.synonyms)].slice(0, 12);
-          if (fresh.length) {
-            const val = _ow() ? fresh.join(', ') : _mergeComma(w.synonym, fresh);
-            await s.actions.editWord(w.id, { synonym: val }); count++;
-          }
+          // ENGINE2: 同義詞走共用引擎（thesaurus synonyms 前 12，合併語意沿用）
+          const r = await _mwFillOne('syn', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.synonym) { await s.actions.editWord(w.id, { synonym: r.patch.synonym }); count++; }
           else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
@@ -1567,16 +1563,10 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const { lookupMerriam } = await import('../lib/api.js');
-          const { parseThesaurusEntries } = await import('../lib/merriam.js');
-          const raw = await lookupMerriam(w.word, s.state.mwDictKey || '', s.state.mwThesKey || '');
-          const payload = JSON.parse(raw);
-          const t = parseThesaurusEntries(payload.thesaurus);
-          const fresh = [...new Set(t.antonyms)].slice(0, 12);
-          if (fresh.length) {
-            const val = _ow() ? fresh.join(', ') : _mergeComma(w.antonym, fresh);
-            await s.actions.editWord(w.id, { antonym: val }); count++;
-          }
+          // ENGINE2: 反義詞走共用引擎（thesaurus antonyms 前 12，合併語意沿用）
+          const r = await _mwFillOne('ant', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.antonym) { await s.actions.editWord(w.id, { antonym: r.patch.antonym }); count++; }
           else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
@@ -1658,18 +1648,11 @@ export function onMount(s) {
       while (queue.length > 0) {
         const [, w] = queue.shift();
         try {
-          const f = await _mwLookup(w.word);
-          if (f.suggest.length || !f.phrases.trim()) { fail++; }
-          else {
-            // 片語已併入例句：開＝例句留著、舊片語丟掉換新；關＝例句＋舊片語為底去重接續；寫回時 phrases 清空（遷移）
-            const fresh = f.phrases.split('\n').map(x => x.trim()).filter(Boolean);
-            const base = _ow() ? (w.example || '').trim() : mergeExamplePhrases(w.example, w.phrases);
-            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(base, fresh);
-            if (unique.length) {
-              const merged = [base, ...unique].filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { example: merged, phrases: '' }); ok++;
-            } else { fail++; }
-          }
+          // ENGINE2: 片語走共用引擎（併入例句＋phrases 清空，遷移語意沿用）
+          const r = await _mwFillOne('phrase', w);
+          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
+          if (r.patch?.example) { await s.actions.editWord(w.id, { example: r.patch.example, phrases: '' }); ok++; }
+          else { fail++; }
         } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
         await new Promise(r => setTimeout(r, 400));
         s.actions.updateBackgroundTask(taskId, ok + fail, words.length);

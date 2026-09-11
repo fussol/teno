@@ -138,10 +138,11 @@ export async function fillWordFields({
   const w = wordText;
   const ex = existing || {};
   const patch = {};
+  const errors = {};
   let aborted = false, abortError = null, usedRemote = false;
   const { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk } = fetchers;
   const need = (field) => methods[field] !== undefined;
-  const bump = (f, k) => { try { onStat(f, k); } catch (_) {} };
+  const bump = (f, k, e) => { if (k === 'fail' && e !== undefined) errors[f] = String(e?.message || e || ''); try { onStat(f, k); } catch (_) {} };
   const quota = (e) => {
     if (isQuotaError(e)) { aborted = true; abortError = e; return true; }
     return false;
@@ -180,7 +181,7 @@ export async function fillWordFields({
           if (toAdd.length) { patch.pos = [...cur, ...toAdd].filter(Boolean).join(', '); bump('pos', 'ok'); } else bump('pos', 'fail');
         }
       }
-    } catch (e) { bump('pos', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('pos', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 例句 ──
@@ -219,7 +220,7 @@ export async function fillWordFields({
           bump('example', 'ok');
         } else bump('example', 'fail');
       }
-    } catch (e) { bump('example', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('example', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 發音 ──
@@ -241,7 +242,7 @@ export async function fillWordFields({
         const pron = String(data.uk_ipa || data.us_ipa || '').trim();
         if (pron) { patch.pron = pron; bump('pron', 'ok'); } else bump('pron', 'fail');
       }
-    } catch (e) { bump('pron', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('pron', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 相關詞（merriam＝synonym＋related union 取 12；llm＝JSON；merriam+llm＝雙併，批量舊語意）──
@@ -265,7 +266,7 @@ export async function fillWordFields({
           if (arr?.length) { patch.related = arr; bump('related', 'ok'); } else bump('related', 'fail');
         }
       }
-    } catch (e) { bump('related', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('related', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 詞形 ──
@@ -285,7 +286,7 @@ export async function fillWordFields({
           if (arr?.length) { patch.forms = arr; bump('forms', 'ok'); } else bump('forms', 'fail');
         }
       }
-    } catch (e) { bump('forms', 'fail'); }
+    } catch (e) { bump('forms', 'fail', e); }
   }
 
   // ── 翻譯→definition ──
@@ -309,7 +310,7 @@ export async function fillWordFields({
         const text = zh.slice(0, 3).join('\n');
         if (text) { patch.definition = text; bump('trans', 'ok'); } else bump('trans', 'fail');
       }
-    } catch (e) { bump('trans', 'fail'); }
+    } catch (e) { bump('trans', 'fail', e); }
   }
 
   // ── 同義詞 ──
@@ -327,7 +328,7 @@ export async function fillWordFields({
           if (arr?.length) { patch.synonym = overwrite ? [...new Set(arr)].join(', ') : mergeComma(ex.synonym, arr); bump('syn', 'ok'); } else bump('syn', 'fail');
         }
       }
-    } catch (e) { bump('syn', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('syn', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 反義詞 ──
@@ -345,7 +346,7 @@ export async function fillWordFields({
           if (arr?.length) { patch.antonym = overwrite ? [...new Set(arr)].join(', ') : mergeComma(ex.antonym, arr); bump('ant', 'ok'); } else bump('ant', 'fail');
         }
       }
-    } catch (e) { bump('ant', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('ant', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 片語（併入例句；寫回時 phrases 清空，沿用遷移語意）──
@@ -373,7 +374,7 @@ export async function fillWordFields({
           if (arr?.length) putPhrase(arr); else bump('phrase', 'fail');
         }
       }
-    } catch (e) { bump('phrase', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('phrase', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 字源（韋氏固定；only Merriam provides these）──
@@ -381,7 +382,7 @@ export async function fillWordFields({
     try {
       const f = await mw();
       if (f.etymology?.trim()) { patch.etymology = f.etymology; bump('etymology', 'ok'); } else bump('etymology', 'fail');
-    } catch (e) { bump('etymology', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('etymology', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 音節（韋氏固定；only Merriam provides these）──
@@ -389,7 +390,7 @@ export async function fillWordFields({
     try {
       const f = await mw();
       if (f.syllables?.trim()) { patch.syllables = f.syllables; bump('syllables', 'ok'); } else bump('syllables', 'fail');
-    } catch (e) { bump('syllables', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('syllables', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 衍生（韋氏固定；組合包不用，批量用）──
@@ -397,9 +398,9 @@ export async function fillWordFields({
     try {
       const f = await mw();
       if (f.derivative?.trim()) { patch.derivative = f.derivative; bump('derivative', 'ok'); } else bump('derivative', 'fail');
-    } catch (e) { bump('derivative', 'fail'); if (quota(e)) return { patch: null, aborted, abortError, usedRemote }; }
+    } catch (e) { bump('derivative', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   if (usedRemote) await new Promise(r => setTimeout(r, 400));
-  return { patch, aborted, abortError, usedRemote };
+  return { patch, aborted, abortError, errors, usedRemote };
 }

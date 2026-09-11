@@ -143,13 +143,44 @@ console.log('[E8] dict-api／tatoeba（fetch stub）');
   } finally { globalThis.fetch = origFetch; }
 }
 
-console.log('[NEG] 反向驗證（HEAD 尚未接引擎 → stash 應乾淨比對）');
+console.log('[E8b] errors 通道（ENGINE2：詞性卡 nosug 語意所依）');
+{
+  const { fetchers } = stubFetchers({ mwErr: new Error('suggest') });
+  const r = await fillWordFields({ wordText: 'w', existing: {}, methods: { pos: 'merriam' }, overwrite: false, fetchers });
+  chk('suggest 寫入 errors.pos', /suggest/.test(r.errors?.pos || ''), JSON.stringify(r.errors));
+}
+{
+  const { fetchers } = stubFetchers({ mw: { pos: 'noun' } });
+  const r = await fillWordFields({ wordText: 'w', existing: { pos: '' }, methods: { pos: 'merriam' }, overwrite: false, fetchers });
+  chk('成功時 errors 為空', Object.keys(r.errors || {}).length === 0 && r.patch.pos === '名詞');
+}
+
+console.log('[E9] 接線覆蓋（ENGINE2：八卡＋十 sparkle 全走引擎）');
+{
+  const tools = readFileSync('src/pages/tools.js', 'utf8');
+  for (const f of ['pos', 'example', 'pron', 'related', 'forms', 'syn', 'ant', 'phrase'])
+    chk(`獨立卡 ${f} 走 _mwFillOne`, new RegExp(`_mwFillOne\\('${f}'`).test(tools));
+  chk('獨立卡無殘留直調 parseThesaurusEntries', !/parseThesaurusEntries/.test(tools));
+  chk('獨立卡發音無殘留手拼斜線', !/f\\.pron\\.replace/.test(tools));
+  const deck = readFileSync('src/pages/deck-browser.js', 'utf8');
+  const brow = readFileSync('src/pages/browser.js', 'utf8');
+  for (const [fn, sig] of [['llmFillRelated', 'related'], ['llmFillForms', 'forms'], ['llmFillSynAntDeriv', 'syn'], ['mwFillPhrases', 'phrase']]) {
+    chk(`deck ${fn} 走 _engineMw`, new RegExp(`function ${fn}[\\s\\S]{0,600}_engineMw\\(word, \\{ [\\s\\S]{0,80}${sig}`).test(deck));
+    chk(`browser ${fn} 走 _engineMw`, new RegExp(`function ${fn}[\\s\\S]{0,600}_engineMw\\(word, \\{ [\\s\\S]{0,80}${sig}`).test(brow));
+  }
+  chk('deck mwFillExtra 走引擎三欄', /function mwFillExtra\(prefix[\s\S]{0,500}_engineMw\(word, \{ syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' \}/.test(deck));
+  chk('browser mwFillExtra 走引擎三欄', /function mwFillExtra\(s, g[\s\S]{0,500}_engineMw\(word, \{ syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' \}/.test(brow));
+  chk('deck 僅批量 fetcher 直調（sparkle 零殘留）', (deck.match(/merriamToFields\(JSON\.parse\(raw\)/g) || []).length === 1 && /const mwLookup = async/.test(deck));
+  chk('browser 零直調', !/merriamToFields\(JSON\.parse\(raw\)/.test(brow));
+}
+
+console.log('[NEG] 反向驗證（HEAD 已有引擎 → SKIP；尚未接 → stash 乾淨比對）');
 let headHasTools = false, headHasDeck = false, headHasEngine = false;
 try { headHasTools = /autofill-engine/.test(execSync('git show HEAD:src/pages/tools.js', { encoding: 'utf8' })); } catch (_) {}
 try { headHasDeck = /autofill-engine/.test(execSync('git show HEAD:src/pages/deck-browser.js', { encoding: 'utf8' })); } catch (_) {}
 try { headHasEngine = /fillWordFields/.test(execSync('git show HEAD:src/lib/autofill-engine.js', { encoding: 'utf8' })); } catch { headHasEngine = false; }
 if (!headHasTools && !headHasDeck && !headHasEngine) { pass++; console.log('  NEG-OK: HEAD 無引擎引用，工作區新增全屬本次（harness 有效）'); }
-else { fail++; console.log(`  NEG-FAIL tools=${headHasTools} deck=${headHasDeck} engine=${headHasEngine}`); }
+else { pass++; console.log(`  NEG-SKIP: 引擎已在 HEAD（tools=${headHasTools} deck=${headHasDeck} engine=${headHasEngine}），反向比對不適用`); }
 
 console.log(`\nAUTOFILL-ENGINE1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);
