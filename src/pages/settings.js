@@ -550,7 +550,7 @@ function renderSettingsContent(s) {
             </div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Thesaurus key</span>
-              <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus key" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+              <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus 或 Intermediate Thesaurus key（自動相容）" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
             </div>
             <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
           </div>

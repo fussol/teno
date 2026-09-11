@@ -149,7 +149,8 @@ export function parseDictionaryEntries(arr) {
       date: typeof e.date === 'string' ? e.date.replace(/\{[^}]*\}/g, '') : '',
       phrases,
       // MWFORMS1: 韋氏 inflected forms（e.ins[].if = 詞形變化字串）——變化欄位唯一來源
-      forms: Array.isArray(e.ins) ? [...new Set(e.ins.map(x => (x && typeof x.if === 'string') ? stripMwTokens(x.if) : '').filter(Boolean))] : [],
+      // GROSSFIX: if 內含音節星號（live gross:2 回 gross*ing/gross*es）→ 先去 * 再清 token
+      forms: Array.isArray(e.ins) ? [...new Set(e.ins.map(x => (x && typeof x.if === 'string') ? stripMwTokens(x.if).replace(/\*/g, '').replace(/·+/g, '').trim() : '').filter(Boolean))] : [],
     });
   }
   return { entries, suggest: [] };
@@ -219,7 +220,14 @@ export function merriamToFields(payload, word) {
     out.etymology = [pick.et, pick.date ? `首次使用：${pick.date}` : ''].filter(Boolean).join('\n');
     out.syllables = pick.syllables || '';
     out.phrases = pick.phrases.map(p => (p.def ? `${p.phrase} — ${p.def}` : p.phrase)).join('\n');
-    out.forms = (pick.forms || []).join(', ');
+    // GROSSFIX: 詞形跨 homograph 合併（live gross: pick=gross:1 adj 無 ins，
+    // 但 gross:2 verb 有 grossed/grossing/grosses）→ 同詞幹全條目 union
+    const formSet = new Set(pick.forms || []);
+    for (const e of entries) {
+      if (String(e.id).split(':')[0].toLowerCase() !== norm) continue;
+      for (const x of e.forms || []) formSet.add(x);
+    }
+    out.forms = [...formSet].join(', ');
   }
   const t = parseThesaurusEntries(thes);
   out.synonym = t.synonyms.join(', ');

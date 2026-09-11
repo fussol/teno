@@ -424,10 +424,24 @@ async fn lookup_merriam(word: String, dict_key: Option<String>, thes_key: Option
             }
         };
         let thesaurus = if tk.is_empty() { None } else {
-            match fetch_one(mw_url("thesaurus", &w, &tk)?) {
+            // GROSSFIX（2026-09-11 live 實錘）：使用者拿的是 Intermediate Thesaurus key
+            //（產品 ithesaurus），打 collegiate thesaurus 回純文字 "Invalid API key.
+            // Not subscribed for this reference." → JSON 解析失敗 → 整單 lookup 報錯，
+            // 同反義永遠吃不到。先試 thesaurus，失敗再試 ithesaurus（同 key）。
+            let v: Option<serde_json::Value> = match fetch_one(mw_url("thesaurus", &w, &tk)?) {
                 Ok(v) => v,
-                Err(e) => return Err(e),
-            }
+                Err(first_err) => {
+                    // 純文字 Invalid API key = 產品不對 → 轉試 ithesaurus；網路錯亦順手重試一次
+                    match mw_url("ithesaurus", &w, &tk) {
+                        Ok(url2) => match fetch_one(url2) {
+                            Ok(v2) => v2,
+                            Err(_) => return Err(first_err),
+                        },
+                        Err(_) => return Err(first_err),
+                    }
+                }
+            };
+            v
         };
         serde_json::to_string(&serde_json::json!({
             "word": w,

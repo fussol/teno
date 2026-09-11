@@ -47,7 +47,7 @@ console.log('[F1] MWFORMS1: parser 吃 e.ins');
 chk('parseDictionaryEntries 解析 ins', /forms: Array\.isArray\(e\.ins\)/.test(merriam));
 chk('stripMwTokens 清洗 if 值', /x\.if === 'string'[\s\S]{0,60}stripMwTokens\(x\.if\)/.test(merriam));
 chk('merriamToFields 產 forms 欄位', /forms: '',/.test(merriam));
-chk('merriamToFields 填 forms（join）', /out\.forms = \(pick\.forms \|\| \[\]\)\.join\(', '\)/.test(merriam));
+chk('merriamToFields 填 forms（跨 homograph 合併，GROSSFIX）', /out\.forms = \[\.\.\.formSet\]\.join\(', '\)/.test(merriam));
 
 console.log('[F2] MWFORMS1: tools 雙來源');
 chk('__genFormsMw 存在', /window\.__genFormsMw = async/.test(tools));
