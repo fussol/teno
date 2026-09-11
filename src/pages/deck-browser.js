@@ -91,6 +91,7 @@ export function render(s) {
       ${_sortRandom ? `<input id="deckBrowserSeed" type="text" placeholder="seed" value="${escapeAttr(_sortSeed)}" style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary);font-size:11px;font-family:var(--mono)">` : ''}
       <button class="btn-ghost btn-sm ${_selectMode ? 'selected' : ''}" id="deckBrowserSelectToggle" style="font-size:11px;min-width:10ch;text-align:center;white-space:nowrap;box-sizing:border-box" title="切換選擇模式">${icon('check')} ${_selectMode ? '取消選擇' : '選擇'}</button>
       <button class="btn-primary btn-sm" id="deckBrowserAdd">${icon('plus')} 新增</button>
+      <button class="btn btn-sm" id="deckBrowserBatch" title="批量新增（筆記本式一次多字）">${icon('layers')} 批量新增</button>
     </div>
 
     ${filtered.length === 0 ? `
@@ -295,6 +296,7 @@ export function onMount(s) {
   }
 
   document.getElementById('deckBrowserAdd')?.addEventListener('click', () => openAddModal(s));
+  document.getElementById('deckBrowserBatch')?.addEventListener('click', () => openBatchModal(s));
 
   document.getElementById('deckBrowserSelectToggle')?.addEventListener('click', () => {
     _selectMode = !_selectMode;
@@ -1995,42 +1997,44 @@ function renderInPlace(s) {
 function showDeckMergeModal(s, existing, newData) {
   const container = document.getElementById('pageContainer');
   if (!container) return;
+  // MERGEMOVE1（2026-09-11 使用者裁示）：合併彈窗重設計（同 modal 風格放大版）＋
+  // 點「保留舊的」後第二問是否搬到現在字本；衍生第二問同風格。
+  const targetDeck = _deckName || newData.deck || 'Default';
 
-  const info = (label, v) => {
-    const val = v || '';
-    return val ? `<div style="padding:4px 0;font-size:13px"><span style="color:var(--text-tertiary);margin-right:6px">${label}</span>${escapeHtml(val)}</div>` : '';
+  const fieldRow = (label, v, mono) => {
+    const val = String(v ?? '').trim();
+    if (!val) return '';
+    const disp = val.length > 160 ? val.slice(0, 160) + '…' : val;
+    return `<div style="padding:5px 0;font-size:13px;line-height:1.5;border-bottom:1px solid var(--border-subtle)"><span style="color:var(--text-tertiary);margin-right:8px;font-size:12px;min-width:36px;display:inline-block">${label}</span><span ${mono ? 'style="font-family:var(--mono)"' : ''}>${escapeHtml(disp)}</span></div>`;
   };
+  const deckBadge = (d) => `<span style="font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent)">${escapeHtml(d || 'Default')}</span>`;
+  const card = (title, d, accent) => `
+    <div style="background:var(--bg-base);border:1px solid ${accent ? 'var(--accent)' : 'var(--border)'};border-radius:var(--r-lg);padding:var(--s3);min-width:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px">
+        <span style="font-weight:700;color:var(--text-primary)">${title}</span>${deckBadge(d.deck)}
+      </div>
+      ${fieldRow('定義', d.definition)}
+      ${fieldRow('詞性', d.pos)}
+      ${fieldRow('發音', d.pron, true)}
+      ${fieldRow('例句', (d.example || '').split('\n')[0])}
+      ${(d.tags?.length || existing.tags?.length) && d === existing && existing.tags?.length ? `<div style="padding:5px 0;font-size:13px"><span style="color:var(--text-tertiary);margin-right:8px;font-size:12px">標籤</span>${escapeHtml(existing.tags.join(', '))}</div>` : ''}
+      ${d === newData && newData.tags?.length ? `<div style="padding:5px 0;font-size:13px"><span style="color:var(--text-tertiary);margin-right:8px;font-size:12px">標籤</span>${escapeHtml(newData.tags.join(', '))}</div>` : ''}
+    </div>`;
 
   const html = `
     <div class="modal-overlay open" id="deckMergeModal">
-      <div class="modal" style="max-width:560px">
+      <div class="modal" style="max-width:680px;width:94vw">
         <div class="modal-header">
           <div class="modal-title">${icon('info')} 單字已存在</div>
           <button class="modal-close" id="deckMergeClose">${icon('x')}</button>
         </div>
         <div style="padding:var(--s3)">
-          <div style="margin-bottom:var(--s3);font-size:13px;color:var(--text-secondary)">
-            「${escapeHtml(newData.word)}」已經在字庫中，要保留哪一個？
+          <div style="margin-bottom:var(--s3);font-size:14px;color:var(--text-primary)">
+            「<strong style="font-family:var(--mono)">${escapeHtml(newData.word)}</strong>」已經在字庫中，要保留哪一個？
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)">
-            <div style="background:var(--bg-secondary);border-radius:var(--r1);padding:var(--s2)">
-              <div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">現有的</div>
-              ${info('定義', existing.definition)}
-              ${info('詞性', existing.pos)}
-              ${info('發音', existing.pron)}
-              ${info('例句', existing.example)}
-              ${info('字本', existing.deck)}
-              ${existing.tags?.length ? `<div style="padding:4px 0;font-size:13px"><span style="color:var(--text-tertiary);margin-right:6px">標籤</span>${escapeHtml(existing.tags.join(', '))}</div>` : ''}
-            </div>
-            <div style="background:var(--bg-secondary);border-radius:var(--r1);padding:var(--s2)">
-              <div style="font-weight:600;margin-bottom:6px;color:var(--text-primary)">新的</div>
-              ${info('定義', newData.definition)}
-              ${info('詞性', newData.pos)}
-              ${info('發音', newData.pron)}
-              ${info('例句', newData.example)}
-              ${info('字本', newData.deck)}
-              ${newData.tags?.length ? `<div style="padding:4px 0;font-size:13px"><span style="color:var(--text-tertiary);margin-right:6px">標籤</span>${escapeHtml(newData.tags.join(', '))}</div>` : ''}
-            </div>
+            ${card('現有的', existing, false)}
+            ${card('這次新增的', newData, true)}
           </div>
         </div>
         <div class="modal-footer" style="justify-content:flex-end;gap:var(--s2)">
@@ -2051,8 +2055,13 @@ function showDeckMergeModal(s, existing, newData) {
 
   document.getElementById('deckMergeKeepOld')?.addEventListener('click', () => {
     closeMerge();
-    toast(`保留原有「${newData.word}」`, '');
-    renderInPlace(s);
+    // 第二問：舊字不在目標字本才問；已在就不打擾
+    if ((existing.deck || 'Default') === targetDeck) {
+      toast(`保留原有「${newData.word}」`, '');
+      renderInPlace(s);
+      return;
+    }
+    showDeckMoveModal(s, existing, targetDeck);
   });
 
   document.getElementById('deckMergeKeepNew')?.addEventListener('click', async () => {
@@ -2061,6 +2070,244 @@ function showDeckMergeModal(s, existing, newData) {
     toast(`已更新「${newData.word}」`, 'toast-success');
     renderInPlace(s);
   });
+}
+
+// MERGEMOVE1 衍生第二問（同 modal 風格）：保留舊的 → 問是否搬到現在字本
+function showDeckMoveModal(s, existing, targetDeck) {
+  const container = document.getElementById('pageContainer');
+  if (!container) return;
+  const html = `
+    <div class="modal-overlay open" id="deckMoveModal">
+      <div class="modal" style="max-width:520px;width:92vw">
+        <div class="modal-header">
+          <div class="modal-title">${icon('info')} 移到這個字本？</div>
+          <button class="modal-close" id="deckMoveClose">${icon('x')}</button>
+        </div>
+        <div style="padding:var(--s3);font-size:14px;line-height:1.7;color:var(--text-primary)">
+          「<strong style="font-family:var(--mono)">${escapeHtml(existing.word)}</strong>」
+          目前在 ${`<span style="font-size:12px;color:var(--text-secondary);background:var(--bg-base);padding:2px 10px;border-radius:100px;border:1px solid var(--border)">${escapeHtml(existing.deck || 'Default')}</span>`}
+          ，要搬到 ${`<span style="font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent)">${escapeHtml(targetDeck)}</span>`} 嗎？
+        </div>
+        <div class="modal-footer" style="justify-content:flex-end;gap:var(--s2)">
+          <button class="btn" id="deckMoveNo">否</button>
+          <button class="btn-primary" id="deckMoveYes">是，搬過去</button>
+        </div>
+      </div>
+    </div>`;
+  container.insertAdjacentHTML('beforeend', html);
+  const closeMove = () => document.getElementById('deckMoveModal')?.remove();
+  document.getElementById('deckMoveClose')?.addEventListener('click', () => { closeMove(); renderInPlace(s); });
+  document.getElementById('deckMoveNo')?.addEventListener('click', () => {
+    closeMove();
+    toast(`保留原有「${existing.word}」（留在「${existing.deck || 'Default'}」）`, '');
+    renderInPlace(s);
+  });
+  document.getElementById('deckMoveModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'deckMoveModal') { closeMove(); renderInPlace(s); }
+  });
+  document.getElementById('deckMoveYes')?.addEventListener('click', async () => {
+    await s.actions.editWord(existing.id, { deck: targetDeck });
+    closeMove();
+    toast(`已把「${existing.word}」搬到「${targetDeck}」`, 'toast-success');
+    renderInPlace(s);
+  });
+}
+
+// BATCHADD1（2026-09-11 使用者裁示）：字本瀏覽器專屬批量新增。
+// 筆記本式大輸入框（全螢幕級）一次多字 → 分出已存在／未存入 →
+// 已存在整批問搬移；未存入走背景任務逐字全欄位填（組合包同來源）再進現在字本。
+// 只有 deck-browser 有；組合大瀏覽器（browser.js）不加。
+async function openBatchModal(s) {
+  const { parseBatchInput, partitionBatch } = await import('../lib/batch-add.js');
+  const { normalizePos } = await import('../core/import.js');
+  const container = document.getElementById('pageContainer');
+  if (!container) return;
+  const decks = s.state.decks || [];
+  const curDeck = (_deckName && decks.some(d => d.name === _deckName)) ? _deckName : (_deckName || 'Default');
+  const deckOpts = decks.map(d =>
+    `<option value="${escapeAttr(d.name)}" ${d.name === curDeck ? 'selected' : ''}>${escapeHtml(d.name)}</option>`
+  ).join('') + (decks.some(d => d.name === curDeck) ? '' : `<option value="${escapeAttr(curDeck)}" selected>${escapeHtml(curDeck)}</option>`);
+
+  const html = `
+    <div class="modal-overlay open" id="deckBatchModal">
+      <div class="modal" style="max-width:920px;width:94vw;height:88vh;display:flex;flex-direction:column;padding:var(--s5)">
+        <div class="modal-header" style="flex:none">
+          <div class="modal-title">${icon('layers')} 批量新增</div>
+          <button class="modal-close" id="deckBatchClose">${icon('x')}</button>
+        </div>
+        <div style="display:flex;gap:var(--s2);align-items:center;margin:var(--s2) 0;flex:none;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-secondary)">目標字本</span>
+          <select class="form-input" id="deckBatchDeck" style="max-width:220px">${deckOpts}</select>
+          <span style="font-size:11px;color:var(--text-tertiary)">來源：跟組合包一樣（韋氏第一、劍橋第二；相關詞走 LLM）</span>
+        </div>
+        <textarea class="form-input" id="deckBatchInput" placeholder="像筆記本一樣一次貼很多字，用逗號或換行分開，例如：&#10;apply, rent, remember, pay, touch, torch" style="flex:1;min-height:30vh;resize:vertical;font-family:var(--mono);line-height:1.8;font-size:14px"></textarea>
+        <div style="display:flex;gap:var(--s2);align-items:center;margin:var(--s2) 0;flex:none;flex-wrap:wrap">
+          <button class="btn" id="deckBatchParse">${icon('search')} 分析</button>
+          <span id="deckBatchHint" style="font-size:12px;color:var(--text-tertiary)"></span>
+        </div>
+        <div id="deckBatchResult" style="flex:none;max-height:30vh;overflow-y:auto"></div>
+        <div class="modal-footer" style="flex:none">
+          <button class="btn" id="deckBatchCancel">取消</button>
+        </div>
+      </div>
+    </div>`;
+  container.insertAdjacentHTML('beforeend', html);
+
+  const close = () => document.getElementById('deckBatchModal')?.remove();
+  document.getElementById('deckBatchClose')?.addEventListener('click', close);
+  document.getElementById('deckBatchCancel')?.addEventListener('click', close);
+  document.getElementById('deckBatchModal')?.addEventListener('click', (e) => {
+    if (e.target.id === 'deckBatchModal') close();
+  });
+
+  let pending = null; // { existing:[], fresh:[], targetDeck }
+  const chip = (t, deck) => `<span style="display:inline-block;font-size:12px;background:var(--bg-base);border:1px solid var(--border);border-radius:100px;padding:2px 10px;margin:1px 3px;font-family:var(--mono)">${escapeHtml(t)}${deck ? `<span style="color:var(--text-tertiary)"> · ${escapeHtml(deck)}</span>` : ''}</span>`;
+
+  document.getElementById('deckBatchParse')?.addEventListener('click', () => {
+    const raw = document.getElementById('deckBatchInput')?.value || '';
+    const targetDeck = document.getElementById('deckBatchDeck')?.value || curDeck;
+    const { tokens, invalid } = parseBatchInput(raw);
+    const { existing, fresh } = partitionBatch(tokens, s.state.words || []);
+    pending = { existing, fresh, targetDeck };
+    const hint = document.getElementById('deckBatchHint');
+    if (hint) hint.textContent = `共 ${tokens.length} 字：已存在 ${existing.length}，未存入 ${fresh.length}${invalid.length ? `，略過 ${invalid.length} 個看不懂的（${invalid.slice(0, 5).join('、')}${invalid.length > 5 ? '…' : ''}）` : ''}`;
+    const res = document.getElementById('deckBatchResult');
+    if (!res) return;
+    if (!tokens.length) { res.innerHTML = ''; return; }
+    res.innerHTML = `
+      ${existing.length ? `<div style="margin-bottom:var(--s2)">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">已存在（${existing.length}）</div>
+        <div style="margin-bottom:8px">${existing.map(w => chip(w.word, w.deck)).join('')}</div>
+        <button class="btn btn-sm" id="deckBatchMoveAll">全部移到「${escapeHtml(targetDeck)}」</button>
+      </div>` : ''}
+      ${fresh.length ? `<div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px">未存入（${fresh.length}）</div>
+        <div style="margin-bottom:8px">${fresh.map(t => chip(t)).join('')}</div>
+        <button class="btn-primary btn-sm" id="deckBatchStart">開始批量新增（背景執行）</button>
+      </div>` : ''}
+      ${!existing.length && !fresh.length ? `<div style="font-size:13px;color:var(--text-tertiary)">沒有可處理的字。</div>` : ''}`;
+    document.getElementById('deckBatchMoveAll')?.addEventListener('click', async () => {
+      const toMove = (pending?.existing || []).filter(w => (w.deck || 'Default') !== pending.targetDeck);
+      for (const w of toMove) { try { await s.actions.editWord(w.id, { deck: pending.targetDeck }); } catch (_) {} }
+      toast(toMove.length ? `已把 ${toMove.length} 字搬到「${pending.targetDeck}」` : `已存在的字都在「${pending.targetDeck}」了`, 'toast-success');
+      renderInPlace(s);
+    });
+    document.getElementById('deckBatchStart')?.addEventListener('click', async () => {
+      const list = [...(pending?.fresh || [])];
+      const target = pending?.targetDeck || curDeck;
+      if (!list.length) return;
+      close();
+      await runBatchAdd(s, list, target, normalizePos);
+    });
+  });
+}
+
+// BATCHADD1 背景填字引擎：來源同 tools.js 組合包預設
+// （pos cambridge／example dict-api／pron cambridge／related llm／
+// forms-syn-ant-phrase merriam／trans cambridge／derivative-syllables-etymology merriam）。
+async function runBatchAdd(s, list, targetDeck, normalizePos) {
+  const taskId = 'batch-add-' + Date.now();
+  s.actions.startBackgroundTask(taskId, `批量新增→${targetDeck}`, list.length);
+  let done = 0, failed = 0, aborted = false;
+  // LLM 偵測（related 預設走 LLM；連不上就跳過該欄，其餘照做）
+  let llm = null, llmOk = false;
+  try {
+    const resp = await fetchGet('http://localhost:11434/api/tags');
+    const models = (JSON.parse(resp).models || []).map(m => m.name);
+    if (models.length) { llm = { baseUrl: 'http://localhost:11434', model: models[0] }; llmOk = true; }
+  } catch (_) { /* 無 LLM 照做 */ }
+  const quotaHit = (e) => /401|429/.test(String(e?.message || e));
+  const mwLookup = async (word) => {
+    const raw = await lookupMerriam(word, s.state.mwDictKey || '', s.state.mwThesKey || '');
+    return merriamToFields(JSON.parse(raw), word);
+  };
+  const llmJson = async (prompt) => {
+    const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+    const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+    const arr = JSON.parse(cleaned);
+    return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+  };
+  async function fillOne(word) {
+    const data = { word, deck: targetDeck, tags: [], related: [], forms: [] };
+    let mwF = null, camEn = null, camZh = null;
+    const getMw = async () => { if (!mwF) mwF = await mwLookup(word); return mwF; };
+    const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
+    const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
+    // 詞性（cambridge）
+    try {
+      const d = await getCamEn();
+      const toks = [...new Set((d.senses || []).flatMap(x => (x.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
+      const pos = normalizePos(toks.join(','));
+      if (pos) data.pos = pos;
+    } catch (_) {}
+    // 發音（cambridge）
+    try {
+      const d = await getCamEn();
+      const pron = String(d.uk_ipa || d.us_ipa || '').trim();
+      if (pron) data.pron = pron;
+    } catch (_) {}
+    // 翻譯→definition（cambridge 英中）
+    try {
+      const d = await getCamZh();
+      const zh = [];
+      for (const sense of d.senses || []) {
+        const t = (sense.translation || '').trim() || (sense.definition || '').trim();
+        if (t && !zh.includes(t)) zh.push(t);
+      }
+      if (zh.length) data.definition = zh.slice(0, 3).join('\n');
+    } catch (_) {}
+    // 例句（dictionary-api）
+    try {
+      const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+      if (r.ok) {
+        const fresh = [];
+        for (const entry of await r.json())
+          for (const m of entry.meanings || []) for (const df of m.definitions || []) if (df.example) fresh.push(df.example.trim());
+        if (fresh.length) data.example = [...new Set(fresh)].slice(0, 3).join('\n');
+      }
+    } catch (_) {}
+    // 韋氏系（forms／syn／ant／derivative／音節／字源／片語→併例句；401/429 中止整批）
+    try {
+      const f = await getMw();
+      if (f.forms?.trim()) data.forms = [...new Set(f.forms.split(/,\s*/).map(x => x.trim()).filter(Boolean))];
+      if (f.synonym?.trim()) data.synonym = String(f.synonym).split(',').map(x => x.trim()).filter(Boolean).slice(0, 12).join(', ');
+      if (f.antonym?.trim()) data.antonym = String(f.antonym).split(',').map(x => x.trim()).filter(Boolean).slice(0, 12).join(', ');
+      if (f.derivative?.trim()) data.derivative = f.derivative;
+      if (f.syllables?.trim()) data.syllables = f.syllables;
+      if (f.etymology?.trim()) data.etymology = f.etymology;
+      const ph = String(f.phrases || '').split('\n').map(x => x.trim()).filter(Boolean);
+      if (ph.length) data.example = [data.example, ...ph].filter(Boolean).join('\n');
+      if (f.related?.length) data.related = [...new Set([...(data.related || []), ...f.related])].slice(0, 12);
+    } catch (e) { if (quotaHit(e)) { aborted = true; throw e; } }
+    // 相關詞（llm；連不上跳過）
+    try {
+      if (llmOk) {
+        const arr = await llmJson(`Return a JSON array of synonyms/similar words for "${word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`);
+        if (arr?.length) data.related = [...new Set([...(data.related || []), ...arr])].slice(0, 12);
+      }
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 400));
+    return data;
+  }
+  const queue = [...list];
+  const CON = 3;
+  await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+    while (queue.length && !aborted) {
+      const w = queue.shift();
+      try {
+        const data = await fillOne(w);
+        await s.actions.addWord(data);
+        done++;
+      } catch (e) {
+        if (quotaHit(e)) { aborted = true; queue.length = 0; toast('超過韋氏每日免費額度（429），剩下的明天再試', 'toast-error'); break; }
+        failed++;
+      }
+      s.actions.updateBackgroundTask(taskId, done + failed, list.length);
+    }
+  }));
+  s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `批量新增完成：${done} 成功${failed ? `，${failed} 失敗` : ''}${aborted ? '（額度中止）' : ''}` });
+  toast(`批量新增完成：${done} 成功${failed ? `，${failed} 失敗` : ''}`, failed ? '' : 'toast-success');
+  renderInPlace(s);
 }
 
 function escapeHtml(str) {
