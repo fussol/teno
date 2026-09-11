@@ -1,9 +1,10 @@
 # Teno 部件相互依賴關係總圖（DEPMAP1）
 
 > 生成方式：靜態實測（`grep` 全 repo），非推測。抽樣命令見 §10。
-> 版本：v5.17.6（2026-09-11）。改動任一模組前先查本表。
+> 版本：v5.17.11（2026-09-11）。改動任一模組前先查本表。
 > 六路 subagent 曾因 API 429 全滅，本表由主線直接抽取。
 > §11 孤兒掃描（2026-09-11）：60 個 src JS 檔全有連接，無檔案級孤兒。
+> §12 增量（v5.17.7–v5.17.11）：BATCHADD1／MERGEMOVE1／CARDNEXT1／MWKEYLAYOUT1／DEADCODE1。
 
 ---
 
@@ -33,9 +34,9 @@
 
 | 檔案 | 行數 | 職責 |
 |---|---|---|
-| deck-browser.js | 2316 | 字本瀏覽＋新增/編輯 modal（圖片、膠囊、自動填入鏈） |
+| deck-browser.js | 2555 | 字本瀏覽＋新增/編輯 modal（圖片、膠囊、自動填入鏈）＋批量新增（BATCHADD1）＋合併第二問（MERGEMOVE1） |
 | tools.js | 2086 | 批次工具：組合包自動補齊（9 欄位×來源分派）＋獨立卡 |
-| browser.js | 1827 | 字庫瀏覽＋新增/編輯 modal（與 deck-browser 鏡像邏輯） |
+| browser.js | 1819 | 字庫瀏覽＋新增/編輯 modal（與 deck-browser 鏡像邏輯；批量新增不進此頁） |
 | settings.js | 1758 | 設定頁：全部開關＋Key＋主題＋備份＋Drive |
 | ocr.js | 1140 | OCR 錄入頁（引擎選擇＋裁切＋辨識＋入庫） |
 | import.js | 1042 | CSV/TSV/APKG/DB 匯入 |
@@ -58,9 +59,9 @@
 |---|---|---|
 | svg.js | 20 | 圖標＋字卡/例句 HTML（`cardFaceHtml` 在 word-extra，`splitFieldsHtml` 等在 svg） |
 | toast.js | 16 | 全 app 提示 |
-| word-extra.js | 9 | 字卡面渲染＋欄位可見度（`cardFaceHtml`／`visShow`／`extraFieldsHtml`） |
-| tts.js | 9 | 發音：`speak`／`stopSpeech`／`bindSpeakClick`（轉調 api `speakText`） |
-| api.js | 8＋動態7 | 後端唯一入口（wrapper→command 見 §6） |
+| word-extra.js | 9 | 字卡面渲染＋欄位可見度（`cardFaceHtml`／`visShow`／`extraFieldsHtml`；CARDNEXT1 後例句區內下一組鈕已拔，只留 head 鈕） |
+| tts.js | 9 | 發音：`speak`／`stopSpeech`／`bindSpeakClick`（轉調 api `speakText`；CARDNEXT1 按鈕優先擋＋NOSPEAK-CN 中文欄靜音） |
+| api.js | 8＋動態7 | 後端唯一入口（wrapper→command 見 §6；DEADCODE1 後 `writeDbBytes` wrapper 已刪，後端 command 保留） |
 | word-image.js | 8 | 單字圖片 carousel＋編輯器縮圖＋貼連結流程 |
 | platform.js | 6 | 平台判斷＋下載 blob |
 | db.js | 3＋動態45 | SQLite 資料層（真正的資料心臟，靜態數會騙人） |
@@ -76,6 +77,7 @@
 | custom-select.js | 2 | 自訂下拉（main.js 初始化） |
 | app-log.js | 5（動態） | 操作日誌寫庫 |
 | backup-scheduler.js | 1（動態） | 自動備份排程 |
+| batch-add.js | 1（deck-browser 動態 import） | 批量新增純函式（`parseBatchInput` 切分去重＋`partitionBatch` 已存在/未存入分流；無 DOM 無 DB，harness 直測） |
 | ocr-blacklist.js | — | OCR 黑名單預設字 |
 | icon-presets.js | — | launcher icon 預設 |
 | human-data.js | — | 人工資料（展示用） |
@@ -222,7 +224,7 @@ dashboard（獨立主頁）
 |---|---|---|
 | svg.js | 20 檔全 app | 圖標＋字卡 HTML 共用 |
 | db.js（表結構） | 全 app＋後端 migration | 前後端雙寫 migration（v11–v13 對應）；45 處動態 import |
-| store.js（state 鍵／action） | 全部頁面 | 單一真相；`cards`／`cardsMc`／`cardsSpell` 三 Map 並存 |
+| store.js（state 鍵／action） | 全部頁面 | 單一真相；`cards`／`cardsMc`／`cardsSpell` 三 Map 並存；DEADCODE1 後 `clearReviewDeckFilter` 已刪（state 欄位保留） |
 | word-extra.js（欄位可見度） | 學習/測驗/瀏覽全字卡面 | `visShow`／`cardFaceHtml` 共用；`fieldVis*` 五鍵 |
 | merriam.js（parser） | browser／deck-browser／tools＋全部 harness | 純函式牽三頁；改 shape 先跑 verify-mw-* |
 | api.js（wrapper 簽名） | 8 檔＋7 處動態 | 後端唯一入口 |
@@ -240,9 +242,9 @@ dashboard（獨立主頁）
 ## 9. 維修 SOP（以後修 bug 照這走）
 
 1. 症狀定位層：UI→頁面？資料→store/db？排程→engine/core？外連→api＋CSP？
-2. 查本表找共用鏈：先列「同函式還被誰用」，一次修全（不要只修報案那頁，browser/deck-browser 鏡像必同步）。
-3. 純函式先寫 harness（`tools/verify-*.mjs`，含 stash 反向驗證）。
-4. 全套回歸（十一顆）＋`vite build`＋`node --check` 改動檔。
+2. 查本表找共用鏈：先列「同函式還被誰用」，一次修全（不要只修報案那頁，browser/deck-browser 鏡像必同步；**批量新增是例外**——只活在 deck-browser，browser.js 故意不加）。
+3. 純函式先寫 harness（`tools/verify-*.mjs`，含 stash 反向驗證；新純函式放 `src/lib/*.js` 保持 node-safe）。
+4. 全套回歸（十三顆）＋`vite build`＋`node --check` 改動檔。
 5. 一結案一 commit＋patch 升版＋tag（`tools/version.sh patch` 三檔一致才過）。
 
 ---
@@ -313,3 +315,61 @@ R="/home/jupiter/teno 修檢版"
 for f in $(find "$R/src" -name "*.js" | sed "s|$R/||"); do base=$(basename $f .js); hit=$(grep -rlE "from ['\"][^'\"]*/$base\.js['\"]|import\(['\"][^'\"]*/$base\.js['\"]" "$R/src/" 2>/dev/null | grep -v "^$R/$f$" | wc -l); echo "$hit $f"; done | sort -rn | awk '$1==0'  # 檔案級孤兒（頁面經 main.js 動態路由，不在內為正常，須再查 navigate）
 grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由可達頁
 ```
+
+---
+
+## 12. 增量：v5.17.7–v5.17.11（本節是 §1–§11 的補丁，查表先看這裡）
+
+### 12.1 BATCHADD1（v5.17.11）：字本瀏覽器批量新增 —— deck-browser 專屬
+
+```
+[批量新增 modal] 全螢幕級（920px/94vw/88vh，筆記本 textarea）
+ ├─ lib/batch-add.js（新檔，純函式）
+ │    parseBatchInput：[,，、\n;；] 切分→lowercase→去重→WORD_RE 合法性分流
+ │    partitionBatch：比對 state.words → existing[]（整批問搬移）／fresh[]（背景新增）
+ ├─ openBatchModal(s)：目標字本預設現在字本；分析→兩路按鈕
+ └─ runBatchAdd(s, list, targetDeck)：背景任務（start/update/complete＋toast）
+      填字來源＝組合包預設逐欄重打（§4 那張表）：
+      pos/pron/trans 走 lookupCambridge／example 走 dictionaryapi.dev／
+      forms/syn/ant/phrase/derivative/音節/字源走 lookupMerriam＋merriam.js／
+      related 走韋氏 related＋LLM（fetchLLM，連不上跳過該欄）
+      併發 CON=3，每字 400ms 節流；韋氏 401/429 中止整批
+```
+
+依賴邊：`core/import.js normalizePos`（動態 import）＋`api.js` 四 wrapper＋`merriam.js`＋store（addWord／editWord／backgroundTasks）＋`renderInPlace`。
+**browser.js 故意不加**（使用者裁示：只有字本瀏覽器有）。harness：`verify-batchadd1.mjs`。
+
+### 12.2 MERGEMOVE1（v5.17.11）：合併彈窗重設計＋保留舊的第二問
+
+- `showDeckMergeModal` 放大 680px，左右卡「現有的／這次新增的」＋字本徽章＋欄位分隔線（同 modal 風格）。
+- 保留舊的 → 舊字不在目標字本（`_deckName`）才跳 `showDeckMoveModal`（同風格衍生：否／搬過去，走 `editWord(id, {deck})`）；已在就不打擾。
+- 只動 deck-browser；browser.js 的 `showMergeModal` 不動（鏡像慣例在此是例外）。
+
+### 12.3 CARDNEXT1（v5.17.9）：瀏覽器字卡五點
+
+1. 例句區內下一組鈕拔除（word-extra 不再生成 `ex-next-btn`；兩頁刷新簡化為 `el.innerHTML = fmtExample(next)`，正反面全刷；head 鈕保留）。
+2. 按下一組不自動發音（`bindSpeakClick` 先查 `ev.target` 是否在 button/input/a/select/textarea／`.ex-next-btn`／`.ex-corner` 內——舊 `el.closest` 查 div 祖先永遠放行，同節點 stopPropagation 也擋不住）。
+3. 中文欄不發音（NOSPEAK-CN：`card-panel-def`／`card-panel-desc`／`split-badge` 移出清單；`card-panel-example` 改走 `extractEnglish`，純中文→空→靜音）。
+4. 翻卡正面無圖（study-v4 image 改 `isAns` 才渲染）。
+5. 圖上字上（study-v4／mc／spell＋exam-flip／mc／spell 六頁 image slot 移到 `study-word-row` 之前；browser 卡本已在上方）。
+- 舊 harness 同步：batch5 區內鈕斷言改「已拔」＋tapflip1 T3/T4 改新 selector 語意。harness：`verify-cardnext1.mjs`。
+
+### 12.4 MWKEYLAYOUT1（v5.17.10）：韋氏 Key 欄窄螢幕破版
+
+- 兩列加 `flex-wrap:wrap`＋input 加 `min-width:0`（`flex:1` 無最小寬在手機寬度撐破容器，看起來像破圖；圖標本身正常）。
+- 純 settings.js 兩行 style；學習卡圖片位置 v5.17.9 已就位，本版免動 code。
+
+### 12.5 DEADCODE1（v5.17.8）：真死碼兩處＋§11 誤判更正
+
+- 刪：`api.js writeDbBytes` wrapper（後端 command 保留，f15/f16 釘註冊表）＋store `clearReviewDeckFilter`（state 欄位保留）。
+- §11 初版誤判三項證實活著、不刪：`ttsAvailable`（verify-g9 雙重依賴）、`setReviewDeckFilter`（verify-g3 B1 靜態釘）、`enrichOcrWords`（`importOcrText` 內 `this.` 調用）。備份分支 `backup-pre-deadcode`。
+
+### 12.6 風險表補充（§8 追加）
+
+| 改這裡 | 會動到 | 原因 |
+|---|---|---|
+| batch-add.js（WORD_RE／分隔符） | 批量新增解析＋verify-batchadd1 | 純函式牽 modal；改正則先跑 harness |
+| runBatchAdd 來源分派 | 批量新增整批結果 | 與 §4 組合包預設同語意但**各寫一份**（未抽共用），改一邊記得對另一邊 |
+| showDeckMergeModal／showDeckMoveModal | 單字新增合併流程 | deck-browser 專屬；browser.js 那顆是另一份 |
+| tts.js selector 清單 | 全 app 點讀發音 | CARDNEXT1 後中文欄靜音是刻意的；加新可發音 class 要同步改 tapflip1 harness |
+| word-extra 例句區結構 | 兩瀏覽器字卡刷新 | 區內鈕已拔；刷新假設「例句區無鈕」，加回去會雙鈕重現 |
