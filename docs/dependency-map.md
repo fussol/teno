@@ -1,8 +1,9 @@
 # Teno 部件相互依賴關係總圖（DEPMAP1）
 
 > 生成方式：靜態實測（`grep` 全 repo），非推測。抽樣命令見 §10。
-> 版本：v5.17.5（2026-09-11）。改動任一模組前先查本表。
+> 版本：v5.17.6（2026-09-11）。改動任一模組前先查本表。
 > 六路 subagent 曾因 API 429 全滅，本表由主線直接抽取。
+> §11 孤兒掃描（2026-09-11）：60 個 src JS 檔全有連接，無檔案級孤兒。
 
 ---
 
@@ -254,4 +255,58 @@ grep -rn "from '\.\." "$R/src/pages/" "$R/src/lib/" "$R/src/core/" "$R/src/engin
 grep -rhoE "getSetting\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn   # settings 讀
 grep -rln "core/fsrs" "$R/src/"                                            # FSRS 引用者
 python3 -c "import re;txt=open('$R/src-tauri/src/lib.rs').read();m=re.search(r'generate_handler!\[(.*?)\]\)',txt,re.S);print([p.strip() for p in m.group(1).split(',') if p.strip() and ' ' not in p.strip() and '(' not in p.strip() and '::' not in p.strip()])"  # command 表
+```
+
+---
+
+## 11. 關係網外清單（孤兒／死碼掃描，2026-09-11）
+
+> 方法：全 repo `grep` 實測。檔案級：60 個 `src/**/*.js` 逐檔查 incoming import＋路由可達，**零孤兒**。
+> 符號級／後端／頂層目錄有抓到以下。
+
+### 11.1 死 wrapper（後端在、前端無人打）
+
+| 符號 | 位置 | 狀態 |
+|---|---|---|
+| `writeDbBytes` | `src/lib/api.js:112` → `write_db_bytes`（lib.rs:732 在、已註冊） | 前端零呼叫。疑似 DB 匯入舊路，現行走 `importDbDialog`（settings.js:637）。**候選刪除或留待匯入重構時複用**，刪前確認匯入流程不依賴。 |
+
+### 11.2 死導出（定義了、src 內無人調用）
+
+| 符號 | 位置 | 狀態 |
+|---|---|---|
+| `ttsAvailable` | `src/lib/tts.js` | src 內零引用（僅舊 harness `verify-g9-tts-fallback.mjs` 提到）。**候選刪除**。 |
+| store `setReviewDeckFilter`／`clearReviewDeckFilter` | `src/lib/store.js` | 定義了、零呼叫。`reviewDeckFilter` 功能可能已下線或從未上線。**候選刪除**（刪前 grep 確認無註解引用）。 |
+| store `enrichOcrWords` | `src/lib/store.js` | 零呼叫。OCR 入庫現行走 `importOcrText`。**候選刪除**。 |
+| store `failBackgroundTask` | `src/lib/store.js` | 零呼叫（`start/update/complete/dismissBackgroundTask` 都有人用，唯獨 fail 沒人調）。**不是刪除候選**——失敗路徑本來就該存在，留著是對的；記一筆即可。 |
+
+### 11.3 名存實亡的中轉（有連接、但走旁門）
+
+| 符號 | 實況 |
+|---|---|
+| `finish_app`／`log_msg`／`save_export_file` | 三個 command 有註冊、有前端呼叫，但**不經 `api.js` wrapper**，直接 `invoke()`（main.js:130／546、platform.js:25／41）。功能正常，風格不一致。改簽名時記得這三處不在 wrapper 表裡。 |
+| `extractEnglish`（tts.js:208）、`getFieldVis`（word-extra.js:39） | 只在自家檔案內部用（`bindSpeakClick`／`visShow` 調用）。不是孤兒，不用動。 |
+| merriam 內部 helper（`stripMwTokens` 等） | 同檔內用＋harness 測。不是孤兒，不用動。 |
+
+### 11.4 過時路由映射（無害、但會誤導查表的人）
+
+`main.js` `SUBPAGE_PARENT` 裡 `'import': 'tools'`、`'export': 'tools'`、`'tag-manager': 'browser'` 三條已無對應 `navigate()` 路徑——import／export／tag-manager 現為 **settings 頁內嵌 section**（settings.js:14–16 `renderContent` 引入），不是獨立路由。映射表本身無害（查不到就回原值），但修 nav 高亮 bug 時別被它帶偏。
+
+### 11.5 關係網外的磁碟（非 code，但佔空間）
+
+| 路徑 | 大小 | 性質 |
+|---|---|---|
+| `_local/` | 194M | 舊工作區殘留（artifacts／keys／legacy／ocr-cache／workflows，9/3 起未動） |
+| `dist/` | 63M | vite build 產物（可重建） |
+| `pkg/` | 41M | 8/2 舊打包殘留 |
+| `pkg-src/teno-5.1.0` | 24M | 5.1.0 舊打包源 |
+| `_dev/notes` | 小 | 開發筆記（9/10 有動，非孤兒，別刪） |
+
+code 本體無孤兒；要清空間先從 `_local`＋`pkg*` 下手（刪前備份，照你的 git 焦慮慣例）。
+
+### 11.6 重掃命令
+
+```bash
+R="/home/jupiter/teno 修檢版"
+for f in $(find "$R/src" -name "*.js" | sed "s|$R/||"); do base=$(basename $f .js); hit=$(grep -rlE "from ['\"][^'\"]*/$base\.js['\"]|import\(['\"][^'\"]*/$base\.js['\"]" "$R/src/" 2>/dev/null | grep -v "^$R/$f$" | wc -l); echo "$hit $f"; done | sort -rn | awk '$1==0'  # 檔案級孤兒（頁面經 main.js 動態路由，不在內為正常，須再查 navigate）
+grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由可達頁
 ```
