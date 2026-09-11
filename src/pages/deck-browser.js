@@ -2228,66 +2228,29 @@ async function runBatchAdd(s, list, targetDeck, normalizePos) {
     return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
   };
   async function fillOne(word) {
-    const data = { word, deck: targetDeck, tags: [], related: [], forms: [] };
+    // AUTOFILL-ENGINE1: 與組合包同一顆引擎（BATCH_METHODS 固定 12 欄；
+    // exampleMax 3 沿用舊 cap；related 走 merriam+llm 雙併，比舊 fillOne
+    // 多併 synonym union，屬只多不砍）。
+    const { fillWordFields, BATCH_METHODS } = await import('../lib/autofill-engine.js');
     let mwF = null, camEn = null, camZh = null;
     const getMw = async () => { if (!mwF) mwF = await mwLookup(word); return mwF; };
     const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
     const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
-    // 詞性（cambridge）
-    try {
-      const d = await getCamEn();
-      const toks = [...new Set((d.senses || []).flatMap(x => (x.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
-      const pos = normalizePos(toks.join(','));
-      if (pos) data.pos = pos;
-    } catch (_) {}
-    // 發音（cambridge）
-    try {
-      const d = await getCamEn();
-      const pron = String(d.uk_ipa || d.us_ipa || '').trim();
-      if (pron) data.pron = pron;
-    } catch (_) {}
-    // 翻譯→definition（cambridge 英中）
-    try {
-      const d = await getCamZh();
-      const zh = [];
-      for (const sense of d.senses || []) {
-        const t = (sense.translation || '').trim() || (sense.definition || '').trim();
-        if (t && !zh.includes(t)) zh.push(t);
-      }
-      if (zh.length) data.definition = zh.slice(0, 3).join('\n');
-    } catch (_) {}
-    // 例句（dictionary-api）
-    try {
-      const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-      if (r.ok) {
-        const fresh = [];
-        for (const entry of await r.json())
-          for (const m of entry.meanings || []) for (const df of m.definitions || []) if (df.example) fresh.push(df.example.trim());
-        if (fresh.length) data.example = [...new Set(fresh)].slice(0, 3).join('\n');
-      }
-    } catch (_) {}
-    // 韋氏系（forms／syn／ant／derivative／音節／字源／片語→併例句；401/429 中止整批）
-    try {
-      const f = await getMw();
-      if (f.forms?.trim()) data.forms = [...new Set(f.forms.split(/,\s*/).map(x => x.trim()).filter(Boolean))];
-      if (f.synonym?.trim()) data.synonym = String(f.synonym).split(',').map(x => x.trim()).filter(Boolean).slice(0, 12).join(', ');
-      if (f.antonym?.trim()) data.antonym = String(f.antonym).split(',').map(x => x.trim()).filter(Boolean).slice(0, 12).join(', ');
-      if (f.derivative?.trim()) data.derivative = f.derivative;
-      if (f.syllables?.trim()) data.syllables = f.syllables;
-      if (f.etymology?.trim()) data.etymology = f.etymology;
-      const ph = String(f.phrases || '').split('\n').map(x => x.trim()).filter(Boolean);
-      if (ph.length) data.example = [data.example, ...ph].filter(Boolean).join('\n');
-      if (f.related?.length) data.related = [...new Set([...(data.related || []), ...f.related])].slice(0, 12);
-    } catch (e) { if (quotaHit(e)) { aborted = true; throw e; } }
-    // 相關詞（llm；連不上跳過）
-    try {
-      if (llmOk) {
-        const arr = await llmJson(`Return a JSON array of synonyms/similar words for "${word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`);
-        if (arr?.length) data.related = [...new Set([...(data.related || []), ...arr])].slice(0, 12);
-      }
-    } catch (_) {}
-    await new Promise(r => setTimeout(r, 400));
-    return data;
+    const llmJson = async (prompt) => {
+      const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+      const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+      const arr = JSON.parse(cleaned);
+      return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+    };
+    const llmText = async (prompt) => fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+    const r = await fillWordFields({
+      wordText: word, existing: {}, methods: BATCH_METHODS, overwrite: true,
+      threshold: 1, count: 3, exampleMax: 3,
+      fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk },
+      onStat: () => {},
+    });
+    if (r.aborted) throw r.abortError ?? new Error('429');
+    return { word, deck: targetDeck, tags: [], related: [], forms: [], ...r.patch };
   }
   const queue = [...list];
   const CON = 3;

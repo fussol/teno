@@ -54,7 +54,7 @@ chk('__genFormsMw 存在', /window\.__genFormsMw = async/.test(tools));
 chk('獨立卡雙鈕（韋氏+LLM）', /__genFormsMw\(\)[\s\S]{0,200}__genFormsLLM\(\)/.test(tools));
 chk('組合包詞形來源選單（comboForms merriam 預設）', /_selHtml\('comboForms', \[\['韋氏字典','merriam'\],\['本地 LLM','llm'\]\], 'merriam'\)/.test(tools));
 chk('M.forms 分派', /forms: _getMethod\('comboForms', 'merriam'\)/.test(tools));
-chk('組合包執行端 merriam 分支', /if \(M\.forms === 'merriam'\)/.test(tools));
+chk('組合包執行端 merriam 分支（AUTOFILL-ENGINE1 起收斂引擎：tools 調 fillWordFields＋methods: M，分支實作在引擎）', /fillWordFields\(\{[\s\S]{0,300}methods: M/.test(tools) && /if \(M === 'merriam'\)/.test(readFileSync('src/lib/autofill-engine.js', 'utf8')));
 
 console.log('[F3] MWFORMS1: 編輯器 sparkle 韋氏優先');
 chk('browser llmFillForms 韋氏優先', /MWFORMS1[\s\S]{0,300}lookupMerriam\(word, dk, tk\)/.test(browser));

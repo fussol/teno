@@ -373,3 +373,18 @@ grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由
 | showDeckMergeModal／showDeckMoveModal | 單字新增合併流程 | deck-browser 專屬；browser.js 那顆是另一份 |
 | tts.js selector 清單 | 全 app 點讀發音 | CARDNEXT1 後中文欄靜音是刻意的；加新可發音 class 要同步改 tapflip1 harness |
 | word-extra 例句區結構 | 兩瀏覽器字卡刷新 | 區內鈕已拔；刷新假設「例句區無鈕」，加回去會雙鈕重現 |
+| autofill-engine.js（欄位分派） | 組合包 fillWord＋批量 fillOne | 兩路調同一 fillWordFields；改來源語意只動引擎，harness verify-autofill-engine1 先行 |
+
+### 12.7 AUTOFILL-ENGINE1（v5.17.14）：自動填入共用引擎 —— 各自為政收斂
+
+- 新檔 `src/lib/autofill-engine.js`（node-safe，只 import core/import.js）：
+  欄位表 12 欄（`AUTOFILL_FIELDS`，字源/音節/衍生 fixed 韋氏）＋
+  `DEFAULT_METHODS`（組合包 11 欄）＋`BATCH_METHODS`（批量 12 欄，related 走 merriam+llm 雙併）＋
+  純函式（count/dedup/mergeComma/mergeExamplePhrases/posToks/isBareWord）＋
+  `fillWordFields`（逐欄分派，LLM raw/JSON 雙通道，quota 中止回傳）。
+- 組合包 `fillWord` 改調引擎（getMw suggest 快拋、usedRemote/aborted 語意沿用；
+  M 加字源/音節固定韋氏；_isBare＋CN＋UI 從九欄→十一欄）。
+- 批量 `fillOne` 改調引擎（exampleMax 3 沿用舊 cap；related 多併 synonym union，屬只多不砍）。
+- 編輯器 sparkle（llmFill*/mwFillExtra）與 autoFillAll chain 維持薄包裝，未收（使用者裁示功能只多不砍，行為零刪）。
+- 舊 harness 同步：mwkeys1-forms 詞形分支斷言改指引擎。
+- harness：`verify-autofill-engine1.mjs` 33/33（stub 零網路＋HEAD 反向）。
