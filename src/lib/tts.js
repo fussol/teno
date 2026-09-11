@@ -234,7 +234,15 @@ export function bindSpeakClick(root, getSettings) {
   if (root.__speakBound) return;
   root.__speakBound = true;
   root.addEventListener('click', (ev) => {
-    const el = ev.target.closest('.study-word, .study-example, .chip-accent, .chip-subtle, .tts-click, .word-row-word, .deck-word, .card-panel-word, .card-panel-pron, .card-panel-def, .card-panel-example, .card-panel-desc, .split-badge');
+    // CARDNEXT1（2026-09-11 使用者裁示第2點）：按「下一組」鈕不該自動發音——
+    // 舊檢查 `el.closest('button…')` 查的是可發音祖先（div，不在 button 內）永遠放行；
+    // 且同 root 上 bindExNext 的 stopPropagation 擋不住同節點另一 listener。
+    // 正解：直接查事件目標是否落在任何按鈕/輸入控件內。
+    if (ev.target.closest('button, input, a, select, textarea, .ex-next-btn, .ex-corner')) return;
+    // NOSPEAK-CN（2026-09-11 使用者裁示第3點）：中文欄位不發音——
+    // .card-panel-def（中文釋義）/.card-panel-desc（中文描述）/.split-badge（中文詞性）
+    // 直接移出可點清單；.card-panel-example 走 extractEnglish（純中文→空字串→靜音）。
+    const el = ev.target.closest('.study-word, .study-example, .chip-accent, .chip-subtle, .tts-click, .word-row-word, .deck-word, .card-panel-word, .card-panel-pron, .card-panel-example');
     if (!el) return;
     if (el.closest('button, input, a, select, textarea')) return;
     ev.stopPropagation();
@@ -242,7 +250,7 @@ export function bindSpeakClick(root, getSettings) {
     // data-speak 優先：拼字頁點定義區要唸「目標單字」，但單字不能顯示在畫面上
     const text = el.dataset?.speak
       ? el.dataset.speak
-      : el.classList.contains('study-example')
+      : (el.classList.contains('study-example') || el.classList.contains('card-panel-example'))
         ? extractEnglish(el.textContent)
         : el.textContent.trim();
     if (!text) return;

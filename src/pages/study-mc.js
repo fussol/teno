@@ -100,10 +100,10 @@ function renderBack(w, cnt) {
       ${lastCorrect ? '✓ 正確' : '✗ 錯誤'}
     </div>
     <div class="study-card">
+      ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
-      ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
       ${visShow('study', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
       ${(visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
       ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}

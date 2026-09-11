@@ -148,10 +148,10 @@ function renderExam(s) {
         <div class="study-result ${w._picked === w._correctIdx ? 'study-correct' : 'study-wrong'}" style="margin-bottom:12px">
           ${w._picked === w._correctIdx ? '✓ 正確' : '✗ 錯誤'}
         </div>
+        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div class="study-word-row">
           <div class="study-word" style="font-size:32px">${esc(w.word)}</div>
         </div>
-        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div style="margin-top:10px;font-size:14px;font-weight:600;color:${w._picked === w._correctIdx ? 'var(--green)' : 'var(--red)'}">
           你選了：${esc(w._picked >= 0 ? (w._options[w._picked] ?? '-') : '-')}${w._picked !== w._correctIdx ? `（正確：${esc(w.word)}）` : ''}
         </div>

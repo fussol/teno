@@ -516,24 +516,16 @@ function bindCardEvents(s, w, st) {
   document.getElementById('cardFullBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _cardState.fullscreen = !_cardState.fullscreen; showCard(_cardState.idx); });
   document.getElementById('cardPrev')?.addEventListener('click', () => { stopAuto(); showCard(_cardState.idx - 1); });
   document.getElementById('cardNext')?.addEventListener('click', () => { stopAuto(); showCard(_cardState.idx + 1); });
-  // EXNEXT1: 下一組例句——head 鈕（原發音鈕位置）與例句區內鈕共用同一刷新
+  // CARDNEXT1: 下一組例句只剩 head 鈕（例句區內鈕已拔）；刷新正反面所有例句區
   const refreshExamples = () => {
     const w = _cardState?.words?.[_cardState.idx];
     if (!w) return;
     const next = rotateExamples(w);
     document.querySelectorAll('#cardPreviewBody .card-panel-example').forEach(el => {
-      if (el.querySelector('.ex-next-btn')) el.innerHTML = fmtExample(next) + el.dataset.btnHtml;
+      el.innerHTML = fmtExample(next);
     });
   };
   document.getElementById('cardExNextBtn')?.addEventListener('click', (e) => { e.stopPropagation(); refreshExamples(); });
-  document.querySelectorAll('#cardPreviewBody .ex-next-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const box = btn.closest('.card-panel-example');
-      if (box) box.dataset.btnHtml = btn.outerHTML;
-      refreshExamples();
-    });
-  });
   scrollBrowserRuler(_cardState.idx);
   if (st.pronManual && w.pron) playCardTTS(s, w.word);
   // 發音鈕已由「下一組例句」鈕取代（EXNEXT1）；朗讀保留 P 鍵（keydown handler）

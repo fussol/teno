@@ -63,7 +63,7 @@ chk('六頁 onMount 綁 bindExNext', ['study-v4','study-mc','study-spell','exam-
 chk('exam 三頁 getWord 用 e.words[e.idx]', ['exam-flip','exam-mc','exam-spell'].every(p => readFileSync(`src/pages/${p}.js`, 'utf8').includes('() => e.words[e.idx]')));
 chk('browser head 鈕: 發音鈕→下一組例句鈕', /id="cardExNextBtn"[^>]*>\$\{icon\('shuffle'\)\}/.test(browser) && !/id="cardPronBtn"/.test(browser));
 chk('deck head 鈕: 發音鈕→下一組例句鈕', /id="deckCardExNextBtn"/.test(deck) && !/id="deckCardPronBtn"/.test(deck));
-chk('字卡例句區內鈕（word-extra ex-next-btn）', /ex-next-btn/.test(wordExtra));
+chk('字卡例句區內鈕已拔（CARDNEXT1：只留 head 鈕）', !/ex-next-btn/.test(wordExtra) && /id="cardExNextBtn"/.test(browser) && /id="deckCardExNextBtn"/.test(deck));
 chk('字卡例句走 examplePoolFor', /h\.examplePoolFor \? h\.examplePoolFor\(w\)/.test(wordExtra));
 chk('study 右上角鈕 absolute top:8px right:8px', /position:absolute;top:8px;right:8px/.test(svg));
 chk('shuffle icon 存在（svg.js icons）', /shuffle:/.test(svg));

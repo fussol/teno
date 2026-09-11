@@ -32,19 +32,25 @@ chk('browser: 發音監聽直綁面板（bindCardEvents 內）', /bindCardEvents
 chk('deck: 發音監聽直綁面板（bindCardEvents 內）', /bindCardEvents[\s\S]{0,300}bindSpeakClick\(document\.getElementById\('deckCardPreview'\)/.test(deck));
 
 console.log('[T3] tts selector');
-const sel = tts.match(/ev\.target\.closest\('([^']*)'\)/)?.[1] || '';
-for (const c of ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.split-badge']) {
+// CARDNEXT1（2026-09-11 使用者裁示第3點）：中文欄位移出清單——
+// selector 取含 .study-word 的那個 closest（第一個 closest 已是 button  guard）。
+const matches = [...tts.matchAll(/ev\.target\.closest\('([^']*)'\)/g)].map(m => m[1]);
+const sel = matches.find(s => s.includes('.study-word')) || '';
+for (const c of ['.card-panel-word', '.card-panel-pron', '.card-panel-example']) {
   chk(`tts selector 含 ${c}`, sel.split(', ').includes(c));
+}
+for (const c of ['.card-panel-def', '.card-panel-desc', '.split-badge']) {
+  chk(`tts selector 不含中文欄 ${c}`, !sel.split(', ').includes(c));
 }
 
 console.log('[T4] guard ⊆ 可發音 ∪ 純功能');
-// guard 擋的元素: 文字類必須 tts 吃得到; button/image 類是純功能（不翻面不發音為正確行為）
+// guard 擋的元素: 英文類必須 tts 吃得到; 中文/純功能類在 guard 擋翻面但 tts 不收為正確行為
 const guardClasses = ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.card-panel-tags', '.split-badge', '.chip-accent', '.chip-subtle', '.wimg-slot-wrap'];
 const ttsSet = new Set(sel.split(', '));
 for (const g of guardClasses) {
-  const speakable = ['.card-panel-word', '.card-panel-pron', '.card-panel-def', '.card-panel-example', '.card-panel-desc', '.split-badge', '.chip-accent', '.chip-subtle'].includes(g);
+  const speakable = ['.card-panel-word', '.card-panel-pron', '.card-panel-example', '.chip-accent', '.chip-subtle'].includes(g);
   if (speakable) chk(`${g} 在 guard 且 tts 可發音`, ttsSet.has(g));
-  else chk(`${g} 純功能（guard 檔翻面；tts 不誤收）`, !ttsSet.has(g));
+  else chk(`${g} 純功能/中文（guard 檔翻面；tts 不誤收）`, !ttsSet.has(g));
 }
 
 // 反向驗證：HEAD 已含特徵（已 commit）→ 跳過；僅工作區有未 commit 改動時 stash 驗證

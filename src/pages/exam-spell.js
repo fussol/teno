@@ -154,10 +154,10 @@ function renderExam(s) {
         <div class="study-result ${isCorrect ? 'study-correct' : 'study-wrong'}" style="margin-bottom:12px">
           ${isCorrect ? '✓ 正確' : '✗ 錯誤'}
         </div>
+        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div class="study-word-row">
           <div class="study-word" style="font-size:32px">${esc(w.word)}</div>
         </div>
-        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         ${!isCorrect ? `<div style="margin-top:10px;font-size:14px;font-weight:600;color:var(--red)">你的輸入：<span style="color:inherit">${esc(e.userInput)}</span></div>` : ''}
         <div style="margin-top:16px">
           ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}

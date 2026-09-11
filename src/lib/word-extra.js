@@ -75,11 +75,10 @@ export function cardFaceHtml(w, s, face, h) {
   }
   if (gv('example') && exMerged) {
     // EXNEXT1: 抽樣池（超上限時可按鈕換下一組）
+    // CARDNEXT1（2026-09-11 使用者裁示）：瀏覽器字卡例句區內「下一組」鈕拔除——
+    // head 已有同功能鈕（cardExNextBtn），留兩顆沒意義。刷新只走 head 鈕。
     const shown = h.examplePoolFor ? h.examplePoolFor(w) : [exMerged];
-    const full = String(exMerged).split('\n').filter(Boolean);
-    const max = (typeof window !== 'undefined' && window.__maxExampleLines) || 0;
-    const rotatable = max > 0 && full.length > max && h.rotateExamples;
-    out.push(`<div class="card-panel-example">${h.fmtExample(shown)}${rotatable ? `<button class="ex-next-btn" title="下一組例句" style="margin-top:6px;font-size:12px;color:var(--accent);background:none;border:1px solid var(--border);border-radius:100px;cursor:pointer;padding:3px 12px">${h.exNextIcon || '↻ 下一組'}</button>` : ''}</div>`);
+    out.push(`<div class="card-panel-example">${h.fmtExample(shown)}</div>`);
   }
   if (gv('description') && w.description) out.push(`<div class="card-panel-desc">${e(w.description)}</div>`);
   if (gv('related') && w.related && w.related.length) out.push(`<div class="card-panel-desc" style="margin-top:8px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">相似詞 </span>${w.related.map(r => `<span style="display:inline-block;font-size:12px;color:var(--accent);background:var(--accent-bg);padding:2px 10px;border-radius:100px;border:1px solid var(--accent);white-space:nowrap;margin:1px 3px">${e(r)}</span>`).join('')}</div>`);

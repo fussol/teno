@@ -68,10 +68,10 @@ function renderCard(s) {
       ${isAns ? `<button id="undoBtn" class="study-undo-btn" title="Ctrl+Z 復原上一張">↩ 復原</button>` : ''}
     </div>
     <div class="study-card">
+      ${(isAns && visShow('study', 'image')) ? wordImageSlotHTML(w.id) : ''}
       <div class="study-word-row">
         <div class="study-word">${e(w.word)}</div>
       </div>
-      ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
       ${(isAns && visShow('study', 'definition')) ? splitFieldsHtml(w.pos, w.definition) || '' : ''}
       ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${(isAns && visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}

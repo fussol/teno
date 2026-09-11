@@ -149,10 +149,10 @@ function renderExam(s) {
         ${e.judged ? `<div class="study-result ${e.answeredCorrect ? 'study-correct' : 'study-wrong'}" style="margin-bottom:12px">
           ${e.answeredCorrect ? '✓ 正確' : '✗ 錯誤'}
         </div>` : ''}
+        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div class="study-word-row">
           <div class="study-word" style="font-size:32px">${esc(w.word)}</div>
         </div>
-        ${visShow('exam', 'image') ? wordImageSlotHTML(w.id) : ''}
         <div style="margin-top:16px">
           ${visShow('exam', 'definition') ? (splitFieldsHtml(w.pos, w.definition) || '') : ''}
           ${(visShow('exam', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
