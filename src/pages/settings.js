@@ -544,13 +544,13 @@ function renderSettingsContent(s) {
           <div class="section-title">${icon('book')} 韋氏字典</div>
           <div class="config-section">
             <div class="muted" style="font-size:11px;margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。</div>
-            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Dictionary key</span>
-              <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+              <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
             </div>
-            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Thesaurus key</span>
-              <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus 或 Intermediate Thesaurus key（自動相容）" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+              <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus 或 Intermediate Thesaurus key（自動相容）" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
             </div>
             <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
           </div>
