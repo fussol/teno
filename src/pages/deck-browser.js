@@ -1,6 +1,6 @@
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
-import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages } from '../lib/word-image.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages, addImageUrlFlow } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
@@ -428,7 +428,8 @@ function inlineEditTags(s, id) {
 
 // ─── Edit Modal ────────────────────────────────────────────
 // ── IMG1: 編輯器圖片縮圖列（新增/編輯 modal 共用；存檔時 getVal() 全量替換寫庫）──
-function attachImagePicker({ thumbsId, pickId, filesId, wordId }) {
+// IMGURL1: 加 urlInputId/urlAddId（貼連結加圖；不傳則不綁，舊呼叫相容）
+function attachImagePicker({ thumbsId, pickId, filesId, wordId, urlInputId, urlAddId }) {
   let api = null;
   let cleanup = null;
   let changed = false;
@@ -451,6 +452,26 @@ function attachImagePicker({ thumbsId, pickId, filesId, wordId }) {
     changed = true;
     ev.target.value = '';
   });
+  // IMGURL1: 貼連結加圖（直連收；Tenor/Giphy/Imgur 分享頁轉 og:image；Tauri 走 fetchGet 繞 CSP）
+  if (urlInputId && urlAddId) {
+    const _addUrl = async () => {
+      if (!api) return;
+      const inp = document.getElementById(urlInputId);
+      const raw = inp?.value || '';
+      if (!raw.trim()) return;
+      const fetchText = async (u) => {
+        try { return await fetchGet(u); }
+        catch { const r = await fetch(u); return await r.text(); }
+      };
+      await addImageUrlFlow(raw, api, fetchText,
+        (m, k) => toast(m, k === 'ok' ? 'toast-success' : 'toast-error'));
+      if (inp) inp.value = '';
+    };
+    document.getElementById(urlAddId)?.addEventListener('click', _addUrl);
+    document.getElementById(urlInputId)?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); _addUrl(); }
+    });
+  }
   return {
     /** 存檔時呼叫：動過才全刪全插保序寫庫 */
     persist: async (targetId) => {
@@ -565,6 +586,10 @@ function openAddModal(s) {
             <button class="btn btn-sm" type="button" id="deckAddImgPick">${icon('image')} 選擇圖片</button>
             <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
           </div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input class="form-input" id="deckAddImgUrl" placeholder="或貼圖片連結…（直連 .gif/.jpg，或 Tenor 分享頁）" style="flex:1">
+            <button class="btn btn-sm" type="button" id="deckAddImgUrlAdd">加入</button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">標籤</label>
@@ -596,7 +621,7 @@ function openAddModal(s) {
   });
 
   // IMG1: 圖片選擇器（新增字：無既有圖）
-  const addImgPicker = attachImagePicker({ thumbsId: 'deckAddImgsThumbs', pickId: 'deckAddImgPick', filesId: 'deckAddImgFiles', wordId: null });
+  const addImgPicker = attachImagePicker({ thumbsId: 'deckAddImgsThumbs', pickId: 'deckAddImgPick', filesId: 'deckAddImgFiles', wordId: null, urlInputId: 'deckAddImgUrl', urlAddId: 'deckAddImgUrlAdd' });
 
   // ── Tag input for definition & example ───
   // ═══ 統一膠囊輸入系統（元首令 2026-08-31 v2）═══
@@ -1128,6 +1153,10 @@ function openEditModal(s, id) {
             <button class="btn btn-sm" type="button" id="deckEditImgPick">${icon('image')} 選擇圖片</button>
             <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
           </div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input class="form-input" id="deckEditImgUrl" placeholder="或貼圖片連結…（直連 .gif/.jpg，或 Tenor 分享頁）" style="flex:1">
+            <button class="btn btn-sm" type="button" id="deckEditImgUrlAdd">加入</button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">標籤</label>
@@ -1160,7 +1189,7 @@ function openEditModal(s, id) {
   });
 
   // IMG1: 圖片選擇器（編輯字：預載現圖）
-  const editImgPicker = attachImagePicker({ thumbsId: 'deckEditImgsThumbs', pickId: 'deckEditImgPick', filesId: 'deckEditImgFiles', wordId: w.id });
+  const editImgPicker = attachImagePicker({ thumbsId: 'deckEditImgsThumbs', pickId: 'deckEditImgPick', filesId: 'deckEditImgFiles', wordId: w.id, urlInputId: 'deckEditImgUrl', urlAddId: 'deckEditImgUrlAdd' });
 
   // ── Tag input for definition & example ───
   // _tagInputEdit 與 _tagInput 同款（統一膠囊系統 v2：例句模式/草稿保留/API 掛載）

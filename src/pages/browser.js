@@ -5,7 +5,7 @@
 
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
-import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages } from '../lib/word-image.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, addImageUrlFlow } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
@@ -997,6 +997,10 @@ function openModal(s, word) {
             <button class="btn btn-sm" type="button" id="fImagePick">${icon('image')} 選擇圖片</button>
             <span style="font-size:11px;color:var(--text-tertiary)">PNG/JPG；單張 ≤10MB</span>
           </div>
+          <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
+            <input class="form-input" id="fImageUrl" placeholder="或貼圖片連結…（直連 .gif/.jpg，或 Tenor 分享頁）" style="flex:1">
+            <button class="btn btn-sm" type="button" id="fImageUrlAdd">加入</button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">標籤</label>
@@ -1158,6 +1162,24 @@ function openModal(s, word) {
     await _imgApi.addFiles([...(ev.target.files || [])], (m) => toast(m, 'toast-error'));
     _imgsChanged = true;
     ev.target.value = '';
+  });
+  // IMGURL1: 貼連結加圖（直連收；Tenor/Giphy/Imgur 分享頁轉 og:image；Tauri 走 fetchGet 繞 CSP）
+  const _addImgUrl = async () => {
+    if (!_imgApi) return;
+    const inp = document.getElementById('fImageUrl');
+    const raw = inp?.value || '';
+    if (!raw.trim()) return;
+    const fetchText = async (u) => {
+      try { return await fetchGet(u); }
+      catch { const r = await fetch(u); return await r.text(); }
+    };
+    await addImageUrlFlow(raw, _imgApi, fetchText,
+      (m, k) => toast(m, k === 'ok' ? 'toast-success' : 'toast-error'));
+    if (inp) inp.value = '';
+  };
+  document.getElementById('fImageUrlAdd')?.addEventListener('click', _addImgUrl);
+  document.getElementById('fImageUrl')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); _addImgUrl(); }
   });
   document.getElementById('wordModal')?.addEventListener('click', (e) => {
     if (e.target.id === 'wordModal') close();

@@ -11,6 +11,8 @@
 import { getImagesForWord, getImagesForWords } from './db.js';
 import { icon } from './svg.js';
 import { normalizeImageUrl } from './image-url.js'; // IMG-HOTFIX2：Drive uc 轉 lh3 直連（CORP 擋跨站嵌）
+import { mergeImageUrls } from './image-url.js'; // IMGURL1：編輯器貼連結（去重＋略過非法；純函式）
+import { resolvePageImageUrl } from './image-url.js'; // IMGURL1：分享頁→og:image 直連
 
 // ── module cache（wordId → images[]；無圖快取為空陣列以省重查）──
 const _cache = new Map();
@@ -250,8 +252,44 @@ export function renderEditorThumbs(images, onChange) {
       onChange?.(list);
     },
     _del: (i) => { list.splice(i, 1); onChange?.(list); },
+    // IMGURL1: 連結輸入用（呼叫端先 resolve 成直連再進來；此處只做合併＋回報數）
+    addUrls: (text) => {
+      const r = mergeImageUrls(list, text);
+      list.length = 0; list.push(...r.list);
+      onChange?.(list);
+      return { added: r.added, skipped: r.skipped };
+    },
   };
   return api;
+}
+
+/**
+ * IMGURL1：編輯器「貼圖片連結」共用流程（browser／deck-browser 共用）。
+ * 直連圖（.gif/.jpg/…）直接收；Tenor／Giphy／Imgur 分享頁走 og:image 解析。
+ * @param {string} rawText 輸入框原文（可多個，空白/逗號/換行分隔）
+ * @param {{addUrls:(t:string)=>{added:number,skipped:number}}} thumbsApi renderEditorThumbs 的 api
+ * @param {(url:string)=>Promise<string>} fetchText 抓頁面 HTML（Tauri 傳 fetchGet；網頁預覽傳 fetch 包裝）
+ * @param {(msg:string, kind:'ok'|'err')=>void} notify 呼叫端 toast 轉接
+ */
+export async function addImageUrlFlow(rawText, thumbsApi, fetchText, notify) {
+  const toks = String(rawText ?? '').split(/[\s,，]+/).map(t => t.trim()).filter(Boolean);
+  if (!toks.length || !thumbsApi) { notify?.('請先貼上圖片連結', 'err'); return; }
+  let added = 0, failed = 0, resolvedAny = false;
+  for (const tok of toks) {
+    let r;
+    try { r = await resolvePageImageUrl(tok, fetchText); }
+    catch { r = { error: 'fetch-failed' }; }
+    if (r.direct) {
+      const m = thumbsApi.addUrls(r.direct);
+      added += m.added;
+      if (r.resolved) resolvedAny = true;
+      if (!m.added) failed++;
+    } else { failed++; }
+  }
+  if (added) notify?.(
+    `已加入 ${added} 張圖片${resolvedAny ? '（分享頁轉直連成功；Tenor 直連有時效，重要圖建議下載後上傳）' : ''}`,
+    'ok');
+  else if (failed) notify?.('加入失敗：請貼「圖片直連」（.gif/.jpg/.png 結尾）或 Tenor／Giphy／Imgur 分享頁', 'err');
 }
 
 /** 縮圖列事件綁定（modal onMount 用；回傳 cleanup）。 */
