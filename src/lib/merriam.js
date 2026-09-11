@@ -158,8 +158,32 @@ export function parseDictionaryEntries(arr) {
 
 /**
  * Thesaurus 側解析。
+ * ETERNAL1（2026-09-11 live eternal 實錘）：ithesaurus 把 syn_list／rel_list／
+ * near_list／ant_list 放在每條 sense 的 dt 裡（非頂層），舊 parser 只讀頂層 →
+ * related 永遠 []、near 反義（ephemeral/fleeting/transitory）全漏。加遞迴掃 e.def。
  * @returns {{synonyms:string[], antonyms:string[], phrases:string[], related:string[]}}
  */
+function collectSenseLists(node, synonyms, antonyms, related) {
+  if (Array.isArray(node)) { for (const v of node) collectSenseLists(v, synonyms, antonyms, related); return; }
+  if (!node || typeof node !== 'object') return;
+  for (const [k, v] of Object.entries(node)) {
+    if ((k === 'syn_list' || k === 'rel_list' || k === 'near_list' || k === 'ant_list') && Array.isArray(v)) {
+      for (const g of v) {
+        const items = Array.isArray(g) ? g : [g];
+        for (const it of items) {
+          const w = it && typeof it === 'object' ? it.wd : null;
+          if (typeof w !== 'string' || !w) continue;
+          if (k === 'syn_list') synonyms.add(w);
+          else if (k === 'rel_list') related.add(w);
+          else antonyms.add(w);   // near_list／ant_list 都進反義
+        }
+      }
+    } else if (k !== 'wd' && k !== 'wvl' && k !== 'wva') {
+      collectSenseLists(v, synonyms, antonyms, related);
+    }
+  }
+}
+
 export function parseThesaurusEntries(arr) {
   const synonyms = new Set(), antonyms = new Set(), phrases = new Set(), related = new Set();
   if (!Array.isArray(arr)) return { synonyms: [], antonyms: [], phrases: [], related: [] };
@@ -187,9 +211,37 @@ export function parseThesaurusEntries(arr) {
     for (const nl of e.near_list || []) {
       for (const w of nl.near || []) antonyms.add(String(w));
     }
+    // ETERNAL1: sense 層四表（ithesaurus 主力資料在此，不在頂層）
+    if (Array.isArray(e.def)) collectSenseLists(e.def, synonyms, antonyms, related);
   }
   const clean = (set) => [...set].map(s => stripMwTokens(s)).filter(Boolean);
   return { synonyms: clean(synonyms), antonyms: clean(antonyms), phrases: clean(phrases), related: clean(related) };
+}
+
+/**
+ * ETERNAL1：collegiate meta.stems → 衍生字候選（扣掉查詢詞本身）。
+ * stems 是 MW 給的詞幹表（eternal → eternalize/eternally/eternalness…），
+ * 屈折 vs 派生不另判——呼叫端（merriamToFields）再扣 forms。
+ */
+export function parseStems(arr, word) {
+  const norm = String(word || '').toLowerCase();
+  const out = [];
+  if (!Array.isArray(arr)) return out;
+  for (const e of arr) {
+    if (!e || typeof e !== 'object' || !e.meta) continue;
+    // 只要同詞幹「純 homograph」：gross:1/:2… 收；Gross:b（人名）/
+    // gross anatomy（複合詞）排除——否則人名 stems（David Gross）污染衍生
+    const [idStem, idSuffix] = String(e.meta?.id || '').split(':');
+    if (!idStem || idStem.toLowerCase() !== norm) continue;
+    if (idSuffix !== undefined && idSuffix !== '' && !/^\d+$/.test(idSuffix)) continue;
+    for (const s of e.meta?.stems || []) {
+      const t = stripMwTokens(String(s)).replace(/\*/g, '').trim();
+      // 大寫開頭＝專有名詞（Eternals／人名殘留）不要
+      if (!t || t.toLowerCase() === norm || /^[A-Z]/.test(t) || out.includes(t)) continue;
+      out.push(t);
+    }
+  }
+  return out;
 }
 
 /**
@@ -201,7 +253,7 @@ export function merriamToFields(payload, word) {
   const out = {
     pos: '', definition: '', pron: '', pronAudio: '', example: '',
     etymology: '', syllables: '', phrases: '', synonym: '', antonym: '',
-    forms: '',
+    forms: '', derivative: '',
     suggest: [],
   };
   const dict = payload?.dictionary;
@@ -228,6 +280,9 @@ export function merriamToFields(payload, word) {
       for (const x of e.forms || []) formSet.add(x);
     }
     out.forms = [...formSet].join(', ');
+    // ETERNAL1: 衍生字＝stems 扣查詢詞、再扣 forms（屈折已佔位的不重複進衍生）
+    const formLow = new Set([...formSet].map(x => String(x).toLowerCase()));
+    out.derivative = parseStems(dict, word).filter(s => !formLow.has(String(s).toLowerCase())).join(', ');
   }
   const t = parseThesaurusEntries(thes);
   out.synonym = t.synonyms.join(', ');

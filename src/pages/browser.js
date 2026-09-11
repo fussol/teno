@@ -1613,6 +1613,22 @@ async function mwFillPhrases(chipsHostId, word) {
 
 // ─── LLM auto-fill for related and forms ───────────────────────
 async function llmFillRelated(inputId, word) {
+  // ETERNAL1: 韋氏優先（synonym＋related union 取 12；有 key 才跑，有料即返）
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      const rel = [...new Set([...String(f.synonym || '').split(',').map(x => x.trim()).filter(Boolean), ...(f.related || [])])].slice(0, 12);
+      if (rel.length) {
+        const chipsHost = document.getElementById(inputId + 'Chips');
+        if (chipsHost && chipsHost._tagInputApi) chipsHost._tagInputApi.setVal(rel.join(', '));
+        else document.getElementById(inputId).value = rel.join(', ');
+        toast('已從韋氏補上相關詞', 'toast-success');
+        return;
+      }
+    } catch (_) { /* 掉回 LLM */ }
+  }
   try {
     const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
     const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
@@ -1636,6 +1652,27 @@ async function llmFillRelated(inputId, word) {
 
 /** LLM 填相似/反義/衍生物（browser modal 版；只填空欄） */
 async function llmFillSynAntDeriv(word) {
+  // ETERNAL1: 韋氏優先（同/反義吃 thesaurus；衍生吃 collegiate stems；只填空欄）
+  const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+  if (dk || tk) {
+    try {
+      const raw = await lookupMerriam(word, dk, tk);
+      const f = merriamToFields(JSON.parse(raw), word);
+      let n = 0;
+      for (const [id, chipsId, val] of [['fSynonyms', 'fSynonymChips', f.synonym], ['fAntonyms', 'fAntonymChips', f.antonym], ['fDerivatives', 'fDerivativeChips', f.derivative]]) {
+        if (!val) continue;
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const host = document.getElementById(chipsId);
+        const already = host?._tagInputApi ? host._tagInputApi.getVal() : el.value.trim();
+        if (already) continue;
+        if (host && host._tagInputApi) host._tagInputApi.setVal(val);
+        else el.value = val;
+        n++;
+      }
+      if (n) toast('已從韋氏補上同義/反義/衍生', 'toast-success');
+    } catch (_) { /* 掉回 LLM */ }
+  }
   const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
   const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
   const tasks = [
