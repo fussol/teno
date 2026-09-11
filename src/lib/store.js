@@ -1200,12 +1200,6 @@ export function createStore() {
       notify();
     },
 
-    /** Clear the review deck filter */
-    clearReviewDeckFilter() {
-      state.reviewDeckFilter = null;
-      notify();
-    },
-
     /** Start a background task */
     startBackgroundTask(id, label, total) {
       state.backgroundTasks = state.backgroundTasks.filter(t => t.id !== id);

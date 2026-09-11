@@ -268,16 +268,19 @@ python3 -c "import re;txt=open('$R/src-tauri/src/lib.rs').read();m=re.search(r'g
 
 | 符號 | 位置 | 狀態 |
 |---|---|---|
-| `writeDbBytes` | `src/lib/api.js:112` → `write_db_bytes`（lib.rs:732 在、已註冊） | 前端零呼叫。疑似 DB 匯入舊路，現行走 `importDbDialog`（settings.js:637）。**候選刪除或留待匯入重構時複用**，刪前確認匯入流程不依賴。 |
+| `writeDbBytes` | `src/lib/api.js:112` → `write_db_bytes`（lib.rs:732 在、已註冊） | 前端零呼叫。現行匯入走 `importDbDialog`（settings.js:637）。**v5.17.8 已刪前端 wrapper**；後端 command 保留（f15／f16 釘著註冊表，刪後端會炸 harness）。 |
 
 ### 11.2 死導出（定義了、src 內無人調用）
 
 | 符號 | 位置 | 狀態 |
 |---|---|---|
-| `ttsAvailable` | `src/lib/tts.js` | src 內零引用（僅舊 harness `verify-g9-tts-fallback.mjs` 提到）。**候選刪除**。 |
-| store `setReviewDeckFilter`／`clearReviewDeckFilter` | `src/lib/store.js` | 定義了、零呼叫。`reviewDeckFilter` 功能可能已下線或從未上線。**候選刪除**（刪前 grep 確認無註解引用）。 |
-| store `enrichOcrWords` | `src/lib/store.js` | 零呼叫。OCR 入庫現行走 `importOcrText`。**候選刪除**。 |
+| store `clearReviewDeckFilter` | `src/lib/store.js` | src＋tools 全零引用。**v5.17.8 已刪**。注意 `reviewDeckFilter` state 欄位本身還活著（study 三頁＋main 在讀），只刪了 setter。 |
 | store `failBackgroundTask` | `src/lib/store.js` | 零呼叫（`start/update/complete/dismissBackgroundTask` 都有人用，唯獨 fail 沒人調）。**不是刪除候選**——失敗路徑本來就該存在，留著是對的；記一筆即可。 |
+
+> **§11 初版誤判更正（v5.17.8 動刀前全量複查抓到）**：以下三項初版列為候選，複查證實活著，**不刪**——
+> `ttsAvailable`（`verify-g9-tts-fallback.mjs` 重度依賴：運行時 `m.ttsAvailable()`＋靜態 `bodyOf(CODE)` 釘死 `export function ttsAvailable()`）；
+> `setReviewDeckFilter`（`verify-g3.mjs` B1 靜態釘 G3 guard 註解＋代碼，刪了 harness 紅）；
+> `enrichOcrWords`（`importOcrText` 內 `await this.enrichOcrWords`，`verify-ocr2-enrich.mjs` 全套覆蓋）。教訓：查死碼必須含 `this.` 同檔調用＋tools harness，否則誤殺。
 
 ### 11.3 名存實亡的中轉（有連接、但走旁門）
 

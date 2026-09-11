@@ -109,9 +109,6 @@ export const getDbMtime = () =>
 export const importDbDialog = () =>
   invoke('import_db_dialog')
 
-export const writeDbBytes = (buf) =>
-  invoke('write_db_bytes', { data: Array.from(new Uint8Array(buf)) })
-
 export const exportDbDialog = () =>
   invoke('export_db_dialog')
 
