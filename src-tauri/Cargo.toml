@@ -3,7 +3,7 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.17.12"
+version = "5.17.13"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"
@@ -42,3 +42,8 @@ sha2 = "0.10"
 zip = "2"
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"
+
+# SLIM1: release strip 符號表（.so 61→55MB；llvm-strip 實測 -6MB）。
+# 桌面＋手機通用，零行為影響（只去 debug symbols）。
+[profile.release]
+strip = true
