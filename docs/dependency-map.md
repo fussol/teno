@@ -1,0 +1,257 @@
+# Teno 部件相互依賴關係總圖（DEPMAP1）
+
+> 生成方式：靜態實測（`grep` 全 repo），非推測。抽樣命令見 §10。
+> 版本：v5.17.5（2026-09-11）。改動任一模組前先查本表。
+> 六路 subagent 曾因 API 429 全滅，本表由主線直接抽取。
+
+---
+
+## 1. 分層總圖（一句話：誰能碰誰）
+
+```
+┌─ 頁面層 src/pages/*.js（19 頁，lazy import，只准往下依賴）
+│    瀏覽/編輯：browser / deck-browser / tag-manager
+│    學習：study / study-v4 / study-mc / study-spell
+│    測驗：exam / exam-flip / exam-mc / exam-spell
+│    工具：tools / import / export / ocr / simulator / dashboard / app-log / settings
+├─ 入口/殼 src/main.js（路由＋nav＋splash，頁面 lazy 載入）
+├─ 引擎層 src/engine/session-*.js（學習/測驗 session 狀態機）
+├─ 核心層 src/core/*.js（FSRS／scheduler／import 解析／exam-session／simulator／filter）
+├─ 服務層 src/lib/*.js（db／store／api／解析／呈現／橫切）
+└─ 後端 src-tauri/src/*.rs（tauri command，唯一經 src/lib/api.js 呼叫）
+```
+
+**鐵律：頁面不准互相 import；跨頁共用一律下沉到 `lib`／`core`／`engine`。**
+`main.js` 註明頁面→main 循環已被抽離（state/toast 已搬 `lib`）。
+
+---
+
+## 2. 模組職責（一檔一句話）
+
+### 2.1 頁面層（按行數＝爆炸半徑排序）
+
+| 檔案 | 行數 | 職責 |
+|---|---|---|
+| deck-browser.js | 2316 | 字本瀏覽＋新增/編輯 modal（圖片、膠囊、自動填入鏈） |
+| tools.js | 2086 | 批次工具：組合包自動補齊（9 欄位×來源分派）＋獨立卡 |
+| browser.js | 1827 | 字庫瀏覽＋新增/編輯 modal（與 deck-browser 鏡像邏輯） |
+| settings.js | 1758 | 設定頁：全部開關＋Key＋主題＋備份＋Drive |
+| ocr.js | 1140 | OCR 錄入頁（引擎選擇＋裁切＋辨識＋入庫） |
+| import.js | 1042 | CSV/TSV/APKG/DB 匯入 |
+| dashboard.js | 977 | 統計圖表（讀 FSRS／scheduler） |
+| simulator.js | 751 | FSRS 參數模擬（調 `simulate_fsrs`） |
+| exam-mc.js | 538 | 測驗-選擇（session-mc-utils） |
+| exam-spell.js | 513 | 測驗-拼字（session-spell-utils） |
+| exam-flip.js | 513 | 測驗-翻卡 |
+| tag-manager.js | 502 | 標籤管理（browser 子頁） |
+| study-v4.js | — | 學習-翻卡（session-utils） |
+| study-mc.js | — | 學習-選擇（session-mc-utils） |
+| study-spell.js | — | 學習-拼字（session-spell-utils） |
+| study.js／exam.js | — | 主頁殼（幾乎只有 `svg.js` 依賴，實作在子頁） |
+| export.js | — | CSV/DB 匯出（`core/import.buildCSV`＋`exportCsvDialog`） |
+| app-log.js | 205 | 操作日誌頁 |
+
+### 2.2 服務層 `src/lib`
+
+| 檔案 | 被 import 數 | 職責 |
+|---|---|---|
+| svg.js | 20 | 圖標＋字卡/例句 HTML（`cardFaceHtml` 在 word-extra，`splitFieldsHtml` 等在 svg） |
+| toast.js | 16 | 全 app 提示 |
+| word-extra.js | 9 | 字卡面渲染＋欄位可見度（`cardFaceHtml`／`visShow`／`extraFieldsHtml`） |
+| tts.js | 9 | 發音：`speak`／`stopSpeech`／`bindSpeakClick`（轉調 api `speakText`） |
+| api.js | 8＋動態7 | 後端唯一入口（wrapper→command 見 §6） |
+| word-image.js | 8 | 單字圖片 carousel＋編輯器縮圖＋貼連結流程 |
+| platform.js | 6 | 平台判斷＋下載 blob |
+| db.js | 3＋動態45 | SQLite 資料層（真正的資料心臟，靜態數會騙人） |
+| store.js | 2 | 全域 state＋actions（createStore；單例在 app-store.js） |
+| app-store.js | 2 | `export const store = createStore()` 單例 |
+| merriam.js | 4（3頁＋harness） | 韋氏純解析（strip／parse／merriamToFields／parseStems） |
+| dictionary.js | 2（ocr／tools） | 內建詞表（`assets/words.txt`） |
+| display-limit.js | 2 | 瀏覽顯示上限（`browserDisplayLimit`） |
+| rng.js | 4 | hash／mulberry32（queue shuffle／fuzz） |
+| image-url.js | 2（word-image 鏈） | 圖片 URL 正規化＋貼連結解析（IMGURL1） |
+| theme.js | 1 | 主題 |
+| chart.js | 2 | 圖表（dashboard 用） |
+| custom-select.js | 2 | 自訂下拉（main.js 初始化） |
+| app-log.js | 5（動態） | 操作日誌寫庫 |
+| backup-scheduler.js | 1（動態） | 自動備份排程 |
+| ocr-blacklist.js | — | OCR 黑名單預設字 |
+| icon-presets.js | — | launcher icon 預設 |
+| human-data.js | — | 人工資料（展示用） |
+| easter-eggs.js | — | 彩蛋 |
+
+### 2.3 核心層 `src/core`／引擎 `src/engine`／OCR `src/lib/ocr`
+
+| 檔案 | 被引用 | 職責 |
+|---|---|---|
+| core/fsrs.js | 6（4 engine＋store＋dashboard） | FSRS 排程唯一真相（參數／review／fuzz） |
+| core/scheduler.js | 5（4 engine＋store＋dashboard＋study-mc/spell/v4＋main） | 抽卡 queue／shuffle／streak |
+| core/import.js | 2（tools＋export） | CSV/TSV 解析＋欄位正規化（`normalizePos` 等） |
+| core/exam-session.js | 3 | 測驗 session 存檔（exam-flip 用） |
+| core/fsrs-optimizer.js | 1（動態，simulator） | 權重優化 |
+| core/simulator.js | 1（動態，simulator 頁） | 模擬引擎 |
+| core/filterEngine.js | 1（動態） | 搜尋語法解析 |
+| engine/session-utils.js | study-v4 | 翻卡 session |
+| engine/session-mc-utils.js | study-mc＋exam-mc | 選擇 session |
+| engine/session-spell-utils.js | study-spell＋exam-spell | 拼字 session |
+| engine/session-v4.js | — | v4 session（fsrs＋scheduler＋store） |
+| ocr/engine.js | ocr 頁 | 引擎列舉（讀 `ocr_engine`） |
+| ocr/vision-adapter.js | — | 雲端 vision（含 `ocrVisionModel`） |
+| ocr/auto-preprocess.js | — | 自動預處理（調 `upscale.js` 的 otsu／行高／縮放） |
+| ocr/preprocess.js | ocr 頁 | 高亮色票（`HIGHLIGHTER_COLORS`） |
+| ocr/crop.js | ocr 頁 | 四角裁切 |
+| ocr/upscale.js | auto-preprocess | otsu／行高／縮放 |
+| ocr/tile-scan.js | 動態 | 切片掃描 |
+| ocr/tesseract-adapter.js | 動態 | 本地 Tesseract |
+| ocr/paddle-adapter.js | 動態 | Paddle |
+
+---
+
+## 3. 資料層：表＋settings key 讀寫
+
+### 3.1 表（`db.js` 建表；後端 Rust 側有對應 migration v11–v13）
+
+| 表 | 用途 | 主要讀寫者 |
+|---|---|---|
+| words（＋decks 欄等；migration 加欄） | 單字本體 | store（add/edit/import）、全部頁面讀 |
+| word_images | 單字圖片（word_id 外鍵） | word-image.js（經 db.js `addWordImage` 等） |
+| settings（key-value） | 全部開關（下表） | store（48 處 get）＋各頁直接讀 |
+| review_log | FSRS 複習記錄 | store rateCard、optimizer |
+| audit_log／app-log.db | 操作日誌 | app-log.js |
+| examSessions（settings 存） | 測驗歷史 | exam 頁、store |
+
+### 3.2 settings key 讀寫對照（寫者 → 讀者）
+
+**單一寫者（store 內寫，多處讀）**：`buried*`／`suspended*`／`buriedAt*`（6 組×3 模式）、`ankiSettings*`（3 模式）、`deckOrder`、`launcherIcon`、`fieldVisExam`。讀者：學習/測驗頁＋settings 頁。
+
+**頁面直讀（`import('../lib/db.js').getSetting`）**：
+- browser.js：`exampleDisplayMax`、`autoFillOrder`
+- deck-browser.js：`exampleDisplayMax`、`autoFillOrder`（×2 modal）
+- tools.js：`autofillOverwrite`、`exampleDisplayMax`
+- ocr.js：`ocr_engine`、`ocrHighlightColor`
+- main.js：`launcherIcon`
+
+**store 啟動載入（48 處 get，讀完進 `state.*`）**：`mwDictKey`／`mwThesKey`、`ocrMode`／`ocrRestoreModel`／`graylist`／`blacklist`／`ocrCambridgeVerify`、`fieldVisStudy`／`fieldVisExam`／`fieldVisBrowser*`、`tags`／`systemTags`／`tagConfig`、`ttsVoice`／`ttsSpeed`／`ttsPitch`、`themeMode`／`themeAccent`、`dayCutoff`、`deckOrder`、`examSessions`、`simParams`、`devMode`、`colorPalette`、`logRetentionDays`、`backupIntervalH`／`backupKeepMax`、`maxExamSessions`、`uiHints`、`ollamaUrl`、`examples`／`edits`。
+
+**注意**：`setSetting('字面key')` 在前端是 0 次——寫入全走變數（`stateKey`／`DISPLAY_LIMIT_KEY` 等）或 settings 頁表單。查「誰寫了某 key」要 `grep setSetting`＋變數回溯，不能只 grep 字面。
+
+---
+
+## 4. 自動補齊來源分派（tools.js，韋氏第一、劍橋第二）
+
+組合包 9 欄預設（`_getMethod(id, fallback)`）：
+
+| 欄位 | 預設 | 候選 |
+|---|---|---|
+| pos 詞性 | cambridge | cambridge／merriam／llm |
+| example 例句 | dictionary-api | dict-api／cambridge／merriam／tatoeba／llm |
+| pron 發音 | cambridge | cambridge／merriam／llm |
+| related 相關詞 | llm | llm／merriam |
+| forms 詞形 | merriam | merriam／llm |
+| trans 翻譯 | cambridge | cambridge／llm |
+| syn 同義 | merriam | merriam／llm |
+| ant 反義 | merriam | merriam／llm |
+| phrase 片語 | merriam | merriam／llm |
+
+編輯器 sparkle（browser／deck-browser 雙份鏡像）：`llmFillRelated`、`llmFillSynAntDeriv`、`llmFillForms` 皆韋氏優先、無 key 掉 LLM；`mwFillExtra`（音節/字源/片語）、`autoFillAll` 鏈（cambridge→merriam→dict-api→tatoeba→llm，可調序，存 `autoFillOrder`）。
+
+---
+
+## 5. 學習／測驗鏈（FSRS）
+
+```
+頁面（study-v4/mc/spell・exam-flip/mc/spell）
+ └─ engine/session-{utils,mc-utils,spell-utils,v4}.js（session 狀態機＋queue）
+     ├─ core/fsrs.js（review／fuzz／參數，唯一真相）
+     ├─ core/scheduler.js（抽卡／shuffle／streak；main.js 也用 computeStreak）
+     ├─ lib/store.js（rateCard／undo／bury／suspend 回寫 review_log＋settings）
+     └─ lib/tts.js（bindSpeakClick 發音；study/exam 六頁＋兩瀏覽器＋settings 共用）
+```
+
+學習/測驗頁**零直接後端呼叫**（invoke 計數全 0），全走 engine＋store 間接層。`optimize_fsrs`（store 用）、`simulate_fsrs`（simulator 頁用）是唯二 FSRS 相關後端。
+
+---
+
+## 6. 前→後端對照（`api.js` wrapper → `lib.rs` command）
+
+| wrapper | command | 讀寫目標 | 前端呼叫者 |
+|---|---|---|---|
+| fetchLLM | fetch_llm | Ollama（localhost:11434） | tools／browser／deck-browser／ocr |
+| fetchGet | fetch_get | 任意 https GET（白名單：http 僅 localhost） | tools／browser／deck-browser／image-url／word-image |
+| lookupCambridge | lookup_cambridge | Cambridge 官網 scrape（cambridge_scraper crate） | tools／browser／deck-browser／store |
+| lookupMerriam | lookup_merriam | dictionaryapi.com（collegiate＋thesaurus→ithesaurus fallback） | tools／browser／deck-browser（經 merriam.js 解析） |
+| scrapeQuizlet | scrape_quizlet | Quizlet（quizlet_scraper crate） | import |
+| speakText／speakAndroid／stopAndroid | speak_text／tts_android::* | Piper／Android TTS | tts.js（9 頁經 tts 間接） |
+| inspectApkgDialog／getApkgMedia | apkg::* | .apkg 解析 | import |
+| importDbDialog／writeDbBytes／export* | import_db_dialog／write_db_bytes／export_* | DB 檔＋系統對話框 | settings／export／import |
+| backupDb／listBackups／restoreBackup／deleteBackup／pruneBackups／getDbMtime | backup_* | 備份目錄 | settings（backup-scheduler 觸發） |
+| import/exportPiperModel・listPiperVoices | *piper* | TTS 模型 | settings |
+| drive*（6 個） | drive_sync::* | Google Drive | settings |
+| optimizeFsrs／simulateFsrs | optimize_fsrs／simulate_fsrs | Rust 側 FSRS 計算 | store／simulator |
+| setLauncherIcon／getLauncherIcon | icon_android::* | Android launcher | settings／main |
+| runCli／getAppPaths | run_cli／get_app_paths | CLI／路徑 | settings（devMode） |
+
+後端呼叫集中度：tools.js 35 處、deck-browser.js 32 處、browser.js 25 處，三頁吃掉九成。
+
+### CSP 白名單（`tauri.conf.json`，擋外連第一線）
+
+- `img-src`：self＋data:＋asset:＋`https:` 全放行（貼圖連結能顯示的前提）
+- `connect-src`：self＋localhost:11434＋`api.dictionaryapi.dev`＋`api.tatoeba.org` ——注意**沒有** `dictionaryapi.com`／`dictionary.cambridge.org`（前端直連會被擋，必須走後端 `fetch_get`／`lookup_*` 繞行，這就是 IMGURL1 用 fetchGet 的原因）
+
+---
+
+## 7. 頁面路由（`main.js` lazy import＋`SUBPAGE_PARENT`）
+
+```
+study ┬ study-v4／study-mc／study-spell
+exam  ┬ exam-flip／exam-mc／exam-spell
+browser ┬ deck-browser／tag-manager
+tools ┬ import／export／ocr／simulator
+settings ┬ app-log
+dashboard（獨立主頁）
+```
+
+`store.actions.navigate(page)` 切頁；`window.__pageCleanup` 清上一頁監聽。改路由先看 `SUBPAGE_PARENT`（nav 高亮依賴它）。
+
+---
+
+## 8. 改 A 動 B 風險表（修 bug 前必查）
+
+| 改這裡 | 會動到 | 原因 |
+|---|---|---|
+| svg.js | 20 檔全 app | 圖標＋字卡 HTML 共用 |
+| db.js（表結構） | 全 app＋後端 migration | 前後端雙寫 migration（v11–v13 對應）；45 處動態 import |
+| store.js（state 鍵／action） | 全部頁面 | 單一真相；`cards`／`cardsMc`／`cardsSpell` 三 Map 並存 |
+| word-extra.js（欄位可見度） | 學習/測驗/瀏覽全字卡面 | `visShow`／`cardFaceHtml` 共用；`fieldVis*` 五鍵 |
+| merriam.js（parser） | browser／deck-browser／tools＋全部 harness | 純函式牽三頁；改 shape 先跑 verify-mw-* |
+| api.js（wrapper 簽名） | 8 檔＋7 處動態 | 後端唯一入口 |
+| tts.js（speak 簽名） | 9 檔（學習測驗六頁＋兩瀏覽器＋settings） | 經 bindSpeakClick 間接 |
+| core/fsrs.js | 4 engine＋store＋dashboard | 排程唯一真相；Anki 對齊要求 |
+| core/scheduler.js | engine＋store＋dashboard＋3 study 頁＋main | queue／streak 共用 |
+| engine/session-*.js | 對應學習＋測驗頁（mc/spell 兩用） | mc/spell 引擎學習測驗共用，改一動二 |
+| browser.js ÷ deck-browser.js | 彼此（鏡像邏輯） | autoFill／sparkle／圖片三份鏡像，修一處要同步另一處（歷史重災區） |
+| tools.js 組合包預設 | 批次補齊結果 | `_getMethod` fallback 改一個影響整批 |
+| tauri.conf.json CSP | 全 app 外連 | 加新外連域名要同步加白名單，否則前端直連被擋 |
+| lib.rs command 簽名 | api.js＋呼叫頁 | 前後端契約；另有 `src-tauri/tests/f12_download.rs` |
+
+---
+
+## 9. 維修 SOP（以後修 bug 照這走）
+
+1. 症狀定位層：UI→頁面？資料→store/db？排程→engine/core？外連→api＋CSP？
+2. 查本表找共用鏈：先列「同函式還被誰用」，一次修全（不要只修報案那頁，browser/deck-browser 鏡像必同步）。
+3. 純函式先寫 harness（`tools/verify-*.mjs`，含 stash 反向驗證）。
+4. 全套回歸（十一顆）＋`vite build`＋`node --check` 改動檔。
+5. 一結案一 commit＋patch 升版＋tag（`tools/version.sh patch` 三檔一致才過）。
+
+---
+
+## 10. 抽樣命令（重抽本表用）
+
+```bash
+R="/home/jupiter/teno 修檢版"
+grep -rn "from '\.\." "$R/src/pages/" "$R/src/lib/" "$R/src/core/" "$R/src/engine/" "$R/src/main.js" > /tmp/imports.txt  # 靜態 import 邊（125 條）
+grep -rhoE "getSetting\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn   # settings 讀
+grep -rln "core/fsrs" "$R/src/"                                            # FSRS 引用者
+python3 -c "import re;txt=open('$R/src-tauri/src/lib.rs').read();m=re.search(r'generate_handler!\[(.*?)\]\)',txt,re.S);print([p.strip() for p in m.group(1).split(',') if p.strip() and ' ' not in p.strip() and '(' not in p.strip() and '::' not in p.strip()])"  # command 表
+```
