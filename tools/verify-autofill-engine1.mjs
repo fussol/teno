@@ -163,23 +163,22 @@ console.log('[E8b] errors 通道（ENGINE2：詞性卡 nosug 語意所依）');
   chk('成功時 errors 為空', Object.keys(r.errors || {}).length === 0 && r.patch.pos === '名詞');
 }
 
-console.log('[E9] 接線覆蓋（ENGINE2：八卡＋十 sparkle 全走引擎）');
+console.log('[E9] 接線覆蓋（COMBO1：獨立卡已刪，組合包十一欄開關＋引擎；兩編輯器 sparkle 走引擎不動）');
 {
   const tools = readFileSync('src/pages/tools.js', 'utf8');
-  for (const f of ['pos', 'example', 'pron', 'related', 'forms', 'syn', 'ant', 'phrase'])
-    chk(`獨立卡 ${f} 走 _mwFillOne`, new RegExp(`_mwFillOne\\('${f}'`).test(tools));
-  chk('獨立卡無殘留直調 parseThesaurusEntries', !/parseThesaurusEntries/.test(tools));
-  chk('獨立卡發音無殘留手拼斜線', !/f\\.pron\\.replace/.test(tools));
-  const deck = readFileSync('src/pages/deck-browser.js', 'utf8');
-  const brow = readFileSync('src/pages/browser.js', 'utf8');
-  for (const [fn, sig] of [['llmFillRelated', 'related'], ['llmFillForms', 'forms'], ['llmFillSynAntDeriv', 'syn'], ['mwFillPhrases', 'phrase']]) {
-    chk(`deck ${fn} 走 _engineMw`, new RegExp(`function ${fn}[\\s\\S]{0,600}_engineMw\\(word, \\{ [\\s\\S]{0,80}${sig}`).test(deck));
-    chk(`browser ${fn} 走 _engineMw`, new RegExp(`function ${fn}[\\s\\S]{0,600}_engineMw\\(word, \\{ [\\s\\S]{0,80}${sig}`).test(brow));
-  }
-  chk('deck mwFillExtra 走引擎三欄', /function mwFillExtra\(prefix[\s\S]{0,500}_engineMw\(word, \{ syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' \}/.test(deck));
-  chk('browser mwFillExtra 走引擎三欄', /function mwFillExtra\(s, g[\s\S]{0,500}_engineMw\(word, \{ syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' \}/.test(brow));
-  chk('deck 僅批量 fetcher 直調（sparkle 零殘留）', (deck.match(/merriamToFields\(JSON\.parse\(raw\)/g) || []).length === 1 && /const mwLookup = async/.test(deck));
-  chk('browser 零直調', !/merriamToFields\(JSON\.parse\(raw\)/.test(brow));
+  chk('獨立卡 UI 已刪（無九卡按鈕）', !/__genPos\(\)|__genExamples\(\)|__genPronunciations\(\)|__genRelated\(\)|__genTranslation\(\)|__genSynonym\(\)|__genAntonym\(\)|__genPhrases\(\)/.test(tools));
+  chk('獨立卡 handler 已刪（無 window.__gen*）', !/window\.__gen(Pos|Examples|Pronunciations|Related|FormsMw|FormsLLM|Translation|Synonym|Antonym|Phrases)\b/.test(tools));
+  chk('獨立卡來源選單已刪（無 posMethod 等）', !/posMethod|exampleMethod|pronMethod|relatedMethod|transMethod|synMethod|antMethod|phraseMethod/.test(tools));
+  chk('_mwFillOne 已刪（組合包直走 fillWordFields）', !/_mwFillOne/.test(tools));
+  for (const f of ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'])
+    chk(`組合包 ${f} 有開關`, new RegExp(`id="comboOn_${f}"`).test(tools));
+  chk('組合包有全選/全關', /id="comboAllOn"/.test(tools) && /id="comboAllOff"/.test(tools));
+  chk('組合包 M 只組啟用欄（for of on）', /for \(const f of on\) M\[f\] = SRC\[f\]/.test(tools));
+  chk('裸詞判定只看啟用欄', /COMBO1: 只看已啟用欄位/.test(tools));
+  chk('全關有擋下', /組合包欄位全關/.test(tools));
+  chk('開關記憶進 _srcMem.comboOn', /_srcMem\.comboOn/.test(tools));
+  chk('例句門檻/句數搬進組合包', /id="exampleThreshold"/.test(tools) && /id="exampleCount"/.test(tools) && /_exampleConfig\(\)/.test(tools));
+  chk('組合包仍走引擎 fillWordFields', /fillWordFields\(\{/.test(tools));
 }
 
 console.log('[E9b] 接線覆蓋（ENGINE3：例句鈕整條 chain＋音節字源獨立鈕全走引擎）');

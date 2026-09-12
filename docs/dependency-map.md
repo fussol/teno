@@ -373,10 +373,11 @@ grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由
 | showDeckMergeModal／showDeckMoveModal | 單字新增合併流程 | deck-browser 專屬；browser.js 那顆是另一份 |
 | tts.js selector 清單 | 全 app 點讀發音 | CARDNEXT1 後中文欄靜音是刻意的；加新可發音 class 要同步改 tapflip1 harness |
 | word-extra 例句區結構 | 兩瀏覽器字卡刷新 | 區內鈕已拔；刷新假設「例句區無鈕」，加回去會雙鈕重現 |
-### 12.7 AUTOFILL-ENGINE1（v5.17.14）→ ENGINE2 接滿 → ENGINE3 全走引擎（本版 v5.17.16）
+### 12.7 AUTOFILL-ENGINE1（v5.17.14）→ ENGINE2 接滿 → ENGINE3 全走引擎 → COMBO1 獨立卡併入（本版）
 - ENGINE1：組合包 fillWord＋批量 fillOne 共用 fillWordFields。
 - ENGINE2：九張獨立卡韋氏分支經 `_mwFillOne` 走引擎（pos 保留 nosug 語意，errors 通道新回傳）；兩編輯器十顆 sparkle 韋氏分支經 `_engineMw` 走引擎（LLM 兜底不動；mwFillExtra 單次 fetch 三欄，片語以空底取新句走 ExampleAppend）。
-- ENGINE3：三顆例句鈕整條 chain 走引擎（merriam 步＝phrase 併例句，deck 取首句未收錄／browser 經 norm 取新句＋來源 toast，皆同舊；deck 兩鈕照舊無 llm 路）；`_engineMw` fetchers 補齊 getCamEn＋llmText（getMw 單次快取，threshold 預設全開）；三處 modal 音節列新增獨立 sparkle（deckAddFillExtra／deckEditFillExtra／btnFillExtra→既有 mwFillExtra）；g/s 提升 modal 層（fGet/fSet 避開 modal 參數 s，autoFillAll 內 alias 回來呼叫點不動）；引擎 Cambridge 分支正規物件形例句（免 [object Object] 灌 chip，E2b 鎖）。
+- ENGINE3：三顆例句鈕整條 chain 走引擎；`_engineMw` fetchers 補齊；三處 modal 音節列新增獨立 sparkle；引擎 Cambridge 分支正規物件形例句（E2b 鎖）。
+- COMBO1：九張獨立卡 UI＋JS 整段刪（tools.js 1163 行；`_mwFillOne`／gen*ViaMerriam／window.__gen*／死 helper 全除，`mergeExamplePhrases` import 同除）；組合包十一欄各別開關（switch＋全選/全關，`_srcMem.comboOn` 與來源同 blob 記憶）；`__comboFull` 只組啟用欄（M／`_isBare`／CN 全過濾，全關擋下）；例句門檻句數＋顯示上限＋llmUrlRow 搬進組合包；`_exampleConfig`／`_mwLookup`／`_mwKeyMissing`／`_mwErr` 補回組合包前（刪段時連帶砍掉）。兩編輯器 sparkle 不動（deck/browser 斷言沿用）。
 - 故意不接：autoFillAll 鏈編排層（調的已是接線後的 sparkle，傳遞受惠）、Cambridge／LLM／dict-api／tatoeba 獨立卡分支（非 MW 解析層，無一致性問題）、OCR 入庫 Cambridge 管線（store 層入庫語意，動它風險大於收益）、批量 runBatchAdd 的 mwLookup（本來就是引擎的 fetch 層）。
 - 語意修正（只多不砍方向）：相關詞卡補上 synonym 字串 union（與組合包／批量／編輯器一致）；片語卡覆寫模式去重（舊行為會寫入重句）；mwFillExtra 音節／字源改只填空欄（註解本來就這麼寫，舊程式會蓋掉已填值）。
 | autofill-engine.js（欄位分派＋errors＋E2b 物件形正規） | 組合包／批量／八卡／十三 sparkle＋三音節字源鈕 | 改來源語意只動引擎；harness E9/E9b 鎖接線覆蓋 |

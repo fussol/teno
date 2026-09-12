@@ -1,5 +1,5 @@
-import { icon, mergeExamplePhrases } from '../lib/svg.js';
-import { normalizePos } from '../core/import.js'; // G-TOOL1: 詞性正規化單一真相（與匯入頁同語意）
+import { icon } from '../lib/svg.js';
+import { normalizePos } from '../core/import.js'; // G-TOOL1＋COMBO1: 組合包外只剩 __lookupCambridge 用（去尾點＋短形映射＋去重）
 import { toast } from '../lib/toast.js';
 import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
 
@@ -38,6 +38,9 @@ export function render(s) {
       .cs-o{padding:6px 10px;cursor:pointer;color:var(--text-primary);transition:background .1s}
       .cs-o:hover{background:var(--bg-hover)}
       .cs-o.s{color:var(--accent);font-weight:600}
+      .switch-sm{width:32px;height:18px;flex-shrink:0}
+      .switch-sm::after{width:12px;height:12px;top:2px;left:3px}
+      .switch-sm.on::after{left:15px}
     </style>
     <div class="page-title">${icon('tools')} 工具</div>
     <div class="page-subtitle">輔助工具，幫你整理單字庫</div>
@@ -133,52 +136,33 @@ export function render(s) {
     <!-- A套：自動補齊家族（組合包＋九卡網格；手機塌單欄） -->
     <div class="section">
       <div class="section-title">${icon('sparkle')} 自動補齊</div>
-      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞與片語（上面有一鍵全補組合包）</div>
+      <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞、片語、字源與音節（下面一鍵全補組合包，各欄可各別開關＋選來源）</div>
       <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
         <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
         <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位（開＝整欄取代＋無視門檻；關＝只補缺失）</span>
       </div>
-    <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；AUTOFILL-ENGINE1 起十一欄，字源/音節韋氏固定） -->
+    <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
-        <div class="card-desc">只挑十一欄全空的裸詞（只有單字），按下面選的來源一次填完十一個欄位；字源/音節只吃韋氏；覆寫開＝全部重跑。來源選擇會記住。</div>
+        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；覆寫開＝全部重跑。來源選擇與開關會記住。</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
           <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
+          <button class="btn btn-sm" id="comboAllOn">全選</button>
+          <button class="btn btn-sm" id="comboAllOff">全關</button>
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">詞形</span>${_selHtml('comboForms', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">片語</span>${_selHtml('comboPhrase', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">字源</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><span style="font-size:12px;min-width:64px;color:var(--text-secondary)">音節</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
-        </div>
-        <div class="tool-output" id="comboResult" style="margin-top:var(--s3);display:none"></div>
-      </div>
-      <div class="grid grid-2 tool-grid">
-        <div class="card">
-          <div class="card-title">${icon('hash')} 自動產生詞性</div>
-          <div class="card-desc">為缺少詞性的單字自動補上</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('posMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}
-          <button class="btn" onclick="window.__genPos()">${icon('hash')} 開始產生</button>
-        </div>
-          <div class="tool-output" id="posResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-    <!-- Generate Examples -->
-        <div class="card">
-          <div class="card-title">${icon('sparkle')} 自動產生例句</div>
-          <div class="card-desc">為沒有例句的單字產生例句，或翻譯現有例句為中文</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s2);flex-wrap:wrap">
-          ${_selHtml('exampleMethod', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}
-          <button class="btn" onclick="window.__genExamples()">${icon('sparkle')} 開始產生</button>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_example" role="switch" aria-checked="true" title="是否補例句"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pron" role="switch" aria-checked="true" title="是否補發音"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_related" role="switch" aria-checked="true" title="是否補相關詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_forms" role="switch" aria-checked="true" title="是否補詞形"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞形</span>${_selHtml('comboForms', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_trans" role="switch" aria-checked="true" title="是否補翻譯"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syn" role="switch" aria-checked="true" title="是否補同義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_ant" role="switch" aria-checked="true" title="是否補反義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_phrase" role="switch" aria-checked="true" title="是否補片語"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">片語</span>${_selHtml('comboPhrase', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_etymology" role="switch" aria-checked="true" title="是否補字源"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">字源</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syllables" role="switch" aria-checked="true" title="是否補音節"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">音節</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
         </div>
         <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2);align-items:center;flex-wrap:wrap">
           <label style="font-size:12px;white-space:nowrap;flex-shrink:0">少於</label>
@@ -200,83 +184,8 @@ export function render(s) {
               style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
           </div>
         </div>
-        <div class="tool-output" id="examplesResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-    <!-- Fetch Pronunciation -->
-        <div class="card">
-          <div class="card-title">${icon('mic')} 自動抓取發音</div>
-          <div class="card-desc">為缺少音標的單字自動補上</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('pronMethod', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}
-          <button class="btn" onclick="window.__genPronunciations()">${icon('mic')} 開始抓取</button>
-        </div>
-        <div class="tool-output" id="pronResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-    <!-- Generate Related Words -->
-        <div class="card">
-          <div class="card-title">${icon('sparkle')} 自動產生相關詞</div>
-          <div class="card-desc">為缺少相關詞（同義詞、近似詞）的單字自動生成（LLM 或韋氏同義庫）</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('relatedMethod', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}
-          <button class="btn" onclick="window.__genRelated()">${icon('sparkle')} 開始產生</button>
-        </div>
-        <div class="tool-output" id="relatedResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-    <!-- Generate Forms -->
-        <div class="card">
-          <div class="card-title">${icon('sparkle')} 自動產生詞形變化</div>
-          <div class="card-desc">用韋氏或 LLM 為缺少詞形變化（過去式、-ing、-ed、派生名詞等）的單字自動生成</div>
-        <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
-          <button class="btn" onclick="window.__genFormsMw()">${icon('book')} 韋氏</button>
-          <button class="btn" onclick="window.__genFormsLLM()">${icon('brain')} LLM</button>
-        </div>
-        <div class="tool-output" id="formsResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-    <!-- D段拆分（2026-09-08 使用者裁示）：翻譯/同義/反義/片語四張獨立卡；打包卡已刪 -->
-        <div class="card">
-          <div class="card-title">${icon('translate')} 自動產生中文翻譯</div>
-          <div class="card-desc">為缺少中文定義的單字補上中文翻譯（寫入字義欄）</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('transMethod', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}
-          <button class="btn" onclick="window.__genTranslation()">${icon('translate')} 開始產生</button>
-        </div>
-        <div class="tool-output" id="transResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">${icon('sparkle')} 自動產生同義詞</div>
-          <div class="card-desc">為缺少同義詞的單字自動補上（韋氏同義庫或 LLM）</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('synMethod', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}
-          <button class="btn" onclick="window.__genSynonym()">${icon('sparkle')} 開始產生</button>
-        </div>
-        <div class="tool-output" id="synResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">${icon('sparkle')} 自動產生反義詞</div>
-          <div class="card-desc">為缺少反義詞的單字自動補上（韋氏反義庫或 LLM）</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('antMethod', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}
-          <button class="btn" onclick="window.__genAntonym()">${icon('sparkle')} 開始產生</button>
-        </div>
-        <div class="tool-output" id="antResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">${icon('book')} 自動產生片語</div>
-          <div class="card-desc">為缺少片語的單字自動補上常見搭配（韋氏片語庫或 LLM）</div>
-        <div class="tool-row" style="margin-bottom:var(--s2)">
-          ${_selHtml('phraseMethod', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}
-          <button class="btn" onclick="window.__genPhrases()">${icon('book')} 開始產生</button>
-        </div>
-        <div class="tool-output" id="phraseResult" style="margin-top:var(--s3);display:none"></div>
-        </div>
-      </div><!-- /自動補齊 grid -->
+        <div class="tool-output" id="comboResult" style="margin-top:var(--s3);display:none"></div>
+      </div>
     </div><!-- /自動補齊 section -->
 
     <!-- A套：字典查詢家族 -->
@@ -316,10 +225,10 @@ function renderSpellResult(r) {
 // BH-04: module 級 flag 擋重複綁定常駐 document click（仿 lib/custom-select.js G5 _globalDocBound；須在 onMount 外，renderPage 每次導航重跑 onMount 會重生閉包內變數）
 let _toolsCsBound = false;
 
-// ─── 來源記憶（2026-09-08 使用者裁示）：全部來源選單＋組合包收合狀態 ───
+// ─── 來源記憶（2026-09-08 使用者裁示）：全部來源選單＋組合包收合狀態＋欄位開關（COMBO1）───
 // 存 db setting methodSources（JSON；demo 走記憶體）。恢復時直接讀 DOM 選項
 // 反查 label，不在 JS 另存選項表（render 改選項不用同步這裡）。
-let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool }
+let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool, comboOn: {field: bool} }
 const _SRC_BLOB_KEY = 'methodSources';
 function _saveSrcMem() {
   const snap = JSON.stringify(_srcMem || {});
@@ -337,6 +246,14 @@ function _applySrcMem() {
     t.dataset.value = val;
     if (t.childNodes[0]) t.childNodes[0].textContent = o.textContent;
     p.querySelectorAll('.cs-o').forEach(c => c.classList.toggle('s', c === o));
+  }
+  // COMBO1: 欄位開關恢復（沒存過＝全開，DOM 預設即全開）
+  const on = _srcMem.comboOn || {};
+  for (const [f, v] of Object.entries(on)) {
+    const el = document.getElementById('comboOn_' + f);
+    if (!el) continue;
+    el.classList.toggle('on', !!v);
+    el.setAttribute('aria-checked', String(!!v));
   }
   if (_srcMem.comboCollapsed) {
     document.getElementById('comboSrcGrid')?.style.setProperty('display', 'none');
@@ -400,12 +317,6 @@ export function onMount(s) {
   });
   window.__pageCleanup = () => { _unsub(); delete window.__pageCleanup; };
 
-  // G-TOOL1: 本地 _posCN 表刪除，統一走 core normalizePos（去尾點＋短形映射＋去重）。
-  // 原表遇 `adj.` 原樣寫入，chip 選不中；LLM 偶發點形亦同病。
-  const _normalizePos = (pos) => normalizePos(pos);
-  const _posToks = (s) => normalizePos(s).split(',').map(x => x.trim()).filter(Boolean);
-  const _normalizePron = (pron) => (pron || '').trim();
-
   // ponytail: shared LLM model detection
   async function detectModel(resultElId) {
     const llmRow = document.getElementById('llmUrlRow');
@@ -455,7 +366,7 @@ export function onMount(s) {
         t.childNodes[0].textContent = o.textContent;
         p.querySelectorAll('.cs-o').forEach(c => c.classList.toggle('s', c === o));
         p.classList.remove('o');
-        // 來源記憶：任何來源選單（含組合包八組）切換即存
+        // 來源記憶：任何來源選單（含組合包）切換即存
         if (t.dataset.id) {
           _srcMem = _srcMem || { selectors: {}, comboCollapsed: false };
           _srcMem.selectors = _srcMem.selectors || {};
@@ -524,10 +435,11 @@ export function onMount(s) {
   import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
     try {
       const stored = v ? JSON.parse(v) : null;
-      // 合併：載入完成前使用者已點過選單/收合的話，以手上的為準（防競態洗掉）
+      // 合併：載入完成前使用者已點過選單/收合/開關的話，以手上的為準（防競態洗掉）
       _srcMem = {
         selectors: { ...(stored?.selectors || {}), ...(_srcMem?.selectors || {}) },
         comboCollapsed: _srcMem ? !!_srcMem.comboCollapsed : !!stored?.comboCollapsed,
+        comboOn: { ...(stored?.comboOn || {}), ...(_srcMem?.comboOn || {}) },
       };
     }
     catch { _srcMem = _srcMem || { selectors: {}, comboCollapsed: false }; }
@@ -544,496 +456,46 @@ export function onMount(s) {
     _srcMem.comboCollapsed = collapsed;
     _saveSrcMem();
   });
-
-  // ─── Part of Speech Generator ────────────────
-  window.__genPos = async () => {
-    const method = _getMethod('posMethod', 'cambridge');
-    if (method === 'merriam') {
-      await genPosViaMerriam(s);
-    } else if (method === 'llm') {
-      const llm = await detectModel('posResult');
-      if (!llm) return;
-      await genPosViaLLM(s, llm);
-    } else {
-      await genPosViaCambridge(s);
-    }
+  // COMBO1: 欄位開關（點即存；全選/全關批次）
+  const _setComboOn = (f, v) => {
+    const el = document.getElementById('comboOn_' + f);
+    if (!el) return;
+    el.classList.toggle('on', !!v);
+    el.setAttribute('aria-checked', String(!!v));
+    _srcMem = _srcMem || { selectors: {}, comboCollapsed: false };
+    _srcMem.comboOn = _srcMem.comboOn || {};
+    _srcMem.comboOn[f] = !!v;
+    _saveSrcMem();
   };
-  document.querySelector('button.btn[onclick*="__genPos"]')?.addEventListener('click', e => { console.log('click', e); });
+  document.querySelectorAll('[id^="comboOn_"]')?.forEach(el => {
+    el.addEventListener('click', () => _setComboOn(el.id.replace('comboOn_', ''), !el.classList.contains('on')));
+  });
+  document.getElementById('comboAllOn')?.addEventListener('click', () => {
+    document.querySelectorAll('[id^="comboOn_"]')?.forEach(el => _setComboOn(el.id.replace('comboOn_', ''), true));
+  });
+  document.getElementById('comboAllOff')?.addEventListener('click', () => {
+    document.querySelectorAll('[id^="comboOn_"]')?.forEach(el => _setComboOn(el.id.replace('comboOn_', ''), false));
+  });
 
-  async function genPosViaCambridge(s) {
-    hideLlmRow();
-    const words = s.state.words;
-    const taskId = 'gen-pos-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'Cambridge 搜尋詞性', words.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const json = await lookupCambridge(w.word);
-          const data = JSON.parse(json);
-          const newRaw = [...new Set((data.senses || []).flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
-          const existing = new Set(_posToks(w.pos));
-          // C段覆寫：開＝整欄取代（無視已有），關＝合併補缺
-          if (_ow()) {
-            const replaced = normalizePos(newRaw.join(','));
-            if (replaced) { await s.actions.editWord(w.id, { pos: replaced }); count++; }
-            else { fail++; }
-          } else {
-            const toAdd = _posToks(newRaw.join(',')).filter(p => !existing.has(p));
-            if (toAdd.length) {
-              const merged = [...existing, ...toAdd].filter(Boolean).join(', ');
-              await s.actions.editWord(w.id, { pos: merged }); count++;
-            } else { fail++; }
-          }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 500));
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已更新詞性${fail ? `，${fail} 詞無新詞性` : ''}` });
-    const container = document.getElementById('posResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已更新詞性${fail ? `，${fail} 詞無新詞性` : ''}</div>`;
-    }
-    toast(`詞性查詢完成：${count} 更新${fail ? `，${fail} 無新詞性` : ''}`, fail ? '' : 'toast-success');
+  // ─── 組合包：一鍵全補（2026-09-08 使用者裁示；COMBO1 起十一欄各別開關，獨立卡併入）───
+  // 只做已啟用欄位全空的裸詞（覆寫開＝全量）。每詞各來源最多抓一次（cam英/cam中/
+  // 韋氏/dictapi/tatoeba 快取），各欄拼成一個 patch、一次 editWord。
+  const COMBO_FIELDS = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'];
+  const COMBO_CN = { pos: '詞性', example: '例句', pron: '發音', related: '相關詞', forms: '詞形', trans: '翻譯', syn: '同義詞', ant: '反義詞', phrase: '片語', etymology: '字源', syllables: '音節' };
+  // 欄位→word 物件鍵（trans 寫 definition；related/forms 是陣列）
+  const COMBO_KEY = { pos: 'pos', example: 'example', pron: 'pron', related: 'related', forms: 'forms', trans: 'definition', syn: 'synonym', ant: 'antonym', phrase: 'phrases', etymology: 'etymology', syllables: 'syllables' };
+  function _comboOn(f) {
+    const el = document.getElementById('comboOn_' + f);
+    return el ? el.classList.contains('on') : true;
   }
-
-  async function genPosViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = s.state.words;
-    // C段覆寫：開＝全量重跑，關＝只做缺失
-    const noPos = _ow() ? [...words] : words.filter(w => !w.pos || !w.pos.trim());
-    if (noPos.length === 0) {
-      const c = document.getElementById('posResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">所有單字都有詞性了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-pos-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生詞性', noPos.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...noPos.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model, `What is/are the part(s) of speech of "${w.word}"? If multiple, list them comma-separated. Return ONLY English POS labels (e.g. noun, verb, adjective, adverb, preposition, conjunction, pronoun, interjection, determiner, article, plural noun), nothing else.`);
-          const pos = _normalizePos(text);
-          if (pos) { await s.actions.editWord(w.id, { pos }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, noPos.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加詞性${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('posResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加詞性${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 詞性完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
+  function _comboOnFields() {
+    return COMBO_FIELDS.filter(_comboOn);
   }
-
   function _exampleConfig() {
     const threshold = parseInt(document.getElementById('exampleThreshold')?.value, 10) || 1;
     const count = parseInt(document.getElementById('exampleCount')?.value, 10) || 1;
     return { threshold, count };
   }
-
-  function _countSentences(text) {
-    if (!text || !text.trim()) return 0;
-    return text.split('\n').filter(l => l.trim().length > 2).length;
-  }
-
-  function _dedupSentences(text, newLines) {
-    const existing = new Set(
-      (text || '').split('\n').map(l => l.trim().toLowerCase()).filter(Boolean)
-    );
-    return [...new Set(newLines)].filter(l => !existing.has(l.trim().toLowerCase()));
-  }
-
-  window.__genExamples = async () => {
-    const method = _getMethod('exampleMethod', 'dictionary-api');
-    const { threshold, count } = _exampleConfig();
-    if (method === 'llm') {
-      const llm = await detectModel('examplesResult');
-      if (!llm) return;
-      await genExamplesViaLLM(s, llm, count);
-    } else if (method === 'merriam') {
-      await genExamplesViaMerriam(s, threshold);
-    } else if (method === 'cambridge') {
-      await genExamplesViaCambridge(s, threshold);
-    } else if (method === 'tatoeba') {
-      await genExamplesViaTatoeba(s, threshold);
-    } else {
-      await genExamplesViaDictApi(s, threshold);
-    }
-  };
-
-  async function genExamplesViaDictApi(s, threshold) {
-    hideLlmRow();
-    const words = s.state.words;
-    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
-    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
-    if (need.length === 0) {
-      const container = document.getElementById('examplesResult');
-      if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
-      return;
-    }
-    const taskId = 'gen-examples-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '字典 API 抓取例句', need.length);
-    let ok = 0, fail = 0;
-    const CON = 3;
-    const queue = need.map(w => ({ w }));
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const { w } = queue.shift();
-        try {
-          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w.word)}`);
-          if (res.ok) {
-            const data = await res.json();
-            const fresh = [];
-            for (const entry of data) {
-              for (const m of entry.meanings || []) {
-                for (const d of m.definitions || []) {
-                  if (d.example) fresh.push(d.example.trim());
-                }
-              }
-            }
-            // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
-            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
-            if (unique.length) {
-              // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
-            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { example: merged }); ok++;
-            } else { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 300));
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}` });
-    const container = document.getElementById('examplesResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}</div>`;
-    }
-    toast(`例句查詢完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genExamplesViaTatoeba(s, threshold) {
-    hideLlmRow();
-    const words = s.state.words;
-    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
-    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
-    if (need.length === 0) {
-      const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
-      return;
-    }
-    const taskId = 'gen-examples-tat-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'Tatoeba 抓取例句', need.length);
-    let ok = 0, fail = 0;
-    const CON = 3;
-    const queue = [...need.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w.word)}&lang=eng`);
-          if (res.ok) {
-            const body = await res.json();
-            const fresh = (body.data || []).map(s => s.text).filter(Boolean);
-            // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
-            const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
-            if (unique.length) {
-              // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
-            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { example: merged }); ok++;
-            } else { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 500));
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}` });
-    const container = document.getElementById('examplesResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`Tatoeba 例句完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genExamplesViaCambridge(s, threshold) {
-    hideLlmRow();
-    const words = s.state.words;
-    // C段覆寫：開＝無視門檻全量，關＝未達門檻才做
-    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
-    if (need.length === 0) {
-      const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
-      return;
-    }
-    const taskId = 'gen-examples-cam-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'Cambridge 抓取例句', need.length);
-    let ok = 0, fail = 0;
-    const CON = 2;
-    const queue = [...need.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const json = await lookupCambridge(w.word);
-          const data = JSON.parse(json);
-          const fresh = [];
-          for (const sense of data.senses || []) {
-            for (const ex of sense.examples || []) {
-              if (ex) fresh.push(ex.trim());
-            }
-          }
-          // C段覆寫：開＝全取新文（不對舊去重），關＝去重後接續
-          const unique = _ow() ? [...new Set(fresh)] : _dedupSentences(w.example, fresh);
-          if (unique.length) {
-            // C段覆寫：開＝整欄換新（無視舊例句），關＝接續合併
-            const merged = (_ow() ? unique : [(w.example || '').trim(), ...unique]).filter(Boolean).join('\n');
-            await s.actions.editWord(w.id, { example: merged }); ok++;
-          } else { fail++; }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 500));
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}` });
-    const container = document.getElementById('examplesResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`Cambridge 例句完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genExamplesViaLLM(s, llm, count) {
-    const { baseUrl, model } = llm;
-    const words = s.state.words;
-    const existing = [];
-    const queue = [];
-    for (const w of words) {
-      const n = _countSentences(w.example);
-      if (_ow() || n < count) {
-        queue.push(w);
-        existing.push(w.example || '');
-      }
-    }
-    if (queue.length === 0) {
-      const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${count} 句門檻！</div>`; }
-      return;
-    }
-    const taskId = 'gen-examples-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生例句', queue.length);
-    let ok = 0, fail = 0;
-    const CON = 5;
-    const entries = queue.map((w, i) => ({ w, existing: existing[i] }));
-    const q = [...entries.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, q.length) }, async () => {
-      while (q.length > 0) {
-        const [, { w, existing }] = q.shift();
-        try {
-          const prompt = `Create ${count} short example sentences using the word "${w.word}". Format: one sentence per line, each ending with proper punctuation (. ! ?). Only output the sentences, nothing else.`;
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
-          const lines = text.split('\n').filter(Boolean).map(l => l.trim()).filter(l => l.length > 5).slice(0, count);
-          if (lines.length) {
-            // C段覆寫：開＝整批取用（不對舊例句去重），關＝去重後接續
-            const unique = _ow() ? [...new Set(lines)] : _dedupSentences(existing, lines);
-            if (unique.length) {
-              const merged = (_ow() ? unique : [(existing || '').trim(), ...unique]).filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { example: merged }); ok++;
-            } else { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, ok + fail, queue.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('examplesResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 例句完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  window.__spellCheckLLM = async () => {
-    const llm = await detectModel('spellResult');
-    if (!llm) return;
-    const { baseUrl, model } = llm;
-
-    const words = s.state.words;
-    const unique = [...new Set(words.map(w => w.word.toLowerCase().trim()).filter(Boolean))];
-
-    const sc = document.getElementById('spellResult');
-    if (sc) { sc.style.display = 'block'; sc.innerHTML = `<div>載入字典...</div>`; }
-
-    let dict, isKnownWord;
-    try {
-      const mod = await import('../lib/dictionary.js');
-      dict = await mod.loadDictionary();
-      isKnownWord = mod.isKnownWord;
-      if (sc) sc.innerHTML = `<div>字典已載入 (${dict.size} 詞)，過濾中...</div>`;
-    } catch (e) {
-      if (sc) sc.innerHTML = `<div style="color:var(--orange)">${icon('info')} 字典載入失敗: ${e.message}</div>`;
-      toast('字典載入失敗，跳過字典檢查', 'toast-error');
-    }
-    const unknown = [];
-    for (const w of unique) {
-      if (w.length <= 1) continue;
-      if (!dict || !isKnownWord(w)) unknown.push(w);
-    }
-    const skipped = unique.length - unknown.length;
-    const taskId = 'spellcheck-' + Date.now();
-    s.actions.startBackgroundTask(taskId, `LLM 拼字檢查 (字典過濾 ${skipped} 詞)`, unknown.length);
-    let corrections = {};
-    let checked = 0;
-    const CON = 3;
-    const batchSize = 50;
-    const batches = [];
-    for (let i = 0; i < unknown.length; i += batchSize) batches.push(unknown.slice(i, i + batchSize));
-    await Promise.all(Array.from({ length: Math.min(CON, batches.length) }, async () => {
-      while (batches.length > 0) {
-        const batch = batches.shift();
-        try {
-          const prompt = `You are a spell checker. Only flag words that are ACTUALLY MISSPELLED (typos, wrong letters, missing letters). Rules: (1) DO NOT flag British/American spelling variants (e.g. favour/favor, fulfil/fulfill, anaesthetic/anesthetic, offence/offense, honour/honor, paralyse/paralyze, practise/practice). (2) DO NOT suggest different tenses or plural forms (e.g. choke→choking, stare→stares, theory→theories, trauma→traumas). (3) DO NOT suggest synonyms or rephrase expressions, only fix actual typos. (4) Multiple-word expressions (phrases, collocations) should only be flagged if they contain a real typo. (5) Return ONLY a JSON object where keys are misspelled words and values are corrections. Skip everything that is correctly spelled. List: ${JSON.stringify(batch)}`;
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
-          const cleaned = text.replace(/```json|```/g, '').trim();
-          const result = JSON.parse(cleaned);
-          if (typeof result === 'object' && !Array.isArray(result)) Object.assign(corrections, result);
-        } catch (e) {}
-        checked += batch.length;
-        s.actions.updateBackgroundTask(taskId, checked, unknown.length);
-      }
-    }));
-
-    const entries = Object.entries(corrections).filter(([k, v]) => k.toLowerCase() !== v.toLowerCase());
-    const spellResultData = { type: 'spellcheck', entries: entries.map(([w, r]) => ({ wrong: w, right: r, count: words.filter(x => x.word.toLowerCase().trim() === w).length })) };
-    s.actions.completeBackgroundTask(taskId, spellResultData);
-    const container = document.getElementById('spellResult');
-    if (!container) return;
-    container.style.display = 'block';
-
-    if (!entries.length) {
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字拼字正確！</div>`;
-      return;
-    }
-    container.innerHTML = renderSpellResult(spellResultData);
-    container.querySelectorAll('.spell-apply').forEach(btn => btn.addEventListener('click', () => __applyOne(btn.dataset.wrong, btn.dataset.right, btn)));
-    document.getElementById('spellApplyAll')?.addEventListener('click', () => container.querySelectorAll('.spell-apply').forEach(b => b.click()));
-  };
-
-  function __applyOne(wrong, right, btn) {
-    const matches = s.state.words.filter(w => w.word.toLowerCase().trim() === wrong.toLowerCase().trim());
-    if (!matches.length) { toast(`找不到 ${wrong}`, ''); return; }
-    Promise.all(matches.map(w => s.actions.editWord(w.id, { word: right })))
-      .then(() => {
-        btn.closest('div')?.remove();
-        toast(`已修正 ${matches.length} 筆: ${wrong} → ${right}`, 'toast-success');
-      })
-      .catch(() => toast('套用失敗', ''));
-  }
-
-  window.__genPronunciations = async () => {
-    const method = _getMethod('pronMethod', 'cambridge');
-    if (method === 'merriam') {
-      await genPronViaMerriam(s);
-    } else if (method === 'llm') {
-      const llm = await detectModel('pronResult');
-      if (!llm) return;
-      await genPronViaLLM(s, llm);
-    } else {
-      await genPronViaCambridge(s);
-    }
-  };
-
-  async function genPronViaCambridge(s) {
-    hideLlmRow();
-    const words = s.state.words;
-    // C段覆寫：開＝全量重跑，關＝只做缺失
-    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
-    if (noPron.length === 0) {
-      const container = document.getElementById('pronResult');
-      if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
-      return;
-    }
-    const taskId = 'pron-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'Cambridge 字典抓取發音', noPron.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = noPron.map(w => ({ w }));
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const { w } = queue.shift();
-        try {
-          const json = await lookupCambridge(w.word);
-          const data = JSON.parse(json);
-          const pron = _normalizePron(data.uk_ipa || data.us_ipa);
-          if (pron) { await s.actions.editWord(w.id, { pron }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 500));
-        s.actions.updateBackgroundTask(taskId, count + fail, noPron.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加發音${fail ? `，${fail} 詞查無發音` : ''}` });
-    const container = document.getElementById('pronResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加發音${fail ? `，${fail} 詞查無發音` : ''}</div>`;
-    }
-    toast(`發音查詢完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genPronViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = s.state.words;
-    // C段覆寫：開＝全量重跑，關＝只做缺失
-    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
-    if (noPron.length === 0) {
-      const c = document.getElementById('pronResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
-      return;
-    }
-    const taskId = 'pron-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生音標', noPron.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...noPron.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model, `Provide the IPA pronunciation of "${w.word}". Return ONLY the IPA string (e.g. /ˈhɛloʊ/), nothing else.`);
-          if (text && text.trim()) {
-            const cleaned = text.trim().replace(/^\/+|\/+$/g, '');
-            const pron = cleaned ? `/${cleaned}/` : null;
-            if (pron) { await s.actions.editWord(w.id, { pron }); count++; }
-            else { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, noPron.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加音標${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('pronResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加音標${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 音標完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  // ─── D段：韋氏來源四路（key 自備；查無字回 suggest 提示；401/429 明示）───
-  // 共用：讀 key→空則 toast 回設定；解析走 lib/merriam.js。
   async function _mwLookup(word) {
     const { lookupMerriam } = await import('../lib/api.js');
     const { merriamToFields } = await import('../lib/merriam.js');
@@ -1056,675 +518,28 @@ export function onMount(s) {
     if (/timed out/.test(m)) return '韋氏請求逾時，請重試';
     return `韋氏查詢失敗：${m.slice(0, 80)}`;
   }
-  // ── ENGINE2：獨立卡韋氏單欄填充（八張卡共用 fillWordFields；計數／toast 語意由呼叫端維持）──
-  async function _mwFillOne(field, w, extra = {}) {
-    const { fillWordFields } = await import('../lib/autofill-engine.js');
-    const { getMw, ...rest } = extra;
-    return fillWordFields({ wordText: w.word, methods: { [field]: 'merriam' }, existing: w, overwrite: _ow(), ...rest,
-      fetchers: { getMw: getMw || (() => _mwLookup(w.word)) }, onStat: () => {} });
-  }
-
-  async function genPosViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.pos || !w.pos.trim());
-    if (!words.length) {
-      const c = document.getElementById('posResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">所有單字都有詞性了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-pos-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏查詢詞性' + _owTag(), words.length);
-    let count = 0, fail = 0, nosug = 0;
-    const CON = 2;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 詞性走共用引擎（suggest 照舊計 nosug，語意不變）
-          const r = await _mwFillOne('pos', w, { getMw: async () => { const f = await _mwLookup(w.word); if (f.suggest.length) throw new Error('suggest'); return f; } });
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.pos) { await s.actions.editWord(w.id, { pos: r.patch.pos }); count++; }
-          else if (/suggest/.test(r.errors?.pos || '')) { nosug++; fail++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已更新詞性${fail ? `，${fail} 詞失敗${nosug ? '（含查無字）' : ''}` : ''}` });
-    const container = document.getElementById('posResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已更新詞性${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏詞性完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genExamplesViaMerriam(s, threshold) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = s.state.words;
-    const need = _ow() ? [...words] : words.filter(w => _countSentences(w.example) < threshold);
-    if (need.length === 0) {
-      const c = document.getElementById('examplesResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都已達 ${threshold} 句門檻！</div>`; }
-      return;
-    }
-    const taskId = 'gen-examples-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取例句' + _owTag(), need.length);
-    let ok = 0, fail = 0;
-    const CON = 2;
-    const queue = [...need.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 例句走共用引擎（門檻語意由 threshold 參數沿用）
-          const r = await _mwFillOne('example', w, { threshold });
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.example) { await s.actions.editWord(w.id, { example: r.patch.example }); ok++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加例句${fail ? `，${fail} 詞查無例句` : ''}` });
-    const container = document.getElementById('examplesResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加例句${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏例句完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genPronViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = s.state.words;
-    const noPron = _ow() ? [...words] : words.filter(w => !w.pron || !w.pron.trim());
-    if (noPron.length === 0) {
-      const container = document.getElementById('pronResult');
-      if (container) { container.style.display = 'block'; container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有發音了！</div>`; }
-      return;
-    }
-    const taskId = 'pron-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取發音' + _owTag(), noPron.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = noPron.map(w => ({ w }));
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const { w } = queue.shift();
-        try {
-          // ENGINE2: 發音走共用引擎
-          const r = await _mwFillOne('pron', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.pron) { await s.actions.editWord(w.id, { pron: r.patch.pron }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, noPron.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加發音${fail ? `，${fail} 詞查無發音` : ''}` });
-    const container = document.getElementById('pronResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加發音${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏發音完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  window.__genRelated = async () => {
-    const method = _getMethod('relatedMethod', 'llm');
-    if (method === 'merriam') {
-      await genRelatedViaMerriam(s);
-    } else {
-      await window.__genRelatedLLM();
-    }
-  };
-
-  async function genRelatedViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = s.state.words;
-    const noRel = _ow() ? [...words] : words.filter(w => !w.related || !Array.isArray(w.related) || w.related.length === 0);
-    if (noRel.length === 0) {
-      const c = document.getElementById('relatedResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有相關詞了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-related-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取相關詞' + _owTag(), noRel.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = [...noRel.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 相關詞走共用引擎（synonym 字串＋related union 取 12，與組合包／批量／編輯器一致）
-          const r = await _mwFillOne('related', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.related) { await s.actions.editWord(w.id, { related: r.patch.related }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, noRel.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('relatedResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏相關詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  window.__genRelatedLLM = async () => {
-    const words = s.state.words;
-    // C段覆寫：開＝全量重跑，關＝只做缺失
-    const noRel = _ow() ? [...words] : words.filter(w => !w.related || !Array.isArray(w.related) || w.related.length === 0);
-    const llm = await detectModel('relatedResult');
-    if (!llm) return;
-    const { baseUrl, model } = llm;
-
-    if (noRel.length === 0) {
-      const c = document.getElementById('relatedResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有相關詞了！</div>`; }
-      return;
-    }
-
-    const taskId = 'gen-related-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生相關詞', noRel.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...noRel.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const relText = await fetchLLM(`${baseUrl}/api/generate`, model,
-            `Return a JSON array of synonyms/similar words for "${w.word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`
-          );
-          if (relText && relText.trim()) {
-            try {
-              const cleaned = relText.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-              const arr = JSON.parse(cleaned);
-              await s.actions.editWord(w.id, { related: Array.isArray(arr) ? [...new Set(arr)] : [] });
-              count++;
-            } catch (_) { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, noRel.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('relatedResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加相關詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 相關詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  };
-
-  // ─── MWFORMS1: 韋氏詞形變化（inflected forms；變化欄位唯一權威來源之一） ───
-  window.__genFormsMw = async () => {
-    if (_mwKeyMissing()) return;
-    const words = s.state.words;
-    const noForms = _ow() ? [...words] : words.filter(w => !w.forms || !Array.isArray(w.forms) || w.forms.length === 0);
-    const el = document.getElementById('formsResult');
-    if (noForms.length === 0) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有詞形變化了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-forms-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取詞形變化' + _owTag(), noForms.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = [...noForms.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 詞形走共用引擎
-          const r = await _mwFillOne('forms', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.forms) { await s.actions.editWord(w.id, { forms: r.patch.forms }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, noForms.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏詞形變化完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  };
-
-  window.__genFormsLLM = async () => {
-    const words = s.state.words;
-    // C段覆寫：開＝全量重跑，關＝只做缺失
-    const noForms = _ow() ? [...words] : words.filter(w => !w.forms || !Array.isArray(w.forms) || w.forms.length === 0);
-    const llm = await detectModel('formsResult');
-    if (!llm) return;
-    const { baseUrl, model } = llm;
-
-    if (noForms.length === 0) {
-      const c = document.getElementById('formsResult'); if (c) { c.style.display = 'block'; c.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有詞形變化了！</div>`; }
-      return;
-    }
-
-    const taskId = 'gen-forms-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生詞形變化', noForms.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...noForms.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const relText = await fetchLLM(`${baseUrl}/api/generate`, model,
-            `Return a JSON array of inflections/derivations (past tense, -ing, -s, past participle) for "${w.word}". Example: ["gets","got","getting"]. Only the JSON array, no markdown.`
-          );
-          if (relText && relText.trim()) {
-            try {
-              const cleaned = relText.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-              const arr = JSON.parse(cleaned);
-              await s.actions.editWord(w.id, { forms: Array.isArray(arr) ? [...new Set(arr)] : [] });
-              count++;
-            } catch (_) { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, noForms.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}` });
-    const container = document.getElementById('formsResult');
-    if (container) {
-      container.style.display = 'block';
-      container.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加詞形變化${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 詞形變化完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  };
-
-  // ─── D段拆分（2026-09-08 使用者裁示）：翻譯/同義/反義/片語獨立四卡 ───
-  // 打包版 mwFullFillBtn 已刪；以下四組各走自己的來源選單＋覆寫開關。
-  // 共用逗號欄合併（synonym/antonym；關＝合併補缺，開＝整欄取代）
-  function _mergeComma(cur, fresh) {
-    const seen = new Set(String(cur || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
-    const add = [...new Set(fresh.map(x => String(x || '').trim()).filter(Boolean))].filter(x => !seen.has(x.toLowerCase()));
-    return [...String(cur || '').split(',').map(x => x.trim()).filter(Boolean), ...add].join(', ');
-  }
-
-  // ── 中文翻譯（寫入 definition）──
-  window.__genTranslation = async () => {
-    const method = _getMethod('transMethod', 'cambridge');
-    if (method === 'llm') {
-      const llm = await detectModel('transResult');
-      if (!llm) return;
-      await genTransViaLLM(s, llm);
-    } else {
-      await genTransViaCambridge(s);
-    }
-  };
-
-  async function genTransViaCambridge(s) {
-    hideLlmRow();
-    const words = s.state.words;
-    // 關＝只做缺少中文定義，開＝全量重翻
-    const need = _ow() ? [...words] : words.filter(w => !w.definition || !w.definition.trim());
-    const el = document.getElementById('transResult');
-    if (!need.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有定義了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-trans-cam-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'Cambridge 英中翻譯' + _owTag(), need.length);
-    let ok = 0, fail = 0;
-    const CON = 2;
-    const queue = [...need.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const json = await lookupCambridge(w.word, 'zh');
-          const data = JSON.parse(json);
-          const zh = [];
-          for (const sense of data.senses || []) {
-            const t = (sense.translation || '').trim() || (sense.definition || '').trim();
-            if (t && !zh.includes(t)) zh.push(t);
-          }
-          const text = zh.slice(0, 3).join('\n');
-          if (text) { await s.actions.editWord(w.id, { definition: text }); ok++; }
-          else { fail++; }
-        } catch (e) { fail++; }
-        await new Promise(r => setTimeout(r, 500));
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已補上中文翻譯${fail ? `，${fail} 詞查無翻譯` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已補上中文翻譯${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`中文翻譯完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genTransViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = s.state.words;
-    const need = _ow() ? [...words] : words.filter(w => !w.definition || !w.definition.trim());
-    const el = document.getElementById('transResult');
-    if (!need.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字都有定義了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-trans-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 中文翻譯' + _owTag(), need.length);
-    let ok = 0, fail = 0;
-    const CON = 5;
-    const queue = [...need.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model, `Give the Traditional Chinese (繁體中文) definition of the English word "${w.word}". Concise, one line. Return ONLY the Chinese definition, nothing else.`);
-          const t = (text || '').trim().split('\n')[0].trim();
-          if (t) { await s.actions.editWord(w.id, { definition: t }); ok++; }
-          else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, ok + fail, need.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已補上中文翻譯${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已補上中文翻譯${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 翻譯完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  // ── 同義詞（寫入 synonym 單數欄，逗號分隔沿用膠囊格式）──
-  window.__genSynonym = async () => {
-    const method = _getMethod('synMethod', 'merriam');
-    if (method === 'merriam') {
-      await genSynViaMerriam(s);
-    } else {
-      const llm = await detectModel('synResult');
-      if (!llm) return;
-      await genSynViaLLM(s, llm);
-    }
-  };
-
-  async function genSynViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.synonym || !w.synonym.trim());
-    const el = document.getElementById('synResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有同義詞了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-syn-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取同義詞' + _owTag(), words.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 同義詞走共用引擎（thesaurus synonyms 前 12，合併語意沿用）
-          const r = await _mwFillOne('syn', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.synonym) { await s.actions.editWord(w.id, { synonym: r.patch.synonym }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加同義詞${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加同義詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏同義詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genSynViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.synonym || !w.synonym.trim());
-    const el = document.getElementById('synResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有同義詞了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-syn-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生同義詞' + _owTag(), words.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model,
-            `Return a JSON array of synonyms for "${w.word}". Example: ["obtain","receive","fetch"]. Only the JSON array, no markdown.`);
-          const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-          const arr = JSON.parse(cleaned);
-          if (Array.isArray(arr) && arr.length) {
-            const val = _ow() ? [...new Set(arr)].join(', ') : _mergeComma(w.synonym, arr);
-            await s.actions.editWord(w.id, { synonym: val }); count++;
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加同義詞${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加同義詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 同義詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  // ── 反義詞（寫入 antonym 單數欄）──
-  window.__genAntonym = async () => {
-    const method = _getMethod('antMethod', 'merriam');
-    if (method === 'merriam') {
-      await genAntViaMerriam(s);
-    } else {
-      const llm = await detectModel('antResult');
-      if (!llm) return;
-      await genAntViaLLM(s, llm);
-    }
-  };
-
-  async function genAntViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.antonym || !w.antonym.trim());
-    const el = document.getElementById('antResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有反義詞了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-ant-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取反義詞' + _owTag(), words.length);
-    let count = 0, fail = 0;
-    const CON = 2;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 反義詞走共用引擎（thesaurus antonyms 前 12，合併語意沿用）
-          const r = await _mwFillOne('ant', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.antonym) { await s.actions.editWord(w.id, { antonym: r.patch.antonym }); count++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加反義詞${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加反義詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏反義詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genAntViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.antonym || !w.antonym.trim());
-    const el = document.getElementById('antResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有反義詞了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-ant-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生反義詞' + _owTag(), words.length);
-    let count = 0, fail = 0;
-    const CON = 5;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model,
-            `Return a JSON array of antonyms for "${w.word}". Example: ["lose","surrender"]. Only the JSON array, no markdown.`);
-          const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-          const arr = JSON.parse(cleaned);
-          if (Array.isArray(arr) && arr.length) {
-            const val = _ow() ? [...new Set(arr)].join(', ') : _mergeComma(w.antonym, arr);
-            await s.actions.editWord(w.id, { antonym: val }); count++;
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, count + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${count} 詞已添加反義詞${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${count} 詞已添加反義詞${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 反義詞完成：${count} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  // ── 片語（併入例句：與例句同一欄、同一規則）──
-  window.__genPhrases = async () => {
-    const method = _getMethod('phraseMethod', 'merriam');
-    if (method === 'merriam') {
-      await genPhrasesViaMerriam(s);
-    } else {
-      const llm = await detectModel('phraseResult');
-      if (!llm) return;
-      await genPhrasesViaLLM(s, llm);
-    }
-  };
-
-  async function genPhrasesViaMerriam(s) {
-    hideLlmRow();
-    if (_mwKeyMissing()) return;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.phrases || !w.phrases.trim());
-    const el = document.getElementById('phraseResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有片語了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-phrase-mw-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '韋氏抓取片語' + _owTag(), words.length);
-    let ok = 0, fail = 0;
-    const CON = 2;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          // ENGINE2: 片語走共用引擎（併入例句＋phrases 清空，遷移語意沿用）
-          const r = await _mwFillOne('phrase', w);
-          if (r.aborted) { fail++; queue.length = 0; toast(_mwErr(r.abortError), 'toast-error'); break; }
-          if (r.patch?.example) { await s.actions.editWord(w.id, { example: r.patch.example, phrases: '' }); ok++; }
-          else { fail++; }
-        } catch (e) { fail++; if (/401|429/.test(String(e?.message || e))) { queue.length = 0; toast(_mwErr(e), 'toast-error'); break; } }
-        await new Promise(r => setTimeout(r, 400));
-        s.actions.updateBackgroundTask(taskId, ok + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加片語${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加片語${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`韋氏片語完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  async function genPhrasesViaLLM(s, llm) {
-    const { baseUrl, model } = llm;
-    const words = _ow() ? [...s.state.words] : s.state.words.filter(w => !w.phrases || !w.phrases.trim());
-    const el = document.getElementById('phraseResult');
-    if (!words.length) {
-      if (el) { el.style.display = 'block'; el.innerHTML = `<div style="color:var(--green)">所有單字都有片語了！</div>`; }
-      return;
-    }
-    const taskId = 'gen-phrase-llm-' + Date.now();
-    s.actions.startBackgroundTask(taskId, 'LLM 產生片語' + _owTag(), words.length);
-    let ok = 0, fail = 0;
-    const CON = 5;
-    const queue = [...words.entries()];
-    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-      while (queue.length > 0) {
-        const [, w] = queue.shift();
-        try {
-          const text = await fetchLLM(`${baseUrl}/api/generate`, model,
-            `Return a JSON array of 3-5 common English phrases or collocations containing the word "${w.word}". Example: ["take advantage of", "make use of"]. Only the JSON array, no markdown.`);
-          const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-          const arr = JSON.parse(cleaned);
-          if (Array.isArray(arr) && arr.length) {
-            const fresh = [...new Set(arr.map(x => String(x).trim()).filter(Boolean))];
-            // 片語已併入例句：開／關語意同韋氏批次；寫回時 phrases 清空（遷移）
-            const base = _ow() ? (w.example || '').trim() : mergeExamplePhrases(w.example, w.phrases);
-            const unique = _ow() ? fresh : _dedupSentences(base, fresh);
-            if (unique.length) {
-              const merged = [base, ...unique].filter(Boolean).join('\n');
-              await s.actions.editWord(w.id, { example: merged, phrases: '' }); ok++;
-            } else { fail++; }
-          } else { fail++; }
-        } catch (e) { fail++; }
-        s.actions.updateBackgroundTask(taskId, ok + fail, words.length);
-      }
-    }));
-    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `完成：${ok} 詞已添加片語${fail ? `，${fail} 詞失敗` : ''}` });
-    if (el) {
-      el.style.display = 'block';
-      el.innerHTML = `<div style="color:var(--green)">${icon('check')} ${ok} 詞已添加片語${fail ? `，${fail} 詞失敗` : ''}</div>`;
-    }
-    toast(`LLM 片語完成：${ok} 成功${fail ? `，${fail} 失敗` : ''}`, fail ? '' : 'toast-success');
-  }
-
-  // ─── 組合包：一鍵全補（2026-09-08 使用者裁示）───
-  // 只做裸詞（九欄全空；覆寫開＝全量）。每詞各來源最多抓一次（cam英/cam中/
-  // 韋氏/dictapi/tatoeba 快取），九欄拼成一個 patch、一次 editWord。
-  // 各欄單字級寫法照抄同頁九張獨立卡（merge/dedup 語意一致）。
   function _isBare(w) {
     const empty = (v) => !v || !String(v).trim();
     const emptyArr = (a) => !a || !Array.isArray(a) || a.length === 0;
-    // AUTOFILL-ENGINE1: 十一欄（九欄＋字源/音節；derivative 不歸組合包管，不計入）
-    return empty(w.pos) && empty(w.definition) && empty(w.pron) && empty(w.example)
-      && emptyArr(w.related) && emptyArr(w.forms)
-      && empty(w.synonym) && empty(w.antonym) && empty(w.phrases)
-      && empty(w.etymology) && empty(w.syllables);
+    // COMBO1: 只看已啟用欄位（關掉的欄位不列入裸詞判定；derivative 從不歸組合包管）
+    for (const f of _comboOnFields()) {
+      const v = w[COMBO_KEY[f]];
+      if (Array.isArray(v) ? !emptyArr(v) : !empty(v)) return false;
+    }
+    return true;
   }
 
   window.__comboFull = async () => {
-    const M = {
+    // COMBO1: 只組已啟用欄位（關掉的不進 M、不判定、不顯示；字源/音節固定韋氏但可關）
+    const on = _comboOnFields();
+    const el = document.getElementById('comboResult');
+    const say = (html) => { if (el) { el.style.display = 'block'; el.innerHTML = html; } };
+    if (!on.length) {
+      say(`<div style="color:var(--orange)">${icon('info')} 十一欄全關了，先開至少一欄再補。</div>`);
+      toast('組合包欄位全關，請先開啟至少一欄', '');
+      return;
+    }
+    const SRC = {
       pos: _getMethod('comboPos', 'cambridge'),
       example: _getMethod('comboExample', 'dictionary-api'),
       pron: _getMethod('comboPron', 'cambridge'),
@@ -1738,11 +553,11 @@ export function onMount(s) {
       etymology: 'merriam',
       syllables: 'merriam',
     };
-    const el = document.getElementById('comboResult');
-    const say = (html) => { if (el) { el.style.display = 'block'; el.innerHTML = html; } };
+    const M = {};
+    for (const f of on) M[f] = SRC[f];
     const targets = _ow() ? [...s.state.words] : s.state.words.filter(_isBare);
     if (!targets.length) {
-      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() ? '' : '（九欄全空的裸詞）'}！</div>`);
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
       return;
     }
     const vals = Object.values(M);
@@ -1755,7 +570,8 @@ export function onMount(s) {
       if (!llmOk) toast('連不上 Ollama：LLM 來源的欄位會跳過，其餘照做', '');
     } else hideLlmRow();
     const { threshold, count } = _exampleConfig();
-    const CN = { pos: '詞性', example: '例句', pron: '發音', related: '相關詞', forms: '詞形', trans: '翻譯', syn: '同義詞', ant: '反義詞', phrase: '片語', etymology: '字源', syllables: '音節' };
+    const CN = {};
+    for (const f of on) CN[f] = COMBO_CN[f];
     const stat = {};
     const bump = (f, k) => { stat[f] = stat[f] || { ok: 0, fail: 0, skip: 0 }; stat[f][k]++; };
     const taskId = 'combo-full-' + Date.now();

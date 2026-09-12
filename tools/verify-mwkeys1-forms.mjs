@@ -49,11 +49,10 @@ chk('stripMwTokens 清洗 if 值', /x\.if === 'string'[\s\S]{0,60}stripMwTokens\
 chk('merriamToFields 產 forms 欄位', /forms: '',/.test(merriam));
 chk('merriamToFields 填 forms（跨 homograph 合併，GROSSFIX）', /out\.forms = \[\.\.\.formSet\]\.join\(', '\)/.test(merriam));
 
-console.log('[F2] MWFORMS1: tools 雙來源');
-chk('__genFormsMw 存在', /window\.__genFormsMw = async/.test(tools));
-chk('獨立卡雙鈕（韋氏+LLM）', /__genFormsMw\(\)[\s\S]{0,200}__genFormsLLM\(\)/.test(tools));
-chk('組合包詞形來源選單（comboForms merriam 預設）', /_selHtml\('comboForms', \[\['韋氏字典','merriam'\],\['本地 LLM','llm'\]\], 'merriam'\)/.test(tools));
-chk('M.forms 分派', /forms: _getMethod\('comboForms', 'merriam'\)/.test(tools));
+console.log('[F2] MWFORMS1: tools 雙來源（COMBO1 起獨立卡併入組合包）');
+chk('獨立卡已刪（無 __genFormsMw handler）', !/window\.__genFormsMw = async/.test(tools));
+chk('組合包詞形列（開關＋來源選單 merriam 預設）', /id="comboOn_forms"/.test(tools) && /_selHtml\('comboForms', \[\['韋氏字典','merriam'\],\['本地 LLM','llm'\]\], 'merriam'\)/.test(tools));
+chk('M.forms 只在啟用時分派（SRC 表＋on 過濾）', /forms: _getMethod\('comboForms', 'merriam'\)/.test(tools) && /for \(const f of on\) M\[f\] = SRC\[f\]/.test(tools));
 chk('組合包執行端 merriam 分支（AUTOFILL-ENGINE1 起收斂引擎：tools 調 fillWordFields＋methods: M，分支實作在引擎）', /fillWordFields\(\{[\s\S]{0,300}methods: M/.test(tools) && /if \(M === 'merriam'\)/.test(readFileSync('src/lib/autofill-engine.js', 'utf8')));
 
 console.log('[F3] MWFORMS1: 編輯器 sparkle 韋氏優先');
