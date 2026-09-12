@@ -373,6 +373,11 @@ grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由
 | showDeckMergeModal／showDeckMoveModal | 單字新增合併流程 | deck-browser 專屬；browser.js 那顆是另一份 |
 | tts.js selector 清單 | 全 app 點讀發音 | CARDNEXT1 後中文欄靜音是刻意的；加新可發音 class 要同步改 tapflip1 harness |
 | word-extra 例句區結構 | 兩瀏覽器字卡刷新 | 區內鈕已拔；刷新假設「例句區無鈕」，加回去會雙鈕重現 |
+### 12.8 EXPORTBIG1（本版）：Android 大檔匯出直寫 —— 10MB 天花板拆除
+- 根因：`exportDbData` 回 `Vec<u8>` 經 IPC 變 JSON 數字陣列（10MB→數十MB JSON），前端 `b64()` 再轉 base64 大字串二次膨脹，Android WebView OOM；20.7MB 必炸。
+- 修法：`export_db_to_downloads`（Rust 打包→私有 `exports/` 暫存→同進程調 Kotlin `saveFileToDownloads` 64KB 流式寫 MediaStore→刪暫存→回傳檔名＋MB）；Kotlin `SaveFileToDownloadsArgs`＋`saveFileToDownloads`（API29+ MediaStore／<29 legacy，零 Base64）；前端直寫優先、失敗退回舊 IPC 路；桌機不動（本來就直寫）。
+- harness：`tools/verify-export-big1.mjs` 19 項（Rust／Kotlin／前端／NEG）；cargo check＋16 顆＋vite 綠。
+
 ### 12.7 AUTOFILL-ENGINE1（v5.17.14）→ ENGINE2 接滿 → ENGINE3 全走引擎 → COMBO1 獨立卡併入（本版）
 - ENGINE1：組合包 fillWord＋批量 fillOne 共用 fillWordFields。
 - ENGINE2：九張獨立卡韋氏分支經 `_mwFillOne` 走引擎（pos 保留 nosug 語意，errors 通道新回傳）；兩編輯器十顆 sparkle 韋氏分支經 `_engineMw` 走引擎（LLM 兜底不動；mwFillExtra 單次 fetch 三欄，片語以空底取新句走 ExampleAppend）。

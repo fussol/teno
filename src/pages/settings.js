@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -610,10 +610,17 @@ async function runExportDb() {
     } catch (_) {}
     await d.checkpoint();
     if (isAndroid) {
-      const data = await exportDbData();
-      downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
-      await d.addAudit('export-db', '匯出 .db 備份 (Android)').catch(() => {});
-      toast('資料庫已匯出（僅 teno.db）', 'toast-success');
+      // EXPORTBIG1: 大檔直寫優先（零 IPC 資料；回傳含大小）；失敗才退回舊 IPC 路（小檔用）
+      try {
+        const msg = await exportDbToDownloads('teno-backup.db');
+        await d.addAudit('export-db', `匯出 .db 備份 (Android 直寫) ${msg}`).catch(() => {});
+        toast(`資料庫已匯出到 下載/Teno（${msg}）`, 'toast-success');
+      } catch (e2) {
+        const data = await exportDbData();
+        downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
+        await d.addAudit('export-db', '匯出 .db 備份 (Android 舊路)').catch(() => {});
+        toast('資料庫已匯出（僅 teno.db）', 'toast-success');
+      }
     } else {
       const path = await exportDbDialog();
       await d.addAudit('export-db', `匯出 → ${path}`).catch(() => {});

@@ -1679,6 +1679,43 @@ async fn export_db_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String>
     pack_db_container(&app_dir, false)
 }
 
+// EXPORTBIG1: Android 大檔匯出直寫（20MB+ 走 export_db_data 的 IPC number-array＋
+// WebView b64 兩次膨脹會 OOM）。Rust 打包→寫私有暫存→同進程調 Kotlin 流式寫
+// MediaStore，全程零位元組經過 IPC/WebView。多大都出得來。檔名沿 sanitize 慣例。
+#[tauri::command]
+async fn export_db_to_downloads(app_handle: tauri::AppHandle, filename: Option<String>) -> Result<String, String> {
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let data = pack_db_container(&app_dir, false)?;
+    let len = data.len();
+    let raw = filename.unwrap_or_else(|| "teno-backup.db".to_string());
+    let fname = std::path::Path::new(&raw).file_name().ok_or("非法檔名")?.to_string_lossy().to_string();
+    #[cfg(target_os = "android")]
+    {
+        let exports = app_dir.join("exports");
+        std::fs::create_dir_all(&exports).map_err(|e| e.to_string())?;
+        let tmp = exports.join(&fname);
+        std::fs::write(&tmp, &data).map_err(|e| format!("寫入暫存失敗: {}", e))?;
+        let r = app_handle.state::<tts_android::TtsHandle>().0
+            .run_mobile_plugin::<serde_json::Value>(
+                "saveFileToDownloads",
+                serde_json::json!({
+                    "path": tmp.to_string_lossy(),
+                    "filename": fname,
+                    "mime": "application/octet-stream",
+                }),
+            )
+            .map_err(|e| format!("Android save export: {:?}", e));
+        let _ = std::fs::remove_file(&tmp);
+        r?;
+        log::info!("export_db_to_downloads OK file={} data_len={}", fname, len);
+        Ok(format!("{}（{:.1}MB）", fname, len as f64 / 1048576.0))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(format!("{} ({} bytes, non-android no-op)", fname, len))
+    }
+}
+
 // B段：捆包匯出（teno.db＋app-log.db TENOC 容器；呼叫端先做雙 checkpoint＋
 // 大小守門，Android 大檔走 chunked base64 既有路徑）。
 #[tauri::command]
@@ -2364,7 +2401,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {

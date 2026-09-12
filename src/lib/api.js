@@ -119,6 +119,11 @@ export const exportCsvDialog = (csv, filename) =>
 export const exportDbData = () =>
   invoke('export_db_data')
 
+// EXPORTBIG1: Android 大檔直寫 Downloads（Rust 打包＋Kotlin 流式寫檔，零位元組過
+// IPC/WebView；20MB+ 必走這條；回傳檔名＋大小字串）
+export const exportDbToDownloads = (filename) =>
+  invoke('export_db_to_downloads', { filename })
+
 // B段：捆包匯出（teno.db＋app-log.db TENOC 容器；呼叫端先雙 checkpoint＋大小守門）
 export const exportDbBundleData = () =>
   invoke('export_db_bundle_data')

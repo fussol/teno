@@ -49,6 +49,13 @@ class SaveExportFileArgs {
 }
 
 @InvokeArg
+class SaveFileToDownloadsArgs {
+    lateinit var path: String  // app 私有目錄暫存檔絕對路徑（Rust 寫的）
+    lateinit var filename: String
+    var mime: String = "application/octet-stream"
+}
+
+@InvokeArg
 class CopyUriToCacheArgs {
     lateinit var uri: String
 }
@@ -280,6 +287,43 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "saveExportFile error: ${e.message}")
+            invoke.reject("儲存失敗: ${e.message}")
+        }
+    }
+
+    @Command
+    fun saveFileToDownloads(invoke: Invoke) {
+        // EXPORTBIG1: Rust 已把 DB 容器寫到 app 私有暫存，這裡只做檔案流 → MediaStore，
+        // 全程 64KB buffer，不經 base64/IPC/WebView，20MB+ 照樣過。
+        val args = invoke.parseArgs(SaveFileToDownloadsArgs::class.java)
+        try {
+            val src = java.io.File(args.path)
+            if (!src.exists()) throw Exception("暫存檔不存在")
+            if (Build.VERSION.SDK_INT >= 29) {
+                val resolver = activity.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, args.filename)
+                    put(MediaStore.Downloads.MIME_TYPE, args.mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Teno")
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                    ?: throw Exception("Failed to create MediaStore entry")
+                resolver.openOutputStream(uri)?.use { out ->
+                    java.io.FileInputStream(src).use { inp -> inp.copyTo(out, 64 * 1024) }
+                } ?: throw Exception("Failed to open output stream")
+                Log.d(TAG, "saveFileToDownloads: ${args.filename} saved to Downloads/Teno")
+            } else {
+                val dir = java.io.File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Teno")
+                if (!dir.exists()) dir.mkdirs()
+                val outFile = java.io.File(dir, args.filename)
+                java.io.FileInputStream(src).use { inp ->
+                    java.io.FileOutputStream(outFile).use { out -> inp.copyTo(out, 64 * 1024) }
+                }
+                Log.d(TAG, "saveFileToDownloads(legacy): ${args.filename} saved to Downloads/Teno")
+            }
+            invoke.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "saveFileToDownloads error: ${e.message}")
             invoke.reject("儲存失敗: ${e.message}")
         }
     }
