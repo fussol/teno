@@ -552,7 +552,11 @@ function renderSettingsContent(s) {
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Thesaurus key</span>
               <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus 或 Intermediate Thesaurus key（自動相容）" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
             </div>
-            <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
+              <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
+              <button class="btn btn-sm" id="mwKeysTestBtn">${icon('search')} 測試連線</button>
+            </div>
+            <div id="mwKeysTestResult" style="font-size:12px"></div>
           </div>
         </div>
 
@@ -971,6 +975,49 @@ export function onMount(s) {
     s.state.mwDictKey = dk; s.state.mwThesKey = tk;
     toast(dk || tk ? '韋氏 Key 已儲存' : '韋氏 Key 已清除', 'toast-success');
     renderInPlace(s);
+  });
+  // MWTEST1：韋氏連線測試（用輸入框當下值打 gross，不經存檔；綠＝有 entries，黃＝key 有效但查無字，紅＝key 無效／網路錯）
+  document.getElementById('mwKeysTestBtn')?.addEventListener('click', async () => {
+    const dk = (document.getElementById('mwDictKeyInput')?.value || '').trim();
+    const tk = (document.getElementById('mwThesKeyInput')?.value || '').trim();
+    const box = document.getElementById('mwKeysTestResult');
+    const say = (html) => { if (box) box.innerHTML = html; };
+    if (!dk && !tk) { toast('請先填入至少一把 Key', 'toast-error'); say(''); return; }
+    const btn = document.getElementById('mwKeysTestBtn');
+    if (btn) btn.disabled = true;
+    say('<span style="color:var(--text-secondary)">測試中…（查詢 gross）</span>');
+    try {
+      const { lookupMerriam } = await import('../lib/api.js');
+      const { merriamToFields } = await import('../lib/merriam.js');
+      const raw = await lookupMerriam('gross', dk, tk);
+      const f = merriamToFields(JSON.parse(raw), 'gross');
+      const hasEntry = !!(f.pos || f.definition || f.pron || f.example || f.forms || f.synonym || f.etymology || f.syllables);
+      if (hasEntry) {
+        const bits = [`詞性 ${escapeHtml((f.pos || '').split(',')[0] || '—')}`, `同義 ${escapeHtml((f.synonym || '').split(',').slice(0, 3).join('、') || '—')}`];
+        say(`<span style="color:var(--green)">${icon('check')} 連線正常（gross 查到 ${bits.join('、')}）</span>`);
+        toast('韋氏連線正常', 'toast-success');
+      } else if ((f.suggest || []).length) {
+        say(`<span style="color:var(--yellow, #eab308)">${icon('info')} Key 有效，但 gross 查無字（suggest：${escapeHtml(f.suggest.slice(0, 3).join('、'))}）</span>`);
+        toast('Key 有效，但查無 gross', '');
+      } else {
+        say(`<span style="color:var(--yellow, #eab308)">${icon('info')} Key 有效，但 gross 無內容回來</span>`);
+        toast('查無內容', '');
+      }
+    } catch (e) {
+      const m = String(e?.message || e);
+      if (/401|Invalid API key|Not subscribed/i.test(m)) {
+        say(`<span style="color:var(--red, #ef4444)">${icon('x')} Key 無效：${escapeHtml(m.slice(0, 100))}</span>`);
+        toast('韋氏 Key 無效', 'toast-error');
+      } else if (/timed out/i.test(m)) {
+        say(`<span style="color:var(--red, #ef4444)">${icon('x')} 連線逾時，請重試</span>`);
+        toast('韋氏請求逾時', 'toast-error');
+      } else {
+        say(`<span style="color:var(--red, #ef4444)">${icon('x')} 查詢失敗：${escapeHtml(m.slice(0, 100))}</span>`);
+        toast('韋氏測試失敗', 'toast-error');
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
   // AI 還原模型（可選進階；留空＝關閉純離線）
   document.getElementById('ocrRestoreModelBtn')?.addEventListener('click', async () => {
