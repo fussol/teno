@@ -1038,7 +1038,7 @@ export function onMount(s) {
   document.getElementById('graylistAddBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('graylistAddInput');
     const w = (input?.value || '').toLowerCase().trim();
-    if (!w) { toast('請輸入單字', ''); return; }
+    if (!w) { toast('請輸入單字', 'toast-warn'); return; }
     await s.actions.addToGraylist(w);
     toast(`已將 ${w} 加入灰名單`, 'toast-success');
     renderInPlace(s);

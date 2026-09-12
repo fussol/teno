@@ -1299,7 +1299,7 @@ function openModal(s, word) {
         return;
       }
     }
-    toast('所有來源都沒有新句子', '');
+    toast('所有來源都沒有新句子', 'toast-warn');
   });
 
   document.getElementById('fWord')?.addEventListener('blur', () => {
@@ -1475,7 +1475,7 @@ function openModal(s, word) {
         }
       }
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
     // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
     if (!chain.includes('merriam')) { try { await mwFillExtra(s, g, w); } catch (_) {} }
     _lastAutoFilled = w;

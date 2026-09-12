@@ -373,6 +373,13 @@ grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由
 | showDeckMergeModal／showDeckMoveModal | 單字新增合併流程 | deck-browser 專屬；browser.js 那顆是另一份 |
 | tts.js selector 清單 | 全 app 點讀發音 | CARDNEXT1 後中文欄靜音是刻意的；加新可發音 class 要同步改 tapflip1 harness |
 | word-extra 例句區結構 | 兩瀏覽器字卡刷新 | 區內鈕已拔；刷新假設「例句區無鈕」，加回去會雙鈕重現 |
+### 12.9 TOAST1（本版）：右上角 toast —— 從右滑入＋右框型別色＋單擊保留/雙擊關閉
+- 位置：右下 → 右上（top:16px/right:16px，modal z-100 之上，z-200 不動）；手機版左右撐滿。
+- 視覺：型別色右框 3px＋同色圓點＋底部進度條（--toast-life 連動停留秒數）；warn 補上一直缺席的橙色樣式（之前裸 class 無樣式＝破版）；'' 預設正名 toast-info（plum accent）。
+- 行為：新的在上（prepend）、最多疊 4、error 停 4.2s 其餘 2.6s；單擊凍結進度條＋邊框高亮再留十秒，雙擊立刻縮回；reduced-motion 全降級。
+- 輸出整理：7 處中性誤用正名 warn（Cambridge  fallback×3、無新句子、Ollama、請輸入單字×2）；18 個呼叫檔全接線（容器＋window.toast＋import 不缺）；XSS 純文字 sink 不動。
+- harness：`tools/verify-toast1.mjs` 32 項；17 顆＋vite 綠。
+
 ### 12.8 EXPORTBIG1（本版）：Android 大檔匯出直寫 —— 10MB 天花板拆除
 - 根因：`exportDbData` 回 `Vec<u8>` 經 IPC 變 JSON 數字陣列（10MB→數十MB JSON），前端 `b64()` 再轉 base64 大字串二次膨脹，Android WebView OOM；20.7MB 必炸。
 - 修法：`export_db_to_downloads`（Rust 打包→私有 `exports/` 暫存→同進程調 Kotlin `saveFileToDownloads` 64KB 流式寫 MediaStore→刪暫存→回傳檔名＋MB）；Kotlin `SaveFileToDownloadsArgs`＋`saveFileToDownloads`（API29+ MediaStore／<29 legacy，零 Base64）；前端直寫優先、失敗退回舊 IPC 路；桌機不動（本來就直寫）。

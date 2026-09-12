@@ -836,24 +836,44 @@ body.no-hints .mode-desc{display:none}
 @keyframes splashIn{from{opacity:0;transform:translateY(10px) scale(.96)}to{opacity:1;transform:none}}
 @keyframes splashPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}
 
-/* ─── Toast ─── */
+/* ─── Toast (TOAST1: 右上角堆疊，從右滑入＋型別色左框＋底部進度條) ─── */
 .toast-container{
-  position:fixed;bottom:24px;right:24px;z-index:200;
-  display:flex;flex-direction:column;gap:var(--s2);pointer-events:none;
+  position:fixed;top:16px;right:16px;z-index:200;
+  display:flex;flex-direction:column;gap:8px;pointer-events:none;
+  align-items:flex-end;max-width:min(380px,calc(100vw - 32px));
 }
 .toast{
-  padding:11px var(--s5);border-radius:var(--r-md);
+  position:relative;overflow:hidden;cursor:pointer;
+  padding:11px 14px;border-radius:var(--r-md);
   background:var(--bg-elevated);border:1px solid var(--border);
+  border-right:3px solid var(--toast-accent,var(--accent));
   color:var(--text-primary);font-size:13px;font-weight:600;
-  box-shadow:var(--shadow-lg);animation:toastIn var(--t-med) var(--ease-emphasized);
-  display:flex;align-items:center;gap:var(--s2);pointer-events:auto;
-  max-width:340px;
+  box-shadow:var(--shadow-lg);display:flex;align-items:center;gap:8px;pointer-events:auto;
+  width:max-content;max-width:min(380px,calc(100vw - 32px));
+  animation:toastInRight 300ms var(--ease-emphasized);
+  --toast-accent:var(--accent);
 }
-.toast-success{border-color:rgba(94,217,143,.4)}
-.toast-success::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
-.toast-error{border-color:rgba(248,138,138,.4);color:var(--red)}
-.toast-error::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--red);flex-shrink:0}
-@keyframes toastIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.toast::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--toast-accent);flex-shrink:0}
+.toast::after{content:"";position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--toast-accent);opacity:.7;transform-origin:left center;animation:toastBar var(--toast-life,2600ms) linear forwards}
+.toast.held{border-color:var(--toast-accent)}
+.toast.held::after{animation-play-state:paused}
+.toast.out{opacity:0;transform:translateX(32px);transition:opacity 240ms,transform 240ms var(--ease-emphasized)}
+.toast-success{--toast-accent:var(--green)}
+.toast-error{--toast-accent:var(--red);color:var(--red)}
+.toast-warn{--toast-accent:var(--orange)}
+.toast-info{--toast-accent:var(--accent)}
+.toast-easter{--toast-accent:var(--accent);border-color:var(--accent)}
+@keyframes toastInRight{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:none}}
+@keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+@media(max-width:768px){
+  .toast-container{top:12px;right:12px;left:12px;align-items:stretch}
+  .toast{width:auto;max-width:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .toast{animation:none}
+  .toast::after{animation:none;display:none}
+  .toast.out{transition:none}
+}
 
 /* ─── Dividers ─── */
 .divider{border:none;border-top:1px solid var(--border-subtle);margin:var(--s4) 0}
@@ -1419,8 +1439,7 @@ body.no-hints .mode-desc{display:none}
 .accent-range::-webkit-slider-thumb:hover { transform: scale(1.12); box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 4px var(--accent-glow); }
 
 /* ─── Easter Egg CSS ─── */
-.toast-easter { border-color: var(--accent); }
-.toast-easter::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+/* (toast-easter 樣式已併入 TOAST1 區塊，以 --toast-accent 統一管理) */
 .konami-overlay {
   position: fixed; inset: 0; z-index: 999;
   display: flex; align-items: center; justify-content: center;

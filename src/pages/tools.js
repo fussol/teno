@@ -615,7 +615,7 @@ export function onMount(s) {
     if (vals.includes('llm')) {
       llm = await detectModel('comboResult');
       llmOk = !!llm;
-      if (!llmOk) toast('連不上 Ollama：LLM 來源的欄位會跳過，其餘照做', '');
+      if (!llmOk) toast('連不上 Ollama：LLM 來源的欄位會跳過，其餘照做', 'toast-warn');
     } else hideLlmRow();
     const { threshold, count } = _exampleConfig();
     const CN = {};
@@ -689,7 +689,7 @@ export function onMount(s) {
 
   window.__lookupCambridge = async () => {
     const word = document.getElementById('cambridgeWord')?.value?.trim();
-    if (!word) { toast('請輸入單字', ''); return; }
+    if (!word) { toast('請輸入單字', 'toast-warn'); return; }
     const lang = _getMethod('cambridgeDict', 'en');
     const el = document.getElementById('cambridgeResult');
     if (!el) return;

@@ -985,7 +985,7 @@ function openAddModal(s) {
         }
       }
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
     // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
     if (!chain.includes('merriam')) { try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {} }
     if (btn) btn.disabled = false;
@@ -1453,7 +1453,7 @@ function openEditModal(s, id) {
         }
       }
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', '');
+    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
     // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
     if (!editAutoFillChain.includes('merriam')) { try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {} }
     if (btn) btn.disabled = false;
