@@ -1,6 +1,6 @@
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
-import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages, addImageUrlFlow } from '../lib/word-image.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages, addImageUrlFlow, ensureThumbCSS } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
@@ -437,6 +437,7 @@ function attachImagePicker({ thumbsId, pickId, filesId, wordId, urlInputId, urlA
   let changed = false;
   const el = () => document.getElementById(thumbsId);
   const render = () => {
+    ensureThumbCSS(); // THUMBOVERFLOW1: 縮圖 CSS 沒注入即原尺寸撐開 modal；此處冪等注入（新增/編輯共用）
     const t = el(); if (!t || !api) return;
     if (cleanup) cleanup();
     t.innerHTML = api.html;

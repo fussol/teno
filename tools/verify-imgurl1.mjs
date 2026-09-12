@@ -76,6 +76,15 @@ chk('deck attachImagePicker吃url參數', /urlInputId: 'deckAddImgUrl', urlAddId
 chk('normalizeImageUrl舊行為不回歸（Drive轉lh3）', normalizeImageUrl('https://drive.google.com/uc?id=ABCDEFGHIJK123').startsWith('https://lh3.googleusercontent.com/d/'));
 chk('normalizeImageUrl直連原樣', normalizeImageUrl('https://media1.tenor.com/m/ABC/cat.gif') === 'https://media1.tenor.com/m/ABC/cat.gif');
 
+console.log('[T7] THUMBOVERFLOW1: 編輯器縮圖 CSS 注入（未注入即原尺寸撐開 modal）');
+chk('ensureThumbCSS存在', /export function ensureThumbCSS/.test(wi));
+chk('注入冪等（id 守門）', /getElementById\('wimgThumbStyle'\)/.test(wi));
+chk('縮圖固定 72px（.wimg-thumb width）', /\.wimg-thumb\{[^}]*width:72px/.test(wi));
+chk('容器不撐開（max-width:100%）', /\.wimg-thumbs\{[^}]*max-width:100%/.test(wi));
+chk('deck 新增/編輯共用 render() 有注入', /ensureThumbCSS\(\); \/\/ THUMBOVERFLOW1/.test(dk));
+chk('browser renderImgs 有注入', /ensureThumbCSS\(\); \/\/ THUMBOVERFLOW1/.test(br));
+chk('兩頁皆 import ensureThumbCSS', /ensureThumbCSS \} from '..\/lib\/word-image\.js'/.test(dk) && /ensureThumbCSS \} from '..\/lib\/word-image\.js'/.test(br));
+
 console.log('[NEG] 反向驗證');
 let headHas;
 try { headHas = /addImageUrlFlow/.test(execSync('git show HEAD:src/lib/word-image.js', { encoding: 'utf8' })); }

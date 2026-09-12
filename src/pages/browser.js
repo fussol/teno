@@ -5,7 +5,7 @@
 
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
-import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, addImageUrlFlow } from '../lib/word-image.js';
+import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, addImageUrlFlow, ensureThumbCSS } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
@@ -1136,6 +1136,7 @@ function openModal(s, word) {
   const thumbsEl = document.getElementById('fImagesThumbs');
   const renderImgs = (list) => {
     _imgsChanged = true;   // 任何變更（含排序/刪除）都標記，存檔時全量替換
+    ensureThumbCSS(); // THUMBOVERFLOW1: 縮圖 CSS 沒注入即原尺寸撐開 modal；此處冪等注入
     if (!thumbsEl) return;
     if (_imgCleanup) _imgCleanup();
     thumbsEl.innerHTML = _imgApi ? _imgApi.html : '';

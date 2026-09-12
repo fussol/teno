@@ -292,6 +292,13 @@ export async function addImageUrlFlow(rawText, thumbsApi, fetchText, notify) {
   else if (failed) notify?.('加入失敗：請貼「圖片直連」（.gif/.jpg/.png 結尾）或 Tenor／Giphy／Imgur 分享頁', 'err');
 }
 
+/** 編輯器縮圖 CSS 冪等注入（modal 開了沒開過卡片面板時也生效；缺這行縮圖即原尺寸撐開 modal）。 */
+export function ensureThumbCSS() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('wimgThumbStyle')) return;
+  document.head.insertAdjacentHTML('beforeend', `<style id="wimgThumbStyle">${WORD_IMAGE_THUMB_CSS}</style>`);
+}
+
 /** 縮圖列事件綁定（modal onMount 用；回傳 cleanup）。 */
 export function bindEditorThumbs(container, thumbsApi) {
   if (!container) return () => {};
@@ -309,9 +316,9 @@ export function bindEditorThumbs(container, thumbsApi) {
 }
 
 export const WORD_IMAGE_THUMB_CSS = `
-.wimg-thumbs{display:flex;flex-wrap:wrap;gap:8px}
-.wimg-thumb{position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
-.wimg-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.wimg-thumbs{display:flex;flex-wrap:wrap;gap:8px;max-width:100%}
+.wimg-thumb{position:relative;width:72px;height:72px;flex-shrink:0;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+.wimg-thumb img{width:100%;height:100%;max-width:100%;object-fit:cover;display:block}
 .wimg-thumb-tools{position:absolute;bottom:0;left:0;right:0;display:flex;gap:2px;background:rgba(0,0,0,.55);opacity:0;transition:opacity .15s}
 .wimg-thumb:hover .wimg-thumb-tools{opacity:1}
 .wimg-thumb-tools button{flex:1;border:none;background:transparent;color:#fff;width:22px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px}
