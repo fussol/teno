@@ -50,6 +50,14 @@ chk('isBareWord 音節有值 false', isBareWord({ syllables: 'y' }) === false);
 chk('isBareWord 僅衍生有值仍 true（組合包不管衍生）', isBareWord({ derivative: 'z' }) === true);
 chk('isQuotaError', isQuotaError(new Error('429')) && isQuotaError('401') && !isQuotaError('suggest') && !isQuotaError('net fail'));
 
+console.log('[E2b] Cambridge 物件形例句（ENGINE3：zh 回傳 {english} 物件須正規成字串）');
+{
+  const { fetchers } = stubFetchers({ camEn: { senses: [{ examples: ['plain one', { english: 'object one' }, { english: '' }, null] }] } });
+  const r = await fillWordFields({ wordText: 'w', existing: { example: '' }, methods: { example: 'cambridge' }, overwrite: false, fetchers });
+  chk('物件轉 english、空值丟棄', r.patch.example === 'plain one\nobject one', JSON.stringify(r.patch));
+  chk('無 [object Object] 污染', !/\[object Object\]/.test(r.patch.example || ''));
+}
+
 console.log('[E3] 字源音節固定韋氏');
 {
   const { calls, fetchers } = stubFetchers({ mw: { etymology: 'Latin', syllables: 'a·b' } });
@@ -172,6 +180,26 @@ console.log('[E9] 接線覆蓋（ENGINE2：八卡＋十 sparkle 全走引擎）'
   chk('browser mwFillExtra 走引擎三欄', /function mwFillExtra\(s, g[\s\S]{0,500}_engineMw\(word, \{ syllables: 'merriam', etymology: 'merriam', phrase: 'merriam' \}/.test(brow));
   chk('deck 僅批量 fetcher 直調（sparkle 零殘留）', (deck.match(/merriamToFields\(JSON\.parse\(raw\)/g) || []).length === 1 && /const mwLookup = async/.test(deck));
   chk('browser 零直調', !/merriamToFields\(JSON\.parse\(raw\)/.test(brow));
+}
+
+console.log('[E9b] 接線覆蓋（ENGINE3：例句鈕整條 chain＋音節字源獨立鈕全走引擎）');
+{
+  const deck = readFileSync('src/pages/deck-browser.js', 'utf8');
+  const brow = readFileSync('src/pages/browser.js', 'utf8');
+  const win = (src, anchor, look) => { const i = src.indexOf(anchor); return i >= 0 && src.slice(i, i + 2500).includes(look); };
+  chk('deck 新增例句鈕 merriam 走引擎 phrase', win(deck, "getElementById('deckAddFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
+  chk('deck 新增例句鈕其餘走引擎 example', win(deck, "getElementById('deckAddFillExample')", '_engineMw(w, { example: src }'));
+  chk('deck 新增例句鈕照舊略過 llm', win(deck, "getElementById('deckAddFillExample')", "src === 'cambridge' || src === 'dict-api' || src === 'tatoeba'"));
+  chk('deck 編輯例句鈕 merriam 走引擎 phrase', win(deck, "getElementById('deckEditFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
+  chk('deck 編輯例句鈕其餘走引擎 example', win(deck, "getElementById('deckEditFillExample')", '_engineMw(w, { example: src }'));
+  chk('browser 例句鈕 merriam 走引擎 phrase', win(brow, "getElementById('btnFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
+  chk('browser 例句鈕其餘走引擎 example（含 llm，同舊）', win(brow, "getElementById('btnFillExample')", '_engineMw(w, { example: src }'));
+  chk('browser 例句鈕 toast 語意保留', win(brow, "getElementById('btnFillExample')", '已從 ${SOURCE_LABELS[src] || src} 新增一句') && win(brow, "getElementById('btnFillExample')", '所有來源都沒有新句子'));
+  for (const [name, src] of [['deck', deck], ['browser', brow]])
+    chk(`${name} _engineMw 備齊 fetchers（getCamEn＋llmText＋getMw 快取）`, /getCamEn: async/.test(src) && /llmText: async/.test(src) && /mwCache/.test(src));
+  chk('deck 新增音節字源鈕綁定走 mwFillExtra', /deckAddFillExtra/.test(deck) && /mwFillExtra\('deckAdd', fSet, fGet, w\)/.test(deck));
+  chk('deck 編輯音節字源鈕綁定走 mwFillExtra', /deckEditFillExtra/.test(deck) && /mwFillExtra\('deckEdit', fSetE, fGetE, w\)/.test(deck));
+  chk('browser 音節字源鈕綁定走 mwFillExtra', /btnFillExtra/.test(brow) && /mwFillExtra\(fSetB, fGetB, w\)/.test(brow));
 }
 
 console.log('[NEG] 反向驗證（HEAD 已有引擎 → SKIP；尚未接 → stash 乾淨比對）');

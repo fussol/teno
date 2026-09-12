@@ -533,7 +533,7 @@ function openAddModal(s) {
           </div>
           <div class="form-group" style="flex:1">
             <label class="form-label">音節</label>
-            <input class="form-input" id="deckAddSyllables" placeholder="例：dic·tion·a·ry；Enter 跳下一欄">
+            <div style="display:flex;gap:4px"><input class="form-input" id="deckAddSyllables" placeholder="例：dic·tion·a·ry；Enter 跳下一欄" style="flex:1"><button class="btn btn-sm" id="deckAddFillExtra" type="button" title="韋氏補上音節／字源（片語併入例句；只填空欄）">${icon('sparkle')}</button></div>
           </div>
         </div>
         <div class="form-group">
@@ -860,27 +860,35 @@ function openAddModal(s) {
     llmFillForms('deckAddForms', w);
   });
 
-  // ── Auto-fill (Cambridge + fallback) ───
+  // ENGINE3: 音節／字源獨立鈕（走 mwFillExtra＝引擎三欄；只填空欄，片語併入例句）
+  document.getElementById('deckAddFillExtra')?.addEventListener('click', () => {
+    const w = document.getElementById('deckAddWord')?.value.trim();
+    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
+    mwFillExtra('deckAdd', fSet, fGet, w);
+  });
+
+  // ── Auto-fill（ENGINE3 起 g/s 提升 modal 層：autoFillAll＋音節字源鈕共用；fGet/fSet 避開 modal 參數 s）───
   let _lastAutoFilled = '';
+  const fGet = id => {
+    if (id === 'deckAddPos') return _getPosVal();
+    if (id === 'deckAddDef') return deckDefChips.getVal() || document.getElementById('deckAddDef')?.value.trim() || '';
+    if (id === 'deckAddExample') return deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '';
+    return document.getElementById(id)?.value?.trim() || '';
+  };
+  const fSet = (id, val) => {
+    if (!val) return;
+    if (id === 'deckAddDef') { if (!fGet('deckAddDef')) deckDefChips.setVal(val); }
+    else if (id === 'deckAddExample') { if (!fGet('deckAddExample')) deckExChips.setVal(val); }
+    // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
+    else if (id === 'deckAddExampleAppend') { if (val) deckExChips.setVal(mergeExamplePhrases(deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '', val)); }
+    else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
+  };
   const autoFillAll = async () => {
     const w = document.getElementById('deckAddWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('deckAddAutoFill');
     if (btn) btn.disabled = true;
-    const g = id => {
-      if (id === 'deckAddPos') return _getPosVal();
-      if (id === 'deckAddDef') return deckDefChips.getVal() || document.getElementById('deckAddDef')?.value.trim() || '';
-      if (id === 'deckAddExample') return deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '';
-      return document.getElementById(id)?.value?.trim() || '';
-    };
-    const s = (id, val) => {
-      if (!val) return;
-      if (id === 'deckAddDef') { if (!g('deckAddDef')) deckDefChips.setVal(val); }
-      else if (id === 'deckAddExample') { if (!g('deckAddExample')) deckExChips.setVal(val); }
-      // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
-      else if (id === 'deckAddExampleAppend') { if (val) deckExChips.setVal(mergeExamplePhrases(deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '', val)); }
-      else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
-    };
+    const g = fGet, s = fSet;
     const chain = getChain();
     let cambridgeFailed = false;
     for (const src of chain) {
@@ -1023,37 +1031,25 @@ function openAddModal(s) {
     const chain = getChain();
     for (const src of chain) {
       let ex = '';
-      if (src === 'merriam') {
-        try {
+      try {
+        if (src === 'merriam') {
+          // ENGINE3: 韋氏片語候選走引擎（phrase 併例句；引擎以 chips 現值去重，取首句未收錄者＝同舊 find 語意）
           const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
           if (dk || tk) {
-            const f = merriamToFields(JSON.parse(await lookupMerriam(w, dk, tk)), w);
-            if (f?.phrases) {
-              const cur = new Set((deckExChips.getVal() || '').split('\n').map(x => x.trim()).filter(Boolean));
-              ex = f.phrases.split('\n').map(x => x.trim()).filter(Boolean).find(x => !cur.has(x)) || '';
+            const cur = deckExChips.getVal() || '';
+            const r = await _engineMw(w, { phrase: 'merriam' }, { example: cur, phrases: '' });
+            if (r.patch?.example) {
+              const have = new Set(cur.split('\n').map(x => x.trim()).filter(Boolean));
+              ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean).find(x => !have.has(x)) || '';
             }
           }
-        } catch (_) {}
-      } else if (src === 'dict-api') {
-        try {
-          const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-          if (r.ok) ex = (await r.json()).flatMap(e => (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean)))[0] || '';
-        } catch (_) {}
-      } else if (src === 'tatoeba') {
-        try {
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
-          if (r.ok) ex = ((await r.json()).data || []).map(s => s.text).filter(Boolean)[0] || '';
-        } catch (_) {}
-      } else if (src === 'cambridge') {
-        try {
-          const json = await lookupCambridge(w, 'zh');
-          const d = JSON.parse(json);
-          if (d.senses?.length) {
-            const hasZh = 'translation' in d.senses[0];
-            ex = d.senses.flatMap(s => (s.examples || []).map(ex => hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english)))[0] || '';
-          }
-        } catch (_) {}
-      }
+        } else if (src === 'cambridge' || src === 'dict-api' || src === 'tatoeba') {
+          // ENGINE3: 其餘來源走引擎 example 單句模式（空底全取候選、取首句照收；同舊無去重語意）
+          // deck 例句鈕舊程式本無 llm 路，chain 雖含 llm 此處照舊略過
+          const r = await _engineMw(w, { example: src }, { example: '' });
+          if (r.patch?.example) ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
+        }
+      } catch (_) {}
       if (ex) { deckExChips.append(ex); break; }
     }
   });
@@ -1100,7 +1096,7 @@ function openEditModal(s, id) {
           </div>
           <div class="form-group" style="flex:1">
             <label class="form-label">音節</label>
-            <input class="form-input" id="deckEditSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(w.syllables || '')}">
+            <div style="display:flex;gap:4px"><input class="form-input" id="deckEditSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(w.syllables || '')}" style="flex:1"><button class="btn btn-sm" id="deckEditFillExtra" type="button" title="韋氏補上音節／字源（片語併入例句；只填空欄）">${icon('sparkle')}</button></div>
           </div>
         </div>
         <div class="form-group">
@@ -1349,25 +1345,27 @@ function openEditModal(s, id) {
   _renderEditAutoOrderChips();
 
   let _editLastAutoFilled = '';
+  // ENGINE3: g/s 提升 modal 層（editAutoFillAll＋音節字源鈕共用；fGet/fSet 避開 modal 參數 s）
+  const fGetE = id => {
+    if (id === 'deckEditPos') return _getEditPosVal();
+    if (id === 'deckEditDef') return editDefChips.getVal() || document.getElementById('deckEditDef')?.value.trim() || '';
+    if (id === 'deckEditExample') return editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '';
+    return document.getElementById(id)?.value?.trim() || '';
+  };
+  const fSetE = (id, val) => {
+    if (!val) return;
+    if (id === 'deckEditDef') { if (!fGetE('deckEditDef')) editDefChips.setVal(val); }
+    else if (id === 'deckEditExample') { if (!fGetE('deckEditExample')) editExChips.setVal(val); }
+    // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
+    else if (id === 'deckEditExampleAppend') { if (val) editExChips.setVal(mergeExamplePhrases(editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '', val)); }
+    else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
+  };
   const editAutoFillAll = async () => {
     const w = document.getElementById('deckEditWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('deckEditAutoFill');
     if (btn) btn.disabled = true;
-    const g = id => {
-      if (id === 'deckEditPos') return _getEditPosVal();
-      if (id === 'deckEditDef') return editDefChips.getVal() || document.getElementById('deckEditDef')?.value.trim() || '';
-      if (id === 'deckEditExample') return editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '';
-      return document.getElementById(id)?.value?.trim() || '';
-    };
-    const s = (id, val) => {
-      if (!val) return;
-      if (id === 'deckEditDef') { if (!g('deckEditDef')) editDefChips.setVal(val); }
-      else if (id === 'deckEditExample') { if (!g('deckEditExample')) editExChips.setVal(val); }
-      // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
-      else if (id === 'deckEditExampleAppend') { if (val) editExChips.setVal(mergeExamplePhrases(editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '', val)); }
-      else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
-    };
+    const g = fGetE, s = fSetE;
     let cambridgeFailed = false;
     for (const src of editAutoFillChain) {
       if (src === 'cambridge') {
@@ -1493,30 +1491,31 @@ function openEditModal(s, id) {
     _editJumpNext(el.id);
   });
 
-  // ── Example fill（片語已併入例句：韋氏片語同為候選）──
+  // ── Example fill（片語已併入例句：韋氏片語同為候選；ENGINE3 起整條 chain 走引擎，取句語意同舊）──
   document.getElementById('deckEditFillExample')?.addEventListener('click', async () => {
     const w = document.getElementById('deckEditWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     for (const src of editAutoFillChain) {
       let ex = '';
-      if (src === 'merriam') {
-        try {
+      try {
+        if (src === 'merriam') {
+          // ENGINE3: 韋氏片語候選走引擎（phrase 併例句；取首句未收錄者＝同舊 find 語意）
           const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
           if (dk || tk) {
-            const f = merriamToFields(JSON.parse(await lookupMerriam(w, dk, tk)), w);
-            if (f?.phrases) {
-              const cur = new Set((editExChips.getVal() || '').split('\n').map(x => x.trim()).filter(Boolean));
-              ex = f.phrases.split('\n').map(x => x.trim()).filter(Boolean).find(x => !cur.has(x)) || '';
+            const cur = editExChips.getVal() || '';
+            const r = await _engineMw(w, { phrase: 'merriam' }, { example: cur, phrases: '' });
+            if (r.patch?.example) {
+              const have = new Set(cur.split('\n').map(x => x.trim()).filter(Boolean));
+              ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean).find(x => !have.has(x)) || '';
             }
           }
-        } catch (_) {}
-      } else if (src === 'dict-api') {
-        try { const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`); if (r.ok) ex = (await r.json()).flatMap(e => (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean)))[0] || ''; } catch (_) {}
-      } else if (src === 'tatoeba') {
-        try { const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`); if (r.ok) ex = ((await r.json()).data || []).map(s => s.text).filter(Boolean)[0] || ''; } catch (_) {}
-      } else if (src === 'cambridge') {
-        try { const json = await lookupCambridge(w, 'zh'); const d = JSON.parse(json); if (d.senses?.length) { const hasZh = 'translation' in d.senses[0]; ex = d.senses.flatMap(s => (s.examples || []).map(ex => hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english)))[0] || ''; } } catch (_) {}
-      }
+        } else if (src === 'cambridge' || src === 'dict-api' || src === 'tatoeba') {
+          // ENGINE3: 其餘來源走引擎 example 單句模式（空底全取候選、取首句照收；同舊無去重語意）
+          // deck 例句鈕舊程式本無 llm 路，chain 雖含 llm 此處照舊略過
+          const r = await _engineMw(w, { example: src }, { example: '' });
+          if (r.patch?.example) ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
+        }
+      } catch (_) {}
       if (ex) { editExChips.append(ex); break; }
     }
   });
@@ -1540,6 +1539,12 @@ function openEditModal(s, id) {
       llmFillSynAntDeriv('deckEdit', w);
     });
   }
+  // ENGINE3: 音節／字源獨立鈕（走 mwFillExtra＝引擎三欄；只填空欄，片語併入例句）
+  document.getElementById('deckEditFillExtra')?.addEventListener('click', () => {
+    const w = document.getElementById('deckEditWord')?.value.trim();
+    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
+    mwFillExtra('deckEdit', fSetE, fGetE, w);
+  });
 
   // ── Save handler ───
   document.getElementById('deckEditSave')?.addEventListener('click', async () => {
@@ -2283,13 +2288,27 @@ function cssEscape(str) {
   return String(str ?? '').replace(/["\\]/g, '\\$&');
 }
 
-/** ENGINE2 共用：編輯器 sparkle 的韋氏分支一律走 fillWordFields（單次 fetch 多欄；LLM 兜底不動） */
+/** ENGINE2 共用：編輯器 sparkle 的韋氏分支一律走 fillWordFields（單次 fetch 多欄；LLM 兜底不動）
+ *  ENGINE3：fetchers 補齊（getCamEn＋llmText），例句鈕整條 chain 可走引擎；
+ *  getMw 單次快取（mwFillExtra 三欄一鍵只打一次，同舊）；threshold 預設全開（sparkle 單句模式有無都不擋） */
 async function _engineMw(word, methods, existing = {}) {
   const { fillWordFields } = await import('../lib/autofill-engine.js');
-  const { lookupMerriam } = await import('../lib/api.js');
+  const { lookupMerriam, lookupCambridge } = await import('../lib/api.js');
   const { merriamToFields } = await import('../lib/merriam.js');
-  return fillWordFields({ wordText: word, methods, existing, overwrite: false,
-    fetchers: { getMw: async () => merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word) },
+  let mwCache = null;
+  const getMw = async () => {
+    if (!mwCache) mwCache = merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word);
+    return mwCache;
+  };
+  const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
+  const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
+  return fillWordFields({ wordText: word, methods, existing, overwrite: false, threshold: Infinity,
+    fetchers: {
+      getMw,
+      getCamEn: async () => JSON.parse(await lookupCambridge(word, 'zh')),
+      llmText: async (prompt) => fetchLLM(`${baseUrl}/api/generate`, model, prompt),
+      llmOk: true,
+    },
     onStat: () => {} });
 }
 async function llmFillRelated(inputId, word) {

@@ -933,7 +933,7 @@ function openModal(s, word) {
           </div>
           <div class="form-group" style="flex:1">
             <label class="form-label">音節</label>
-            <input class="form-input" id="fSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(word?.syllables || '')}">
+            <div style="display:flex;gap:4px"><input class="form-input" id="fSyllables" placeholder="例：dict·io·nary；Enter 跳下一欄" value="${escapeAttr(word?.syllables || '')}" style="flex:1"><button class="btn btn-sm" id="btnFillExtra" type="button" title="韋氏補上音節／字源（片語併入例句；只填空欄）">${icon('sparkle')}</button></div>
           </div>
         </div>
         <div class="form-group">
@@ -1260,6 +1260,13 @@ function openModal(s, word) {
     llmFillForms('fForms', w);
   });
 
+  // ENGINE3: 音節／字源獨立鈕（走 mwFillExtra＝引擎三欄；只填空欄，片語併入例句）
+  document.getElementById('btnFillExtra')?.addEventListener('click', () => {
+    const w = document.getElementById('fWord')?.value.trim();
+    if (!w) { toast('請先輸入單字', 'toast-error'); return; }
+    mwFillExtra(fSetB, fGetB, w);
+  });
+
   document.getElementById('btnFillExample')?.addEventListener('click', async () => {
     const w = document.getElementById('fWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
@@ -1269,44 +1276,17 @@ function openModal(s, word) {
     for (const src of chain) {
       let raw = [];
       try {
-        if (src === 'cambridge') {
-          const json = await lookupCambridge(w, 'zh');
-          const d = JSON.parse(json);
-          if (d.senses?.length) {
-            const hasZh = 'translation' in d.senses[0];
-            raw = d.senses.flatMap(s => (s.examples || []).map(ex => (hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english))).filter(Boolean));
+        if (src === 'merriam') {
+          // ENGINE3: 韋氏片語候選走引擎（空底全取片語，raw＝同舊 f.phrases 行列；去重語意由下方 norm 維持）
+          const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
+          if (dk || tk) {
+            const r = await _engineMw(w, { phrase: 'merriam' }, { example: '', phrases: '' });
+            if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
           }
-        } else if (src === 'merriam') {
-          // 韋氏片語即例句候選（片語已併入例句）
-          try {
-            const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
-            if (dk || tk) {
-              const f = merriamToFields(JSON.parse(await lookupMerriam(w, dk, tk)), w);
-              if (f?.phrases) raw = f.phrases.split('\n').map(x => x.trim()).filter(Boolean);
-            }
-          } catch (e) {}
-        } else if (src === 'dict-api') {
-          const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-          if (r.ok) {
-            raw = (await r.json()).flatMap(e =>
-              (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean))
-            );
-          }
-        } else if (src === 'tatoeba') {
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
-          if (r.ok) {
-            raw = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
-          }
-        } else if (src === 'llm') {
-          const baseUrl = (document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
-          const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
-          const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
-          if (models.length) {
-            const t = await fetchLLM(`${baseUrl}/api/generate`, models[0],
-              `Generate a simple English example sentence using "${w}". Return ONLY the sentence, nothing else.`
-            );
-            if (t) raw = [t.trim()];
-          }
+        } else {
+          // ENGINE3: cambridge/dict-api/tatoeba/llm 走引擎 example 單句模式（空底全取候選；去重語意由下方 norm 維持）
+          const r = await _engineMw(w, { example: src }, { example: '' });
+          if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
         }
       } catch (e) {}
       const seen = new Set();
@@ -1376,25 +1356,27 @@ function openModal(s, word) {
   };
 
   let _lastAutoFilled = '';
+  // ENGINE3: g/s 提升 modal 層（autoFillAll＋音節字源鈕共用；fGet/fSet 避開 modal 參數 s）
+  const fGetB = id => {
+    if (id === 'fPos') return _getPosVal();
+    if (id === 'fDefinition') return _defChips.getVal();
+    if (id === 'fExample') return exChips.getVal();
+    return document.getElementById(id)?.value?.trim() || '';
+  };
+  const fSetB = (id, val) => {
+    if (!val) return;
+    if (id === 'fDefinition') { if (!fGetB('fDefinition')) _defChips.setVal(val); }
+    else if (id === 'fExample') { if (!fGetB('fExample')) exChips.setVal(val); }
+    // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
+    else if (id === 'fExampleAppend') { if (val) exChips.setVal(mergeExamplePhrases(exChips.getVal(), val)); }
+    else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
+  };
   const autoFillAll = async () => {
     const w = document.getElementById('fWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('fAutoFill');
     if (btn) btn.disabled = true;
-    const g = id => {
-      if (id === 'fPos') return _getPosVal();
-      if (id === 'fDefinition') return _defChips.getVal();
-      if (id === 'fExample') return exChips.getVal();
-      return document.getElementById(id)?.value?.trim() || '';
-    };
-    const s = (id, val) => {
-      if (!val) return;
-      if (id === 'fDefinition') { if (!g('fDefinition')) _defChips.setVal(val); }
-      else if (id === 'fExample') { if (!g('fExample')) exChips.setVal(val); }
-      // 片語已併入例句：韋氏/LLM 片語去重接續進例句膠囊
-      else if (id === 'fExampleAppend') { if (val) exChips.setVal(mergeExamplePhrases(exChips.getVal(), val)); }
-      else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
-    };
+    const g = fGetB, s = fSetB;
     const chain = getChain();
     let cambridgeFailed = false;
     for (const src of chain) {
@@ -1554,13 +1536,27 @@ function openModal(s, word) {
 }
 
 /** 韋氏三欄一鍵（modal 版；音節/字源填空欄，片語併入例句；有 key 才跑）
- *  ENGINE2 共用：韋氏分支一律走 fillWordFields（單次 fetch 多欄；LLM 兜底不動） */
+ *  ENGINE2 共用：韋氏分支一律走 fillWordFields（單次 fetch 多欄；LLM 兜底不動）
+ *  ENGINE3：fetchers 補齊（getCamEn＋llmText），例句鈕整條 chain 可走引擎；
+ *  getMw 單次快取（三欄一鍵只打一次，同舊）；threshold 預設全開（sparkle 單句模式有無都不擋） */
 async function _engineMw(word, methods, existing = {}) {
   const { fillWordFields } = await import('../lib/autofill-engine.js');
-  const { lookupMerriam } = await import('../lib/api.js');
+  const { lookupMerriam, lookupCambridge } = await import('../lib/api.js');
   const { merriamToFields } = await import('../lib/merriam.js');
-  return fillWordFields({ wordText: word, methods, existing, overwrite: false,
-    fetchers: { getMw: async () => merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word) },
+  let mwCache = null;
+  const getMw = async () => {
+    if (!mwCache) mwCache = merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word);
+    return mwCache;
+  };
+  const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
+  const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
+  return fillWordFields({ wordText: word, methods, existing, overwrite: false, threshold: Infinity,
+    fetchers: {
+      getMw,
+      getCamEn: async () => JSON.parse(await lookupCambridge(word, 'zh')),
+      llmText: async (prompt) => fetchLLM(`${baseUrl}/api/generate`, model, prompt),
+      llmOk: true,
+    },
     onStat: () => {} });
 }
 async function mwFillExtra(s, g, word) {

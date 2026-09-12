@@ -6,8 +6,9 @@
 // ＋字源/音節/衍生），改一邊漏一邊（字源音節漏接組合包即實例）。
 // 收斂後：欄位表＋fetch 快取語意＋逐欄填寫全歸這裡；
 // 組合包、批量新增調同一個 fillWordFields，只差 methods map 跟 UI。
-// 編輯器 sparkle（llmFill*/mwFillExtra）維持薄包裝（單欄 UI 寫入），
-// 未來可再收；autoFillAll chain（順序 UI 流）亦不動。
+// 編輯器 sparkle（llmFill*/mwFillExtra/三顆例句鈕）亦全走 fillWordFields
+// （ENGINE3；單欄 UI 寫入＋chip 合併留在呼叫端，引擎保持 node-safe 可測），
+// autoFillAll chain（順序 UI 流）維持呼叫既有函數，傳遞受惠不動。
 //
 // node-safe：只 import core/import.js（無外部依賴）；
 // lookup/LLM 全經 fetchers 注入，harness 用 stub 零網路可測。
@@ -192,7 +193,11 @@ export async function fillWordFields({
       if (M === 'merriam') fresh = String((await mw()).example || '').split('\n').map(x => x.trim()).filter(Boolean);
       else if (M === 'cambridge') {
         const data = await camEn();
-        for (const sense of data.senses || []) for (const e2 of sense.examples || []) if (e2) fresh.push(String(e2).trim());
+        // zh 形例句可能是 {english} 物件（en 形是純字串）；一律正規成字串，免 [object Object] 灌進 chip
+        for (const sense of data.senses || []) for (const e2 of sense.examples || []) {
+          const t = typeof e2 === 'string' ? e2 : String(e2?.english || '');
+          if (t.trim()) fresh.push(t.trim());
+        }
       } else if (M === 'tatoeba') {
         const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
         if (!res.ok) throw new Error('tatoeba');
