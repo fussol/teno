@@ -144,25 +144,27 @@ export function render(s) {
     <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
-        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；覆寫開＝全部重跑。來源選擇與開關會記住。</div>
+        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）；全域覆寫開＝全部欄位重跑。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
           <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
           <button class="btn btn-sm" id="comboAllOn">全選</button>
           <button class="btn btn-sm" id="comboAllOff">全關</button>
+          <button class="btn btn-sm" id="comboOwAllOn">覆寫全開</button>
+          <button class="btn btn-sm" id="comboOwAllOff">覆寫全關</button>
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_example" role="switch" aria-checked="true" title="是否補例句"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pron" role="switch" aria-checked="true" title="是否補發音"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_related" role="switch" aria-checked="true" title="是否補相關詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_forms" role="switch" aria-checked="true" title="是否補詞形"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞形</span>${_selHtml('comboForms', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_trans" role="switch" aria-checked="true" title="是否補翻譯"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syn" role="switch" aria-checked="true" title="是否補同義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_ant" role="switch" aria-checked="true" title="是否補反義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_phrase" role="switch" aria-checked="true" title="是否補片語"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">片語</span>${_selHtml('comboPhrase', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}</div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_etymology" role="switch" aria-checked="true" title="是否補字源"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">字源</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
-          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syllables" role="switch" aria-checked="true" title="是否補音節"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">音節</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_pos" role="switch" aria-checked="false" title="覆寫已有詞性"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_example" role="switch" aria-checked="true" title="是否補例句"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">例句</span>${_selHtml('comboExample', [['字典 API','dictionary-api'],['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['Tatoeba 例句','tatoeba'],['本地 LLM','llm']], 'dictionary-api')}<div class="switch switch-sm" id="comboOw_example" role="switch" aria-checked="false" title="覆寫已有例句"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_pron" role="switch" aria-checked="true" title="是否補發音"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">發音</span>${_selHtml('comboPron', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_pron" role="switch" aria-checked="false" title="覆寫已有發音"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_related" role="switch" aria-checked="true" title="是否補相關詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">相關詞</span>${_selHtml('comboRelated', [['本地 LLM','llm'],['韋氏字典','merriam']], 'llm')}<div class="switch switch-sm" id="comboOw_related" role="switch" aria-checked="false" title="覆寫已有相關詞"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_forms" role="switch" aria-checked="true" title="是否補詞形"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">詞形</span>${_selHtml('comboForms', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}<div class="switch switch-sm" id="comboOw_forms" role="switch" aria-checked="false" title="覆寫已有詞形"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_trans" role="switch" aria-checked="true" title="是否補翻譯"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">翻譯</span>${_selHtml('comboTrans', [['Cambridge 英中','cambridge'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_trans" role="switch" aria-checked="false" title="覆寫已有翻譯"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syn" role="switch" aria-checked="true" title="是否補同義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">同義詞</span>${_selHtml('comboSyn', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}<div class="switch switch-sm" id="comboOw_syn" role="switch" aria-checked="false" title="覆寫已有同義詞"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_ant" role="switch" aria-checked="true" title="是否補反義詞"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">反義詞</span>${_selHtml('comboAnt', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}<div class="switch switch-sm" id="comboOw_ant" role="switch" aria-checked="false" title="覆寫已有反義詞"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_phrase" role="switch" aria-checked="true" title="是否補片語"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">片語</span>${_selHtml('comboPhrase', [['韋氏字典','merriam'],['本地 LLM','llm']], 'merriam')}<div class="switch switch-sm" id="comboOw_phrase" role="switch" aria-checked="false" title="覆寫已有片語"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_etymology" role="switch" aria-checked="true" title="是否補字源"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">字源</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span><div class="switch switch-sm" id="comboOw_etymology" role="switch" aria-checked="false" title="覆寫已有字源"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
+          <div style="display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap"><div class="switch switch-sm on" id="comboOn_syllables" role="switch" aria-checked="true" title="是否補音節"></div><span style="font-size:12px;min-width:52px;color:var(--text-secondary)">音節</span><span style="font-size:12px;color:var(--text-tertiary)">韋氏字典（固定）</span><div class="switch switch-sm" id="comboOw_syllables" role="switch" aria-checked="false" title="覆寫已有音節"></div><span style="font-size:11px;color:var(--text-tertiary)">覆寫</span></div>
         </div>
         <div style="display:flex;gap:var(--s2);margin-bottom:var(--s2);align-items:center;flex-wrap:wrap">
           <label style="font-size:12px;white-space:nowrap;flex-shrink:0">少於</label>
@@ -228,7 +230,7 @@ let _toolsCsBound = false;
 // ─── 來源記憶（2026-09-08 使用者裁示）：全部來源選單＋組合包收合狀態＋欄位開關（COMBO1）───
 // 存 db setting methodSources（JSON；demo 走記憶體）。恢復時直接讀 DOM 選項
 // 反查 label，不在 JS 另存選項表（render 改選項不用同步這裡）。
-let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool, comboOn: {field: bool} }
+let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool, comboOn: {field: bool}, comboOw: {field: bool} }
 const _SRC_BLOB_KEY = 'methodSources';
 function _saveSrcMem() {
   const snap = JSON.stringify(_srcMem || {});
@@ -248,9 +250,17 @@ function _applySrcMem() {
     p.querySelectorAll('.cs-o').forEach(c => c.classList.toggle('s', c === o));
   }
   // COMBO1: 欄位開關恢復（沒存過＝全開，DOM 預設即全開）
+  // COMBO2: 每欄覆寫開關恢復（沒存過＝全關，DOM 預設即全關）
   const on = _srcMem.comboOn || {};
   for (const [f, v] of Object.entries(on)) {
     const el = document.getElementById('comboOn_' + f);
+    if (!el) continue;
+    el.classList.toggle('on', !!v);
+    el.setAttribute('aria-checked', String(!!v));
+  }
+  const ow = _srcMem.comboOw || {};
+  for (const [f, v] of Object.entries(ow)) {
+    const el = document.getElementById('comboOw_' + f);
     if (!el) continue;
     el.classList.toggle('on', !!v);
     el.setAttribute('aria-checked', String(!!v));
@@ -411,7 +421,7 @@ export function onMount(s) {
   };
 
   // ─── C段：自動補齊全域覆寫開關（db setting autofillOverwrite，預設關）───
-  // 開＝整欄取代＋無視門檻；關＝現行只補缺失。五路生成函式經 _ow() 讀取。
+  // 開＝組合包全部欄位取代＋無視門檻；關＝各欄覆寫開關各管各欄。組合包經 _ow() 讀取。
   let _autofillOverwrite = false;
   const _ow = () => _autofillOverwrite;
   const _owTag = () => (_autofillOverwrite ? '（覆寫模式）' : '');
@@ -435,11 +445,12 @@ export function onMount(s) {
   import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
     try {
       const stored = v ? JSON.parse(v) : null;
-      // 合併：載入完成前使用者已點過選單/收合/開關的話，以手上的為準（防競態洗掉）
+      // 合併：載入完成前使用者已點過選單/收合/開關/覆寫的話，以手上的為準（防競態洗掉）
       _srcMem = {
         selectors: { ...(stored?.selectors || {}), ...(_srcMem?.selectors || {}) },
         comboCollapsed: _srcMem ? !!_srcMem.comboCollapsed : !!stored?.comboCollapsed,
         comboOn: { ...(stored?.comboOn || {}), ...(_srcMem?.comboOn || {}) },
+        comboOw: { ...(stored?.comboOw || {}), ...(_srcMem?.comboOw || {}) },
       };
     }
     catch { _srcMem = _srcMem || { selectors: {}, comboCollapsed: false }; }
@@ -476,8 +487,28 @@ export function onMount(s) {
   document.getElementById('comboAllOff')?.addEventListener('click', () => {
     document.querySelectorAll('[id^="comboOn_"]')?.forEach(el => _setComboOn(el.id.replace('comboOn_', ''), false));
   });
+  // COMBO2: 每欄覆寫開關（點即存，預設全關；全域覆寫開時各欄照樣跑，全關回來各欄維持）
+  const _setComboOw = (f, v) => {
+    const el = document.getElementById('comboOw_' + f);
+    if (!el) return;
+    el.classList.toggle('on', !!v);
+    el.setAttribute('aria-checked', String(!!v));
+    _srcMem = _srcMem || { selectors: {}, comboCollapsed: false };
+    _srcMem.comboOw = _srcMem.comboOw || {};
+    _srcMem.comboOw[f] = !!v;
+    _saveSrcMem();
+  };
+  document.querySelectorAll('[id^="comboOw_"]')?.forEach(el => {
+    el.addEventListener('click', () => _setComboOw(el.id.replace('comboOw_', ''), !el.classList.contains('on')));
+  });
+  document.getElementById('comboOwAllOn')?.addEventListener('click', () => {
+    document.querySelectorAll('[id^="comboOw_"]')?.forEach(el => _setComboOw(el.id.replace('comboOw_', ''), true));
+  });
+  document.getElementById('comboOwAllOff')?.addEventListener('click', () => {
+    document.querySelectorAll('[id^="comboOw_"]')?.forEach(el => _setComboOw(el.id.replace('comboOw_', ''), false));
+  });
 
-  // ─── 組合包：一鍵全補（2026-09-08 使用者裁示；COMBO1 起十一欄各別開關，獨立卡併入）───
+  // ─── 組合包：一鍵全補（2026-09-08 使用者裁示；COMBO1 起十一欄各別開關，獨立卡併入；COMBO2 起每欄覆寫開關）───
   // 只做已啟用欄位全空的裸詞（覆寫開＝全量）。每詞各來源最多抓一次（cam英/cam中/
   // 韋氏/dictapi/tatoeba 快取），各欄拼成一個 patch、一次 editWord。
   const COMBO_FIELDS = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'];
@@ -490,6 +521,17 @@ export function onMount(s) {
   }
   function _comboOnFields() {
     return COMBO_FIELDS.filter(_comboOn);
+  }
+  // COMBO2: 每欄覆寫開關讀值（DOM 無此鈕＝關，預設全關；全域覆寫開時該欄照樣跑）
+  function _comboOw(f) {
+    const el = document.getElementById('comboOw_' + f);
+    return el ? el.classList.contains('on') : false;
+  }
+  // COMBO2: 單欄空值判定（與 _isBare 同語意，供覆寫挑字用）
+  function _isEmptyField(f, w) {
+    const v = w[COMBO_KEY[f]];
+    if (Array.isArray(v)) return !v || v.length === 0;
+    return !v || !String(v).trim();
   }
   function _exampleConfig() {
     const threshold = parseInt(document.getElementById('exampleThreshold')?.value, 10) || 1;
@@ -555,9 +597,15 @@ export function onMount(s) {
     };
     const M = {};
     for (const f of on) M[f] = SRC[f];
-    const targets = _ow() ? [...s.state.words] : s.state.words.filter(_isBare);
+    // COMBO2: 逐欄覆寫（全域開＝全部重跑；否則各欄開關各管各欄，預設全關＝只補缺失）
+    const owEff = {};
+    for (const f of on) owEff[f] = _ow() || _comboOw(f);
+    const owFields = on.filter(f => owEff[f]);
+    const owTag = _ow() ? '（覆寫模式）' : (owFields.length ? `（覆寫：${owFields.map(f => COMBO_CN[f]).join('、')}）` : '');
+    // COMBO2: 挑字（全域覆寫開＝全量；否則裸詞＋覆寫欄有料的字；覆寫欄全關時退化成裸詞）
+    const targets = _ow() ? [...s.state.words] : s.state.words.filter(w => _isBare(w) || on.some(f => owEff[f] && !_isEmptyField(f, w)));
     if (!targets.length) {
-      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() || owFields.length ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
       return;
     }
     const vals = Object.values(M);
@@ -575,7 +623,7 @@ export function onMount(s) {
     const stat = {};
     const bump = (f, k) => { stat[f] = stat[f] || { ok: 0, fail: 0, skip: 0 }; stat[f][k]++; };
     const taskId = 'combo-full-' + Date.now();
-    s.actions.startBackgroundTask(taskId, '一鍵全補' + _owTag(), targets.length);
+    s.actions.startBackgroundTask(taskId, '一鍵全補' + owTag, targets.length);
     let doneWords = 0, emptyWords = 0, aborted = false;
     const queue = [...targets];
     const quotaHit = (e) => /401|429/.test(String(e?.message || e));
@@ -588,6 +636,7 @@ export function onMount(s) {
     async function fillWord(w) {
       // AUTOFILL-ENGINE1: 分派收斂共用引擎（getMw suggest 快拋、LLM raw/JSON
       // 雙通道、quota 中止整批語意全沿用；字源/音節走 M 固定韋氏）。
+      // COMBO2: overwrite 傳逐欄表（全域開時全 true；否則各欄開關各管各欄）。
       const { fillWordFields } = await import('../lib/autofill-engine.js');
       let camEn = null, camZh = null, mwF = null, usedRemote = false;
       const getCamEn = async () => { if (!camEn) { camEn = JSON.parse(await lookupCambridge(w.word)); usedRemote = true; } return camEn; };
@@ -605,7 +654,7 @@ export function onMount(s) {
       };
       const llmText = async (prompt) => fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
       const r = await fillWordFields({
-        wordText: w.word, existing: w, methods: M, overwrite: _ow(),
+        wordText: w.word, existing: w, methods: M, overwrite: owEff,
         threshold, count,
         fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk },
         onStat: bump,
@@ -630,8 +679,9 @@ export function onMount(s) {
     s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `一鍵全補完成：${doneWords} 詞已填${emptyWords ? `，${emptyWords} 詞無新內容` : ''}${aborted ? '（額度中止）' : ''}` });
     const lines = Object.entries(CN).map(([k, label]) => {
       const st = stat[k];
-      if (!st || (!st.ok && !st.fail && !st.skip)) return `<div>${label}：未執行</div>`;
-      return `<div>${label}：${st.ok} 成功${st.fail ? ` / ${st.fail} 失敗` : ''}${st.skip ? ` / ${st.skip} 跳過（無 LLM）` : ''}</div>`;
+      const owMark = owEff[k] ? '（覆寫）' : '';
+      if (!st || (!st.ok && !st.fail && !st.skip)) return `<div>${label}${owMark}：未執行</div>`;
+      return `<div>${label}${owMark}：${st.ok} 成功${st.fail ? ` / ${st.fail} 失敗` : ''}${st.skip ? ` / ${st.skip} 跳過（無 LLM）` : ''}</div>`;
     }).join('');
     say(`<div style="color:var(--green)">${icon('check')} ${doneWords} 詞已全補${emptyWords ? `，${emptyWords} 詞無新內容` : ''}${aborted ? '（額度中止）' : ''}</div><div style="margin-top:4px;font-size:12px;color:var(--text-secondary)">${lines}</div>`);
     toast(`一鍵全補完成：${doneWords} 成功${emptyWords ? `，${emptyWords} 無新內容` : ''}`, aborted ? '' : 'toast-success');

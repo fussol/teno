@@ -116,7 +116,8 @@ export function isQuotaError(e) {
  * @param {string} args.wordText 查詢詞
  * @param {object} args.existing 已有欄位（空物件＝新字；供應覆寫語意比對）
  * @param {object} args.methods 欄位→來源（DEFAULT_METHODS／BATCH_METHODS／子集）
- * @param {boolean} args.overwrite 覆寫開（整欄取代＋無視門檻；關＝只補缺失）
+ * @param {boolean|object} args.overwrite 覆寫開（整欄取代＋無視門檻；關＝只補缺失）
+ *   布林＝全欄共用；物件＝逐欄（{pos:true,...}，COMBO2 組合包每欄覆寫開關用；未列＝關）
  * @param {number} args.threshold 例句門檻（countSentences < threshold 才補）
  * @param {number} args.count LLM 例句生成句數
  * @param {number} args.exampleMax 例句上限（批量舊語意 cap 3；組合包不過濾＝Infinity）
@@ -143,6 +144,8 @@ export async function fillWordFields({
   let aborted = false, abortError = null, usedRemote = false;
   const { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk } = fetchers;
   const need = (field) => methods[field] !== undefined;
+  // COMBO2: overwrite 可為布林（全欄共用，舊語意）或物件（逐欄，組合包每欄覆寫開關用）
+  const ow = (field) => (overwrite && typeof overwrite === 'object' ? !!overwrite[field] : !!overwrite);
   const bump = (f, k, e) => { if (k === 'fail' && e !== undefined) errors[f] = String(e?.message || e || ''); try { onStat(f, k); } catch (_) {} };
   const quota = (e) => {
     if (isQuotaError(e)) { aborted = true; abortError = e; return true; }
@@ -155,7 +158,7 @@ export async function fillWordFields({
   const capEx = (lines) => (Number.isFinite(exampleMax) ? lines.slice(0, exampleMax) : lines);
 
   // ── 詞性 ──
-  if (need('pos') && (overwrite || !ex.pos?.trim())) {
+  if (need('pos') && (ow('pos') || !ex.pos?.trim())) {
     try {
       const M = methods.pos;
       if (M === 'merriam') {
@@ -173,7 +176,7 @@ export async function fillWordFields({
         const data = await camEn();
         const newRaw = [...new Set((data.senses || []).flatMap(x => (x.part_of_speech || '').split(',').map(p => p.trim()).filter(Boolean)))];
         const mapped = posToks(newRaw.join(','));
-        if (overwrite) {
+        if (ow('pos')) {
           const replaced = mapped.join(', ');
           if (replaced) { patch.pos = replaced; bump('pos', 'ok'); } else bump('pos', 'fail');
         } else {
@@ -186,7 +189,7 @@ export async function fillWordFields({
   }
 
   // ── 例句 ──
-  if (need('example') && (overwrite || countSentences(ex.example) < threshold)) {
+  if (need('example') && (ow('example') || countSentences(ex.example) < threshold)) {
     try {
       const M = methods.example;
       let fresh = [];
@@ -219,9 +222,9 @@ export async function fillWordFields({
       if (fresh === null) { /* llm 跳過，已記 skip */ }
       else {
         fresh = capEx([...new Set(fresh)]);
-        const unique = overwrite ? [...new Set(fresh)] : dedupSentences(ex.example, fresh);
+        const unique = ow('example') ? [...new Set(fresh)] : dedupSentences(ex.example, fresh);
         if (unique.length) {
-          patch.example = (overwrite ? unique : [(ex.example || '').trim(), ...unique]).filter(Boolean).join('\n');
+          patch.example = (ow('example') ? unique : [(ex.example || '').trim(), ...unique]).filter(Boolean).join('\n');
           bump('example', 'ok');
         } else bump('example', 'fail');
       }
@@ -229,7 +232,7 @@ export async function fillWordFields({
   }
 
   // ── 發音 ──
-  if (need('pron') && (overwrite || !ex.pron?.trim())) {
+  if (need('pron') && (ow('pron') || !ex.pron?.trim())) {
     try {
       const M = methods.pron;
       if (M === 'merriam') {
@@ -251,7 +254,7 @@ export async function fillWordFields({
   }
 
   // ── 相關詞（merriam＝synonym＋related union 取 12；llm＝JSON；merriam+llm＝雙併，批量舊語意）──
-  if (need('related') && (overwrite || !ex.related?.length)) {
+  if (need('related') && (ow('related') || !ex.related?.length)) {
     try {
       const M = methods.related;
       if (M === 'merriam' || M === 'merriam+llm') {
@@ -275,7 +278,7 @@ export async function fillWordFields({
   }
 
   // ── 詞形 ──
-  if (need('forms') && (overwrite || !ex.forms?.length)) {
+  if (need('forms') && (ow('forms') || !ex.forms?.length)) {
     try {
       const M = methods.forms;
       if (M === 'merriam') {
@@ -295,7 +298,7 @@ export async function fillWordFields({
   }
 
   // ── 翻譯→definition ──
-  if (need('trans') && (overwrite || !ex.definition?.trim())) {
+  if (need('trans') && (ow('trans') || !ex.definition?.trim())) {
     try {
       const M = methods.trans;
       if (M === 'llm') {
@@ -319,45 +322,45 @@ export async function fillWordFields({
   }
 
   // ── 同義詞 ──
-  if (need('syn') && (overwrite || !ex.synonym?.trim())) {
+  if (need('syn') && (ow('syn') || !ex.synonym?.trim())) {
     try {
       const M = methods.syn;
       if (M === 'merriam') {
         const f = await mw();
         const fresh = String(f.synonym || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 12);
-        if (fresh.length) { patch.synonym = overwrite ? fresh.join(', ') : mergeComma(ex.synonym, fresh); bump('syn', 'ok'); } else bump('syn', 'fail');
+        if (fresh.length) { patch.synonym = ow('syn') ? fresh.join(', ') : mergeComma(ex.synonym, fresh); bump('syn', 'ok'); } else bump('syn', 'fail');
       } else {
         if (!llmOk) bump('syn', 'skip');
         else {
           const arr = await llmJson(`Return a JSON array of synonyms for "${w}". Example: ["obtain","receive"]. Only the JSON array, no markdown.`);
-          if (arr?.length) { patch.synonym = overwrite ? [...new Set(arr)].join(', ') : mergeComma(ex.synonym, arr); bump('syn', 'ok'); } else bump('syn', 'fail');
+          if (arr?.length) { patch.synonym = ow('syn') ? [...new Set(arr)].join(', ') : mergeComma(ex.synonym, arr); bump('syn', 'ok'); } else bump('syn', 'fail');
         }
       }
     } catch (e) { bump('syn', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 反義詞 ──
-  if (need('ant') && (overwrite || !ex.antonym?.trim())) {
+  if (need('ant') && (ow('ant') || !ex.antonym?.trim())) {
     try {
       const M = methods.ant;
       if (M === 'merriam') {
         const f = await mw();
         const fresh = String(f.antonym || '').split(',').map(x => x.trim()).filter(Boolean).slice(0, 12);
-        if (fresh.length) { patch.antonym = overwrite ? fresh.join(', ') : mergeComma(ex.antonym, fresh); bump('ant', 'ok'); } else bump('ant', 'fail');
+        if (fresh.length) { patch.antonym = ow('ant') ? fresh.join(', ') : mergeComma(ex.antonym, fresh); bump('ant', 'ok'); } else bump('ant', 'fail');
       } else {
         if (!llmOk) bump('ant', 'skip');
         else {
           const arr = await llmJson(`Return a JSON array of antonyms for "${w}". Example: ["lose","surrender"]. Only the JSON array, no markdown.`);
-          if (arr?.length) { patch.antonym = overwrite ? [...new Set(arr)].join(', ') : mergeComma(ex.antonym, arr); bump('ant', 'ok'); } else bump('ant', 'fail');
+          if (arr?.length) { patch.antonym = ow('ant') ? [...new Set(arr)].join(', ') : mergeComma(ex.antonym, arr); bump('ant', 'ok'); } else bump('ant', 'fail');
         }
       }
     } catch (e) { bump('ant', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
 
   // ── 片語（併入例句；寫回時 phrases 清空，沿用遷移語意）──
-  if (need('phrase') && (overwrite || !ex.phrases?.trim())) {
+  if (need('phrase') && (ow('phrase') || !ex.phrases?.trim())) {
     try {
-      const exBase = overwrite
+      const exBase = ow('phrase')
         ? [patch.example, ex.example].filter(Boolean).join('\n')
         : mergeExamplePhrases([patch.example, ex.example].filter(Boolean).join('\n'), ex.phrases);
       const putPhrase = (fresh) => {
@@ -383,7 +386,7 @@ export async function fillWordFields({
   }
 
   // ── 字源（韋氏固定；only Merriam provides these）──
-  if (need('etymology') && (overwrite || !ex.etymology?.trim())) {
+  if (need('etymology') && (ow('etymology') || !ex.etymology?.trim())) {
     try {
       const f = await mw();
       if (f.etymology?.trim()) { patch.etymology = f.etymology; bump('etymology', 'ok'); } else bump('etymology', 'fail');
@@ -391,7 +394,7 @@ export async function fillWordFields({
   }
 
   // ── 音節（韋氏固定；only Merriam provides these）──
-  if (need('syllables') && (overwrite || !ex.syllables?.trim())) {
+  if (need('syllables') && (ow('syllables') || !ex.syllables?.trim())) {
     try {
       const f = await mw();
       if (f.syllables?.trim()) { patch.syllables = f.syllables; bump('syllables', 'ok'); } else bump('syllables', 'fail');
@@ -399,7 +402,7 @@ export async function fillWordFields({
   }
 
   // ── 衍生（韋氏固定；組合包不用，批量用）──
-  if (need('derivative') && (overwrite || !ex.derivative?.trim())) {
+  if (need('derivative') && (ow('derivative') || !ex.derivative?.trim())) {
     try {
       const f = await mw();
       if (f.derivative?.trim()) { patch.derivative = f.derivative; bump('derivative', 'ok'); } else bump('derivative', 'fail');

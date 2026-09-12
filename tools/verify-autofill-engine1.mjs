@@ -58,6 +58,41 @@ console.log('[E2b] Cambridge 物件形例句（ENGINE3：zh 回傳 {english} 物
   chk('無 [object Object] 污染', !/\[object Object\]/.test(r.patch.example || ''));
 }
 
+console.log('[E2c] 逐欄覆寫（COMBO2：overwrite 物件各管各欄；布林舊語意不變；關＋有料＝跳過）');
+{
+  // 同義詞：關＋有料＝跳過，開＝取代
+  const mk = () => stubFetchers({ mw: { synonym: 'b, c' } });
+  let f = mk().fetchers;
+  let r = await fillWordFields({ wordText: 'w', existing: { synonym: 'a' }, methods: { syn: 'merriam' }, overwrite: false, fetchers: f });
+  chk('syn 關＋有料＝跳過', r.patch.synonym === undefined, JSON.stringify(r.patch));
+  f = mk().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { synonym: 'a' }, methods: { syn: 'merriam' }, overwrite: { syn: true }, fetchers: f });
+  chk('syn 開＝取代', r.patch.synonym === 'b, c', JSON.stringify(r.patch));
+  f = mk().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { synonym: 'a' }, methods: { syn: 'merriam' }, overwrite: true, fetchers: f });
+  chk('syn 布林 true 舊語意＝取代', r.patch.synonym === 'b, c', JSON.stringify(r.patch));
+  // 別欄開不影響本欄
+  f = mk().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { synonym: 'a' }, methods: { syn: 'merriam' }, overwrite: { pos: true }, fetchers: f });
+  chk('別欄開本欄仍跳過', r.patch.synonym === undefined, JSON.stringify(r.patch));
+  // 例句半滿（1 句＜門檻 2）：關＝附加，開＝取代（唯一合併真跑處）
+  const mkEx = () => stubFetchers({ mw: { example: 'new one here' } });
+  f = mkEx().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { example: 'old sentence here' }, methods: { example: 'merriam' }, overwrite: false, threshold: 2, fetchers: f });
+  chk('example 半滿關＝附加', r.patch.example === 'old sentence here\nnew one here', JSON.stringify(r.patch));
+  f = mkEx().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { example: 'old sentence here' }, methods: { example: 'merriam' }, overwrite: { example: true }, threshold: 2, fetchers: f });
+  chk('example 開＝取代', r.patch.example === 'new one here', JSON.stringify(r.patch));
+  // 詞性 cambridge：關＋有料＝跳過，開＝取代
+  const mkPos = () => stubFetchers({ camEn: { senses: [{ part_of_speech: 'verb' }] } });
+  f = mkPos().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { pos: '名詞' }, methods: { pos: 'cambridge' }, overwrite: false, fetchers: f });
+  chk('pos 關＋有料＝跳過', r.patch.pos === undefined, JSON.stringify(r.patch));
+  f = mkPos().fetchers;
+  r = await fillWordFields({ wordText: 'w', existing: { pos: '名詞' }, methods: { pos: 'cambridge' }, overwrite: { pos: true }, fetchers: f });
+  chk('pos 開＝取代', r.patch.pos === '動詞', JSON.stringify(r.patch));
+}
+
 console.log('[E3] 字源音節固定韋氏');
 {
   const { calls, fetchers } = stubFetchers({ mw: { etymology: 'Latin', syllables: 'a·b' } });
@@ -179,6 +214,23 @@ console.log('[E9] 接線覆蓋（COMBO1：獨立卡已刪，組合包十一欄�
   chk('開關記憶進 _srcMem.comboOn', /_srcMem\.comboOn/.test(tools));
   chk('例句門檻/句數搬進組合包', /id="exampleThreshold"/.test(tools) && /id="exampleCount"/.test(tools) && /_exampleConfig\(\)/.test(tools));
   chk('組合包仍走引擎 fillWordFields', /fillWordFields\(\{/.test(tools));
+}
+
+console.log('[E9c] 接線覆蓋（COMBO2：每欄覆寫開關＋記憶＋逐欄執行）');
+{
+  const tools = readFileSync('src/pages/tools.js', 'utf8');
+  const engine = readFileSync('src/lib/autofill-engine.js', 'utf8');
+  for (const f of ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'])
+    chk(`組合包 ${f} 有覆寫開關`, new RegExp(`id="comboOw_${f}"`).test(tools));
+  chk('覆寫開關預設關（無 on class）', /class="switch switch-sm" id="comboOw_pos"/.test(tools));
+  chk('覆寫全開/全關鈕存在', /id="comboOwAllOn"/.test(tools) && /id="comboOwAllOff"/.test(tools));
+  chk('覆寫記憶進 _srcMem.comboOw（含恢復/合併/點存）', /_srcMem\.comboOw/.test(tools) && /comboOw: \{ \.\.\.\(stored\?\.comboOw/.test(tools) && /_setComboOw/.test(tools));
+  chk('收合記憶（comboCollapsed 存取＋恢復）', /_srcMem\.comboCollapsed = collapsed/.test(tools) && /if \(_srcMem\.comboCollapsed\)/.test(tools));
+  chk('執行端組逐欄表（owEff 全域或各欄）', /owEff\[f\] = _ow\(\) \|\| _comboOw\(f\)/.test(tools));
+  chk('執行端傳逐欄表給引擎', /overwrite: owEff,/.test(tools));
+  chk('挑字含覆寫欄有料的字', /owEff\[f\] && !_isEmptyField\(f, w\)/.test(tools));
+  chk('結果行標覆寫', /owMark/.test(tools));
+  chk('引擎支援物件 overwrite（逐欄）', /typeof overwrite === 'object'/.test(engine));
 }
 
 console.log('[E9b] 接線覆蓋（ENGINE3：例句鈕整條 chain＋音節字源獨立鈕全走引擎）');

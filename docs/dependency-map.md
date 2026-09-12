@@ -378,9 +378,10 @@ grep -rhoE "navigate\('[^']+'\)" "$R/src/" | sort | uniq -c | sort -rn  # 路由
 - ENGINE2：九張獨立卡韋氏分支經 `_mwFillOne` 走引擎（pos 保留 nosug 語意，errors 通道新回傳）；兩編輯器十顆 sparkle 韋氏分支經 `_engineMw` 走引擎（LLM 兜底不動；mwFillExtra 單次 fetch 三欄，片語以空底取新句走 ExampleAppend）。
 - ENGINE3：三顆例句鈕整條 chain 走引擎；`_engineMw` fetchers 補齊；三處 modal 音節列新增獨立 sparkle；引擎 Cambridge 分支正規物件形例句（E2b 鎖）。
 - COMBO1：九張獨立卡 UI＋JS 整段刪（tools.js 1163 行；`_mwFillOne`／gen*ViaMerriam／window.__gen*／死 helper 全除，`mergeExamplePhrases` import 同除）；組合包十一欄各別開關（switch＋全選/全關，`_srcMem.comboOn` 與來源同 blob 記憶）；`__comboFull` 只組啟用欄（M／`_isBare`／CN 全過濾，全關擋下）；例句門檻句數＋顯示上限＋llmUrlRow 搬進組合包；`_exampleConfig`／`_mwLookup`／`_mwKeyMissing`／`_mwErr` 補回組合包前（刪段時連帶砍掉）。兩編輯器 sparkle 不動（deck/browser 斷言沿用）。
+- COMBO2：每欄覆寫開關（`comboOw_*` 十一顆，預設全關；覆寫全開/全關批次鈕；`_srcMem.comboOw` 與來源／開關／收合同 blob 記憶，含恢復／合併／點存）；執行端組逐欄表 `owEff[f]＝全域||各欄`，傳物件給引擎（`overwrite: owEff`），挑字＝裸詞＋覆寫欄有料的字，任務名＋結果行標覆寫欄；引擎 `overwrite` 支援物件（`ow(field)` helper，全欄位分支，布林舊語意不變；批量傳布林不受影響）。
 - 故意不接：autoFillAll 鏈編排層（調的已是接線後的 sparkle，傳遞受惠）、Cambridge／LLM／dict-api／tatoeba 獨立卡分支（非 MW 解析層，無一致性問題）、OCR 入庫 Cambridge 管線（store 層入庫語意，動它風險大於收益）、批量 runBatchAdd 的 mwLookup（本來就是引擎的 fetch 層）。
 - 語意修正（只多不砍方向）：相關詞卡補上 synonym 字串 union（與組合包／批量／編輯器一致）；片語卡覆寫模式去重（舊行為會寫入重句）；mwFillExtra 音節／字源改只填空欄（註解本來就這麼寫，舊程式會蓋掉已填值）。
-| autofill-engine.js（欄位分派＋errors＋E2b 物件形正規） | 組合包／批量／八卡／十三 sparkle＋三音節字源鈕 | 改來源語意只動引擎；harness E9/E9b 鎖接線覆蓋 |
+| autofill-engine.js（欄位分派＋errors＋E2b 物件形正規＋COMBO2 逐欄 ow） | 組合包／批量／八卡／十三 sparkle＋三音節字源鈕 | 改來源語意只動引擎；harness E9/E9b/E9c/E2c 鎖接線覆蓋 |
 
 - 新檔 `src/lib/autofill-engine.js`（node-safe，只 import core/import.js）：
   欄位表 12 欄（`AUTOFILL_FIELDS`，字源/音節/衍生 fixed 韋氏）＋
