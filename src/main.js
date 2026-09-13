@@ -326,6 +326,21 @@ function renderAppShell() {
     $('sidebarBackdrop').classList.remove('show');
   });
 
+  // 點 sidebar 外自動縮回（桌機寬螢幕用；窄螢幕原本走 backdrop，這裡順手一起吃）。
+  // 開關鈕 #sidebarReopen 本身在外，要排除，不然點開瞬間會被同一泡泡關掉。
+  if (!window.__sidebarOutsideBound) {
+    window.__sidebarOutsideBound = true;
+    document.addEventListener('click', (e) => {
+      const sidebar = document.getElementById('sidebar');
+      if (!sidebar || sidebar.classList.contains('hidden')) return;
+      if (e.target.closest('#sidebar')) return;
+      if (e.target.closest('#sidebarReopen')) return;
+      if (e.target.closest('#sidebarBackdrop')) return;
+      sidebar.classList.add('hidden');
+      document.getElementById('sidebarBackdrop')?.classList.remove('show');
+    });
+  }
+
   // Nav clicks
   bindNav();
   // Bottom bar clicks
