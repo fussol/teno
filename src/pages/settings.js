@@ -465,6 +465,10 @@ function renderSettingsContent(s) {
             </div>
           </div>
           <div style="font-size:12px;color:var(--text-tertiary)" id="webdavStatusText">檢查中…</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)">
+            <input type="checkbox" id="webdavAutoUpload">
+            自動備份時同步上傳到這台 WebDAV（跟本地備份同一節奏，有變更才傳）
+          </label>
         </div>
       </div>
     </div>
@@ -1191,6 +1195,24 @@ export function onMount(s) {
     }
   }
   updateWebdavUI();
+
+  // WebDAV 自動上傳開關（存 db settings，預設關；開了才跟本地自動備份同一 tick 上傳）
+  import('../lib/db.js').then(async ({ getSetting, setSetting }) => {
+    const box = document.getElementById('webdavAutoUpload');
+    if (!box) return;
+    try {
+      const flag = await getSetting('webdavAutoUpload');
+      box.checked = flag === 1 || flag === true || flag === '1';
+    } catch (_) {}
+    box.addEventListener('change', async () => {
+      try {
+        await setSetting('webdavAutoUpload', box.checked ? 1 : 0);
+        toast(box.checked ? '已開啟：自動備份時同步上傳 WebDAV' : '已關閉 WebDAV 自動上傳', 'toast-success');
+      } catch (e) {
+        toast('設定儲存失敗: ' + e, 'toast-error');
+      }
+    });
+  }).catch(() => {});
 
   document.getElementById('webdavSaveBtn')?.addEventListener('click', async () => {
     const url = document.getElementById('webdavUrl').value.trim();

@@ -1,4 +1,4 @@
-import { getDbMtime, backupDb, pruneBackups } from './api.js'
+import { getDbMtime, backupDb, pruneBackups, webdavUpload } from './api.js'
 
 let timer = null;
 let lastBackupMtime = 0;
@@ -63,6 +63,17 @@ async function tick() {
     const { keepMax } = await readCfg();
     await pruneBackups(keepMax);
     lastBackupMtime = mtime;
+    // WebDAV 自動上傳：跟本地自動備份同一 tick，有變更才傳；失敗只記 log 不炸本地備份
+    try {
+      const { getSetting } = await import('./db.js');
+      const flag = await getSetting('webdavAutoUpload');
+      if (flag === 1 || flag === true || flag === '1') {
+        const msg = await webdavUpload();
+        console.log('[auto-backup] webdav:', msg);
+      }
+    } catch (e) {
+      console.warn('[auto-backup] webdav skip:', e?.message || e);
+    }
   } catch (e) {
     console.warn('[auto-backup]', e);
   } finally {
