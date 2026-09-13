@@ -1,0 +1,132 @@
+name: Android APK (release)
+
+# 本 workflow 是 scripts/build-apk.sh 的 CI 版，但走 canonical release flow：
+# - 不跑 strip / zip -9 / debug 重簽名（那套會破壞 native lib 對齊，只留本地用）
+# - gradle 直接用 release keystore 簽，產物可 adb install -r 覆蓋安裝
+# - Android 不包 piper（跟腳本同邏輯：暫時清空 bundle.resources）
+# 觸發：手動，或 push v* tag 自動包＋發 Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    env:
+      JAVA_HOME: /usr/lib/jvm/temurin-21-jdk-amd64
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform + NDK
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "platform-tools"
+          echo "$ANDROID_HOME/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Rust stable + aarch64 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Restore release keystore
+        # 本地對應：~/.teno-keys/release-key.keystore + src-tauri/gen/android/keystore.properties
+        # CI 用 Secrets 重建（keystore.properties 是 gitignored，不進 repo）：
+        #   ANDROID_KEYSTORE_BASE64 — release-key.keystore 的 base64
+        #   ANDROID_KEYSTORE_PASSWORD — storePassword / keyPassword（本地預設 teno2026）
+        #   ANDROID_KEY_ALIAS — keyAlias（本地 teno-release）
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ]; then
+            echo "::error::Missing secret ANDROID_KEYSTORE_BASE64 (base64 of release-key.keystore)"
+            exit 1
+          fi
+          KS="$GITHUB_WORKSPACE/src-tauri/gen/android/app/release-key.keystore"
+          echo "$KEYSTORE_B64" | base64 -d > "$KS"
+          PASS="${KEYSTORE_PASSWORD:-teno2026}"
+          ALIAS="${KEY_ALIAS:-teno-release}"
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+            "$PASS" "$PASS" "$ALIAS" "$KS" \
+            > "$GITHUB_WORKSPACE/src-tauri/gen/android/keystore.properties"
+          echo "keystore restored -> $KS"
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Slim piper resources for Android
+        # 對應 build-apk.sh 1/6：Android 用原生 TTS，不包 piper（桌機包不受影響）
+        run: |
+          python3 - src-tauri/tauri.conf.json <<'EOF'
+          import json, sys
+          p = sys.argv[1]
+          d = json.load(open(p))
+          d['bundle']['resources'] = []
+          json.dump(d, open(p, 'w'), indent=2, ensure_ascii=False)
+          print('piper resources cleared for Android build')
+          EOF
+          rm -rf src-tauri/gen/android/app/src/main/assets/resources/piper
+
+      - name: Build release APK (aarch64)
+        # tauri android build 預設就是 release（沒有 --release flag），只認 keystore.properties
+        run: npx tauri android build --target aarch64 --apk
+
+      - name: Verify APK (version + signature)
+        run: |
+          APK=src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          ls -la "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -E "^package" | head -2
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -E "DN:|CN=" | head -3
+          unzip -o "$APK" "classes*.dex" -d /tmp/dexx
+          strings /tmp/dexx/classes*.dex | grep -c getPluginManager
+
+      - name: Rename + checksum
+        id: pkg
+        run: |
+          APK=src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+          VER="$(node -p "require('./package.json').version")"
+          OUT="teno-v${VER}.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" | tee "${OUT}.sha256"
+          ls -la "$OUT" "${OUT}.sha256"
+          echo "apk=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: teno-apk
+          path: |
+            teno-v*.apk
+            teno-v*.apk.sha256
+
+      - name: GitHub Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            teno-v*.apk
+            teno-v*.apk.sha256
+          generate_release_notes: true
