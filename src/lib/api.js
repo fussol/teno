@@ -82,8 +82,13 @@ export const deletePiperModel = (name) =>
 
 // ─── Backup ────────────────────────────────────────────
 // D5-SR1: 先 WAL checkpoint（WAL 內最新交易合併回主檔）再 backup，備份完整不漏最近複習
+// LOG-BACKUP1: 主庫＋日誌庫雙 checkpoint——patch 讀的是 app-log.db 檔，WAL 沒併入會漏行
 export const backupDb = async () => {
   await checkpoint()
+  try {
+    const { checkpointAppLog } = await import('./app-log.js');
+    await checkpointAppLog();
+  } catch (_) {}
   return invoke('backup_db')
 }
 
@@ -104,6 +109,10 @@ export const pruneBackups = (maxCount) =>
 
 export const getDbMtime = () =>
   invoke('get_db_mtime')
+
+// LOG-BACKUP1: app-log.db mtime（自動備份變更偵測取兩庫 max）
+export const getAppLogMtime = () =>
+  invoke('get_app_log_mtime')
 
 // ─── Database / Export ─────────────────────────────────
 export const importDbDialog = () =>

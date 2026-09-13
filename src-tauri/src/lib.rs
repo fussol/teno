@@ -1495,6 +1495,127 @@ fn unique_backup_dest(backups_dir: &std::path::Path, ts_ns: u64) -> Result<(std:
     Err("建立備份檔失敗: 檔名連續碰撞超過 10000 次（目錄異常）".to_string())
 }
 
+/// LOG-BACKUP1: app-log 增量 patch（git-like）——全量拷 6MB/天太肥，改存文字差分。
+/// 每次備份只寫 `applog-<ts>.patch.txt`（與同快照 teno-<ts>.db 同 ts），內容＝
+/// 自上次 cursor 起新增的 app_log＋sim_runs 行（沿用 export_app_log_text 格式，
+/// import_app_log_text 去重冪等→回放不怕重複）。回放＝reset 後按 ts 順序 import。
+const APPLOG_CURSOR_FILE: &str = "applog-cursor.txt";
+
+/// 讀 cursor（已備份到的最大 log ts，毫秒）。缺檔／壞檔→0（首備＝全量當 base）。
+fn read_applog_cursor(backups_dir: &std::path::Path) -> i64 {
+    std::fs::read_to_string(backups_dir.join(APPLOG_CURSOR_FILE))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+fn write_applog_cursor(backups_dir: &std::path::Path, cursor: i64) {
+    let _ = std::fs::write(backups_dir.join(APPLOG_CURSOR_FILE), cursor.to_string());
+}
+
+/// 匯出 cursor 之後的新行 → (文字, 新 cursor, 筆數)。零新行→Ok(None)。
+/// 表缺失（新裝無 log 表）視為空，不報錯。
+fn export_app_log_patch(app_dir: &std::path::Path, cursor: i64) -> Result<Option<(String, i64, usize)>, String> {
+    let log_path = app_dir.join("app-log.db");
+    if !log_path.exists() { return Ok(None); }
+    let conn = rusqlite::Connection::open(&log_path).map_err(|e| format!("開啟操作日誌失敗: {}", e))?;
+    let mut out = String::new();
+    out.push_str("# Teno 日誌增量 patch (app_log delta)\n");
+    out.push_str("# 格式同操作日誌匯出: ISO時間 | level | message；回放用匯入（去重冪等）\n");
+    let mut max_ts = cursor;
+    let mut rows = 0usize;
+    // app_log 段
+    match conn.prepare("SELECT ts, level, message FROM app_log WHERE ts > ? ORDER BY ts ASC") {
+        Ok(mut stmt) => {
+            let list: Vec<(i64, String, String)> = stmt.query_map([cursor], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .map_err(|e| format!("讀取 app_log 失敗: {}", e))?
+                .filter_map(|r| r.ok()).collect();
+            for (ts, level, msg) in list {
+                let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
+                    .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+                    .unwrap_or_else(|| ts.to_string());
+                out.push_str(&format!("{} | {} | {}\n", iso, level, msg.replace('\n', "\\n")));
+                if ts > max_ts { max_ts = ts; }
+                rows += 1;
+            }
+        }
+        Err(_) => { /* 表尚不存在＝無日誌，視為空 */ }
+    }
+    // sim_runs 段（與 export_app_log_text 同欄序，回放解析相容）
+    match conn.prepare("SELECT ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary FROM sim_runs WHERE ts > ? ORDER BY ts ASC") {
+        Ok(mut stmt2) => {
+            let sims: Vec<(i64, String, Option<i64>, Option<f64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<f64>, Option<String>)> =
+                stmt2.query_map([cursor], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)))
+                .map_err(|e| format!("讀取 sim_runs 失敗: {}", e))?
+                .filter_map(|r| r.ok()).collect();
+            if !sims.is_empty() {
+                out.push_str("\n# 模擬歷史 (sim_runs)\n");
+                for (ts, kind, days, tgt, seed, fz, rv, mc, mp, sm) in sims {
+                    let iso = chrono::DateTime::from_timestamp(ts / 1000, 0)
+                        .map(|d| d.format("%Y-%m-%d %H:%M:%S").to_string())
+                        .unwrap_or_else(|| ts.to_string());
+                    out.push_str(&format!("{} | {} | {} | {} | {} | {} | {} | {} | {} | {}\n",
+                        iso, kind,
+                        days.map(|v| v.to_string()).unwrap_or("-".into()),
+                        tgt.map(|v| format!("{}", v)).unwrap_or("-".into()),
+                        seed.map(|v| v.to_string()).unwrap_or("-".into()),
+                        fz.map(|v| v.to_string()).unwrap_or("-".into()),
+                        rv.map(|v| v.to_string()).unwrap_or("-".into()),
+                        mc.map(|v| v.to_string()).unwrap_or("-".into()),
+                        mp.map(|v| format!("{}", v)).unwrap_or("-".into()),
+                        sm.unwrap_or_default().replace('\n', "\\n")));
+                    if ts > max_ts { max_ts = ts; }
+                    rows += 1;
+                }
+            }
+        }
+        Err(_) => { /* 表尚不存在＝無模擬史，視為空 */ }
+    }
+    if rows == 0 { return Ok(None); }
+    Ok(Some((out, max_ts, rows)))
+}
+
+/// 寫 patch 檔（O_EXCL 獨佔，同名碰撞＋1µs 前進，與 teno 備份同範式；0600）。
+fn write_applog_patch(backups_dir: &std::path::Path, ts_ns: u64, content: &str) -> Result<std::path::PathBuf, String> {
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut ts = ts_ns;
+    for _ in 0..10_000u32 {
+        let dest = backups_dir.join(format!("applog-{}.patch.txt", ts));
+        #[cfg(unix)]
+        let open_result = std::fs::File::options().write(true).create_new(true).mode(0o600).open(&dest);
+        #[cfg(windows)]
+        let open_result = std::fs::File::options().write(true).create_new(true).open(&dest);
+        match open_result {
+            Ok(mut f) => {
+                use std::io::Write as _;
+                f.write_all(content.as_bytes()).map_err(|e| format!("寫入日誌增量失敗: {}", e))?;
+                return Ok(dest);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                ts = ts.saturating_add(1_000);
+            }
+            Err(e) => return Err(format!("建立日誌增量檔失敗: {}", e)),
+        }
+    }
+    Err("建立日誌增量檔失敗: 檔名連續碰撞超過 10000 次（目錄異常）".to_string())
+}
+
+/// LOG-BACKUP1: 備份檔名 → (ts 原始值, 種類)。teno-<ts>.db＝主庫全量，
+/// applog-<ts>.patch.txt＝日誌增量。回 None＝非本代備份檔
+///（prune/list 直接略過：backups 內 -shm/-wal 孤兒、cursor 側車不入表）。
+fn backup_ts_of_filename(name: &str) -> Option<(u64, &'static str)> {
+    if let Some(ts_str) = name.strip_prefix("teno-").and_then(|s| s.strip_suffix(".db")) {
+        if ts_str.contains('-') || ts_str.contains('/') { return None; }
+        return ts_str.parse().ok().map(|ts| (ts, "teno"));
+    }
+    if let Some(ts_str) = name.strip_prefix("applog-").and_then(|s| s.strip_suffix(".patch.txt")) {
+        if ts_str.contains('-') || ts_str.contains('/') { return None; }
+        return ts_str.parse().ok().map(|ts| (ts, "applog-patch"));
+    }
+    None
+}
+
 #[tauri::command]
 fn backup_db(app_handle: tauri::AppHandle) -> Result<String, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -1523,6 +1644,25 @@ fn backup_db(app_handle: tauri::AppHandle) -> Result<String, String> {
     std::io::copy(&mut src, &mut dest_file)
         .map_err(|e| { let _ = std::fs::remove_file(&dest); format!("複製資料庫失敗: {}", e) })?;
     log::info!("backup_db OK");
+    // LOG-BACKUP1: 日誌增量 patch（與主庫同 ts，不同檔）。失敗只 warn——主庫已落檔，
+    // 日誌是次要資料，不讓它炸掉整個備份。
+    let ts_actual: u64 = dest.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .as_deref().and_then(|n| backup_ts_of_filename(n).map(|(ts, _)| ts))
+        .unwrap_or(ts);
+    match export_app_log_patch(&app_dir, read_applog_cursor(&backups_dir)) {
+        Ok(Some((content, new_cursor, rows))) => {
+            match write_applog_patch(&backups_dir, ts_actual, &content) {
+                Ok(p) => {
+                    write_applog_cursor(&backups_dir, new_cursor);
+                    log::info!("backup_db applog patch OK {:?} rows={}", p, rows);
+                }
+                Err(e) => log::warn!("backup_db applog patch 寫檔跳過: {}", e),
+            }
+        }
+        Ok(None) => log::info!("backup_db applog SKIP (無新增日誌)"),
+        Err(e) => log::warn!("backup_db applog 跳過: {}", e),
+    }
     Ok(format!("{}", dest.display()))
 }
 
@@ -1531,26 +1671,34 @@ fn prune_backups(app_handle: tauri::AppHandle, max_count: u32) -> Result<u32, St
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let backups_dir = app_dir.join("backups");
     if !backups_dir.exists() { return Ok(0); }
-    let mut entries: Vec<_> = std::fs::read_dir(&backups_dir).map_err(|e| e.to_string())?
+    // LOG-BACKUP1: 按 ts 分組保留——同 ts 的 teno 全量＋applog 增量是同一快照，
+    // 要留一起留、要砍一起砍；只留最新 max_count 組。-shm/-wal 孤兒不入表。
+    let mut entries: Vec<(std::path::PathBuf, u64)> = std::fs::read_dir(&backups_dir).map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".db"))
-        .map(|e| (e.path(), e.file_name()))
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let (ts, _) = backup_ts_of_filename(&name)?;
+            Some((e.path(), ts))
+        })
         .collect();
-    entries.sort_by_key(|(_, name)| {
-        let name = name.to_string_lossy();
-        let ts_str = name.strip_prefix("teno-").and_then(|s| s.strip_suffix(".db")).unwrap_or("0");
-        let ts: u64 = ts_str.parse().unwrap_or(0);
-        if ts > 100_000_000_000 { ts / 1_000_000_000 } else { ts }
-    });
+    let keep = prune_keep_ts(&entries.iter().map(|(_, ts)| *ts).collect::<Vec<_>>(), max_count);
     let mut removed = 0;
-    while entries.len() as u32 > max_count {
-        if let Some((path, _)) = entries.first() {
-            if std::fs::remove_file(path).is_ok() { removed += 1; }
-        }
-        entries.remove(0);
-    }
-    log::info!("prune_backups: removed={} remaining={}", removed, entries.len());
+    entries.retain(|(path, ts)| {
+        if keep.contains(ts) { return true; }
+        if std::fs::remove_file(path).is_ok() { removed += 1; }
+        false
+    });
+    log::info!("prune_backups: removed={} remaining_groups={}", removed, keep.len());
     Ok(removed)
+}
+
+/// LOG-BACKUP1: prune 分組純函式——只留最新 max 組 ts。測得動。
+fn prune_keep_ts(all_ts: &[u64], max_count: u32) -> std::collections::HashSet<u64> {
+    let mut sorted = all_ts.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let skip = sorted.len().saturating_sub(max_count as usize);
+    sorted.into_iter().skip(skip).collect()
 }
 
 #[tauri::command]
@@ -1563,12 +1711,38 @@ fn get_db_mtime(app_handle: tauri::AppHandle) -> Result<u64, String> {
     Ok(duration.as_secs())
 }
 
+/// LOG-BACKUP1: app-log.db mtime——自動備份的變更偵測取兩庫 max，缺檔回 0（不擋主庫）。
+#[tauri::command]
+fn get_app_log_mtime(app_handle: tauri::AppHandle) -> Result<u64, String> {
+    let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let p = app_dir.join("app-log.db");
+    if !p.exists() { return Ok(0); }
+    let metadata = std::fs::metadata(&p).map_err(|e| format!("讀取日誌庫資訊失敗: {}", e))?;
+    let mtime = metadata.modified().map_err(|e| format!("讀取修改時間失敗: {}", e))?;
+    let duration = mtime.duration_since(std::time::UNIX_EPOCH).map_err(|e| format!("時間計算失敗: {}", e))?;
+    Ok(duration.as_secs())
+}
+
 #[derive(serde::Serialize)]
 struct BackupEntry {
     filename: String,
     timestamp: u64,
     size: u64,
     date: String,
+    /// LOG-BACKUP1: teno＝主庫全量／applog-patch＝日誌增量（前端分組顯示＋回放）。
+    kind: String,
+    /// 增量筆數（數 patch 內資料行；主庫為 None）。
+    rows: Option<usize>,
+}
+
+/// 數 patch 資料行（去 `#`註解＋空行；patch KB 級，全讀無妨）。
+fn count_patch_rows(path: &std::path::Path) -> Option<usize> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let n = text.lines()
+        .map(|l| l.trim_start())
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .count();
+    Some(n)
 }
 
 #[tauri::command]
@@ -1578,20 +1752,16 @@ fn list_backups(app_handle: tauri::AppHandle) -> Result<Vec<BackupEntry>, String
     if !backups_dir.exists() { return Ok(Vec::new()); }
     let mut entries: Vec<BackupEntry> = std::fs::read_dir(&backups_dir).map_err(|e| e.to_string())?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            name.starts_with("teno-") && name.ends_with(".db")
-        })
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            let ts_str = name.strip_prefix("teno-")?.strip_suffix(".db")?;
-            let ts: u64 = ts_str.parse().ok()?;
+            let (ts, kind) = backup_ts_of_filename(&name)?;
             // ponytail: old backups used nanoseconds, convert to seconds
             let ts_secs = if ts > 100_000_000_000 { ts / 1_000_000_000 } else { ts };
             let meta = e.metadata().ok()?;
             let size = meta.len();
             let date = chrono_or_manual(ts_secs);
-            Some(BackupEntry { filename: name, timestamp: ts_secs, size, date })
+            let rows = if kind == "applog-patch" { count_patch_rows(&e.path()) } else { None };
+            Some(BackupEntry { filename: name, timestamp: ts_secs, size, date, kind: kind.to_string(), rows })
         })
         .collect();
     entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -1634,6 +1804,11 @@ fn restore_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), 
     let safe_name = std::path::Path::new(&filename).file_name().ok_or("非法檔名")?.to_string_lossy().to_string();
     if safe_name == "." || safe_name == ".." { return Err("非法檔名".to_string()); }
     let src = backups_dir.join(&safe_name);
+    // LOG-BACKUP1: patch 是增量，回放走前端「回放到此」（reset＋逐 patch import，
+    // 去重冪等）；單片直接蓋 app-log.db 會丟歷史，這裡擋下並指路。
+    if safe_name.starts_with("applog-") {
+        return Err("日誌增量是差分檔，請用列表上的「回放到此」還原（會自動重放此前全部增量）".to_string());
+    }
     let db_path = app_dir.join("teno.db");
     if !src.exists() {
         return Err(format!("備份檔案不存在: {}", safe_name));
@@ -1668,6 +1843,15 @@ fn delete_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), S
     }
     std::fs::remove_file(&path).map_err(|e| format!("刪除備份失敗: {}", e))?;
     log::info!("delete_backup {:?}", path);
+    // LOG-BACKUP1: 刪主庫快照連帶刪同 ts 增量（成對不留孤兒）；刪增量本身不連帶。
+    if let Some((ts, "teno")) = backup_ts_of_filename(&safe_name) {
+        let pair = backups_dir.join(format!("applog-{}.patch.txt", ts));
+        if pair.exists() {
+            if std::fs::remove_file(&pair).is_ok() {
+                log::info!("delete_backup pair {:?}", pair);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -2402,7 +2586,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_logout, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_logout, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {
@@ -2766,6 +2950,89 @@ mod backup_naming_tests {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&first).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "備份檔權限必 0600，實際 {:o}", mode);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// LOG-BACKUP1: 檔名解析＋prune 分組＋增量匯出（git-like 差分契約釘）
+#[cfg(test)]
+mod log_backup_tests {
+    use super::*;
+
+    #[test]
+    fn filename_vectors() {
+        assert_eq!(backup_ts_of_filename("teno-123.db"), Some((123, "teno")));
+        assert_eq!(backup_ts_of_filename("applog-456.patch.txt"), Some((456, "applog-patch")));
+        // 孤兒／雜檔一律 None（prune/list 略過）
+        assert_eq!(backup_ts_of_filename("teno-1786619090.db-shm"), None);
+        assert_eq!(backup_ts_of_filename("teno-1786619090.db-wal"), None);
+        assert_eq!(backup_ts_of_filename("applog-cursor.txt"), None);
+        assert_eq!(backup_ts_of_filename("random.txt"), None);
+        assert_eq!(backup_ts_of_filename("applog-abc.patch.txt"), None);
+        assert_eq!(backup_ts_of_filename("teno-../evil.db"), None);
+    }
+
+    #[test]
+    fn prune_groups_by_ts() {
+        // 同 ts 主庫＋增量是同一快照：max=1 只留最新組，舊組兩檔全砍
+        let keep = prune_keep_ts(&[100, 100, 200, 200], 1);
+        assert_eq!(keep, [200].into_iter().collect());
+        let keep = prune_keep_ts(&[100, 200, 300], 2);
+        assert_eq!(keep, [200, 300].into_iter().collect());
+        let keep = prune_keep_ts(&[100], 0);
+        assert!(keep.is_empty());
+        let keep: std::collections::HashSet<u64> = prune_keep_ts(&[], 7);
+        assert!(keep.is_empty());
+    }
+
+    #[test]
+    fn patch_delta_roundtrip() {
+        // 自建 app-log.db → cursor 差分只吐新行 → cursor 前進後吐空
+        let dir = std::env::temp_dir().join("teno-logpatch-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let lp = dir.join("app-log.db");
+        {
+            let conn = rusqlite::Connection::open(&lp).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE app_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, level TEXT NOT NULL DEFAULT 'log', message TEXT NOT NULL);
+                 CREATE TABLE sim_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, days INTEGER, target_pct REAL, seed INTEGER, from_zero INTEGER DEFAULT 0, total_reviews INTEGER, mature_cards INTEGER, mature_pct REAL, summary TEXT);"
+            ).unwrap();
+            conn.execute("INSERT INTO app_log (ts, level, message) VALUES (1000, 'log', 'a')", []).unwrap();
+            conn.execute("INSERT INTO app_log (ts, level, message) VALUES (2000, 'warn', 'b|c | d')", []).unwrap();
+        }
+        let (text, cur, rows) = export_app_log_patch(&dir, 0).unwrap().expect("首備必有行");
+        assert_eq!(rows, 2);
+        assert_eq!(cur, 2000);
+        assert!(text.contains(" | log | a"), "首行格式沿用匯出，實際:\n{}", text);
+        assert!(text.contains("b|c | d"), "message 內 | 照收");
+        // cursor 前進 → 無新行 → None（不寫空 patch）
+        assert!(export_app_log_patch(&dir, cur).unwrap().is_none());
+        // 新行 → 只要差分
+        {
+            let conn = rusqlite::Connection::open(&lp).unwrap();
+            conn.execute("INSERT INTO app_log (ts, level, message) VALUES (3000, 'error', 'c')", []).unwrap();
+        }
+        let (text2, cur2, rows2) = export_app_log_patch(&dir, cur).unwrap().expect("差分必有行");
+        assert_eq!((rows2, cur2), (1, 3000));
+        assert!(!text2.contains(" | log | a"), "差分不可重吐舊行");
+        // 寫檔＋0600
+        let bd = dir.join("backups");
+        std::fs::create_dir_all(&bd).unwrap();
+        let p = write_applog_patch(&bd, 999, &text2).unwrap();
+        assert_eq!(p.file_name().unwrap().to_string_lossy(), "applog-999.patch.txt");
+        assert_eq!(count_patch_rows(&p), Some(1));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // cursor 側車 roundtrip＋壞檔容錯
+        assert_eq!(read_applog_cursor(&bd), 0);
+        write_applog_cursor(&bd, 3000);
+        assert_eq!(read_applog_cursor(&bd), 3000);
+        std::fs::write(bd.join("applog-cursor.txt"), b"garbage").unwrap();
+        assert_eq!(read_applog_cursor(&bd), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

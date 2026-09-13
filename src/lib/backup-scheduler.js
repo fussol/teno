@@ -1,4 +1,4 @@
-import { getDbMtime, backupDb, pruneBackups, webdavUpload } from './api.js'
+import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload } from './api.js'
 
 let timer = null;
 let lastBackupMtime = 0;
@@ -29,13 +29,25 @@ export async function startAutoBackup() {
   window.addEventListener('beforeunload', stopAutoBackup);
 }
 
-// D18：啟動時把 lastBackupMtime 設為現行 DB mtime，使首個 tick 僅在「本 session 有變更」時才備份，
+// LOG-BACKUP1: 兩庫 max——任一有變更都備份（日誌自己也會長大）
+async function currentMaxMtime() {
+  const mtime = await getDbMtime();
+  let logMtime = 0;
+  try { logMtime = await getAppLogMtime(); } catch (_) {}
+  return Math.max(mtime, logMtime);
+}
+
+// D18：啟動時把 lastBackupMtime 設為現行 DB mtime，使首個 tick 僅在「本 session 有變更」時才備份、
 // 不再每次啟動都做冗余備份覆蓋有差異的舊備份。無法讀取時維持 0（退回首 tick 即備份的舊行為）。
 async function seedLastBackupMtime() {
   try {
     const { checkpoint } = await import('./db.js');
     await checkpoint();
-    const mtime = await getDbMtime();
+    try {
+      const { checkpointAppLog } = await import('./app-log.js');
+      await checkpointAppLog();
+    } catch (_) {}
+    const mtime = await currentMaxMtime();
     if (mtime > 0) lastBackupMtime = mtime;
   } catch (e) {
     console.warn('[auto-backup] seed mtime failed:', e);
@@ -55,9 +67,14 @@ async function tick() {
   _ticking = true;
   try {
     // ponytail: checkpoint flushes WAL so mtime reflects real changes
+    // LOG-BACKUP1: 雙 checkpoint（主庫＋日誌庫），mtime 取兩庫 max
     const { checkpoint } = await import('./db.js');
     await checkpoint();
-    const mtime = await getDbMtime();
+    try {
+      const { checkpointAppLog } = await import('./app-log.js');
+      await checkpointAppLog();
+    } catch (_) {}
+    const mtime = await currentMaxMtime();
     if (mtime <= lastBackupMtime) return;
     await backupDb();
     const { keepMax } = await readCfg();

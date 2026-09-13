@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, setLauncherIcon } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -692,10 +692,18 @@ async function showBackups() {
         : b.size > 1024 ? Math.round(b.size / 1024) + ' KB' : b.size + ' B';
       const d = new Date(b.timestamp * 1000);
       const dateStr = d.toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      // LOG-BACKUP1: 增量行——徽標＋筆數，還原走「回放到此」（reset＋逐 patch import）
+      const isPatch = b.kind === 'applog-patch';
+      const kindTag = isPatch
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-weight:700">日誌增量${Number.isFinite(b.rows) ? ` ＋${b.rows}筆` : ''}</span>`
+        : `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg-hover);color:var(--text-secondary);font-weight:700">主庫全量</span>`;
+      const restoreBtn = isPatch
+        ? `<button class="btn btn-xs" data-breplay="${escapeAttr(b.filename)}" style="font-size:11px">${icon('clock')} 回放到此</button>`
+        : `<button class="btn btn-xs" data-brestore="${escapeAttr(b.filename)}" style="font-size:11px">${icon('rotate')} 還原</button>`;
       html += `<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-top:1px solid var(--border-subtle)">
-        <span style="flex:1;color:var(--text-primary)">${dateStr}</span>
+        <span style="flex:1;color:var(--text-primary)">${dateStr} ${kindTag}</span>
         <span class="muted" style="font-size:11px;width:60px">${size}</span>
-        <button class="btn btn-xs" data-brestore="${escapeAttr(b.filename)}" style="font-size:11px">${icon('rotate')} 還原</button>
+        ${restoreBtn}
         <button class="btn btn-xs" data-bexport="${escapeAttr(b.filename)}" style="font-size:11px">${icon('save')} 匯出</button>
         <button class="btn btn-xs" data-bdelete="${escapeAttr(b.filename)}" style="font-size:11px;color:var(--red)">${icon('x')}</button>
       </div>`;
@@ -706,6 +714,8 @@ async function showBackups() {
     // Attach event listeners
     el.querySelectorAll('[data-brestore]').forEach(btn =>
       btn.addEventListener('click', () => restoreBackup(btn.dataset.brestore, btn)));
+    el.querySelectorAll('[data-breplay]').forEach(btn =>
+      btn.addEventListener('click', () => replayAppLogTo(btn.dataset.breplay, btn)));
     el.querySelectorAll('[data-bexport]').forEach(btn =>
       btn.addEventListener('click', () => exportBackup(btn.dataset.bexport)));
     el.querySelectorAll('[data-bdelete]').forEach(btn =>
@@ -752,6 +762,50 @@ async function exportBackup(filename) {
     }
   } catch (e) {
     if (e !== '使用者取消') toast('匯出失敗: ' + e, 'toast-error');
+  }
+}
+
+// LOG-BACKUP1: 備份檔名取 ts（數字比；nanos 19 碼與舊秒級 10 碼混排時字串比會錯）
+function backupTsOf(name) {
+  const m = /^(?:teno-|applog-)(\d+)(?:\.db|\.patch\.txt)$/.exec(name || '');
+  const n = m ? Number(m[1]) : NaN;
+  return Number.isFinite(n) ? n : -1;
+}
+
+// LOG-BACKUP1: 日誌回放——reset 日誌庫後，把「此前全部 patch」按 ts 順序 import。
+// import 去重冪等，重跑同一鏈不翻倍。主庫完全不動。
+async function replayAppLogTo(filename, btn) {
+  if (!confirm('確定要把操作日誌回放到這個時間點？（目前的日誌會被清空後重放；單字主庫完全不受影響）')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const { closeAppLog, checkpointAppLog } = await import('../lib/app-log.js');
+    try { await checkpointAppLog(); } catch (_) {}
+    await backupDb(); // 安全網：先備份當下（主庫＋未備增量一起落檔）
+    await closeAppLog();
+    await apiResetAppLogDb();
+    const list = await listBackups();
+    const targetTs = backupTsOf(filename);
+    const chain = (list || [])
+      .filter(b => b.kind === 'applog-patch' && backupTsOf(b.filename) <= targetTs)
+      .map(b => b.filename)
+      .sort((a, b) => backupTsOf(a) - backupTsOf(b));
+    let added = 0, skipped = 0, bad = 0, files = 0;
+    for (const f of chain) {
+      const data = await apiExportBackupData(f); // Vec<u8>→數字陣列（patch KB 級）
+      const text = new TextDecoder('utf-8').decode(new Uint8Array(data));
+      const r = await apiImportAppLogText(text);
+      added += r.log_added + r.sim_added;
+      skipped += r.log_skipped + r.sim_skipped;
+      bad += r.bad_lines;
+      files += 1;
+    }
+    toast(`日誌已回放 ${files} 個增量：新增 ${added} 筆（重複 ${skipped}、壞行 ${bad}），重新載入中…`, 'toast-success');
+    setTimeout(() => window.location.reload(), 800);
+  } catch (e) {
+    toast('日誌回放失敗: ' + e, 'toast-error');
+    try { const { initDB } = await import('../lib/db.js'); await initDB(2); } catch (_) {}
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
