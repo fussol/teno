@@ -515,16 +515,22 @@ document.addEventListener('keydown', async (e) => {
   }
 });
 
-// ─── 禁縮放：全端鎖死頁面 zoom（viewport user-scalable=no 為主，這裡補缺口）───
-// 缺口：①桌面版 Ctrl+滾輪 / Ctrl+加減號/0（WebKitGTK/Chromium 桌面不認 viewport）；
-// ②iOS Safari pinch 手勢（gesturestart）。只攔縮放組合鍵，一般輸入零影響。
+// ─── UISCALE1：桌機介面縮放（Ctrl +/- 切五檔、Ctrl+0 回 100%、Ctrl+滾輪同效）───
+// 取代舊「禁縮放」：WebView 桌面版不認 viewport 縮放，改由 app 自己控 body zoom，
+// 五檔存 DB（uiScaleIdx），跟瀏覽器手感一致。手機 pinch 照舊由 touch-action 鎖死。
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 document.addEventListener('gesturechange', (e) => e.preventDefault());
 document.addEventListener('wheel', (e) => {
-  if (e.ctrlKey) e.preventDefault();
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const cur = store.state?.uiScaleIdx ?? 0;
+  store.actions?.setUiScale(cur + (e.deltaY > 0 ? -1 : 1));
 }, { passive: false });
 document.addEventListener('keydown', (e) => {
-  if (e.ctrlKey && ['=', '+', '-', '_', '0'].includes(e.key)) e.preventDefault();
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  if (['=', '+'].includes(e.key)) { e.preventDefault(); store.actions?.setUiScale((store.state?.uiScaleIdx ?? 0) + 1); }
+  else if (['-', '_'].includes(e.key)) { e.preventDefault(); store.actions?.setUiScale((store.state?.uiScaleIdx ?? 0) - 1); }
+  else if (e.key === '0') { e.preventDefault(); store.actions?.setUiScale(0); }
 });
 
 // ─── A5: 跨天自動 unbury — Android 背景化過夜 resume 的補檢查（guard 一天一次）───

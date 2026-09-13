@@ -23,6 +23,26 @@ export function clampLearnAhead(v) {
   return Number.isFinite(v) ? Math.min(20, Math.max(0, v)) : 20;
 }
 
+/* ─── UISCALE1：介面縮放五檔（桌機 Ctrl +/- 驅動；目前＝最小 100%）─── */
+export const UI_SCALE_LEVELS = [1, 1.12, 1.25, 1.4, 1.6];
+export const UI_SCALE_LABELS = ['100%', '112%', '125%', '140%', '160%'];
+export function clampUiScaleIdx(v) {
+  const n = Number.isFinite(+v) ? Math.round(+v) : 0;
+  return Math.min(UI_SCALE_LEVELS.length - 1, Math.max(0, n));
+}
+/** 把縮放套到 body（CSS zoom 跟瀏覽器 Ctrl +/- 同語義：整頁等比放大） */
+export function applyUiScale(idx) {
+  try {
+    const i = clampUiScaleIdx(idx);
+    const scale = UI_SCALE_LEVELS[i];
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.zoom = String(scale);
+      document.documentElement.dataset.uiScale = String(i);
+    }
+    return i;
+  } catch { return 0; }
+}
+
 let _idCounter = 0;
 function nextWordId() {
   return 'w_' + Date.now().toString(36) + '_' + (++_idCounter).toString(36) + Math.random().toString(36).slice(2, 4);
@@ -118,6 +138,7 @@ export function createStore() {
     mwThesKey: '',                             // D段：韋氏 Collegiate Thesaurus key（自備）
     ocrCambridgeVerify: true,  // OCR 錄入 Cambridge 查證開關（查得到才入；devMode 可關）
     uiHints: false,           // 介面備註開關（使用者 2026-09-10 裁示：預設關；設定頁可開）
+    uiScaleIdx: 0,              // UISCALE1：介面縮放檔位 0..4（0＝100% 目前大小最小）
     buried: new Set(),
     suspended: new Set(),
     buriedMc: new Set(),
@@ -320,6 +341,7 @@ export function createStore() {
             ocrMode: await db.getSetting('ocrMode'),
             ocrRestoreModel: await db.getSetting('ocrRestoreModel'),
             uiHints: await db.getSetting('uiHints'),
+            uiScaleIdx: await db.getSetting('uiScaleIdx'),
           };
           // Android：以系統實際 enabled 的 alias 為準（DB 可能因 crash 沒寫到）
           try {
@@ -513,6 +535,9 @@ export function createStore() {
     // 介面備註開關（no-hints body class；預設關＝備註隱藏）
     state.uiHints = settings.uiHints === true;
     document.body.classList.toggle('no-hints', !state.uiHints);
+    // UISCALE1：還原縮放檔位（髒值夾回 0..4；body zoom 即時套用）
+    state.uiScaleIdx = clampUiScaleIdx(settings.uiScaleIdx);
+    applyUiScale(state.uiScaleIdx);
     try {
       const { initAppLog, setLogScopes } = await import('./app-log.js');
       initAppLog(state.logRetentionDays);
@@ -1376,6 +1401,14 @@ export function createStore() {
       try { await db.setSetting('uiHints', state.uiHints); } catch (e) { console.warn('[store] setUiHints error:', e); }
       notify();
       return state.uiHints;
+    },
+    /** UISCALE1：設縮放檔位（夾 0..4，body zoom 即時套用＋DB 持久化） */
+    async setUiScale(idx) {
+      const i = applyUiScale(idx);
+      state.uiScaleIdx = i;
+      try { await db.setSetting('uiScaleIdx', i); } catch (e) { console.warn('[store] setUiScale error:', e); }
+      notify();
+      return i;
     },
 
     /**

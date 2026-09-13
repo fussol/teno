@@ -15,7 +15,7 @@ import { renderContent as renderImportContent, onMount as onMountImport } from '
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
 import { ICON_PRESETS } from '../lib/icon-presets.js';
-import { clampLearnAhead } from '../lib/store.js';
+import { clampLearnAhead, UI_SCALE_LABELS } from '../lib/store.js';
 import { FIELD_LABELS, FIELD_KEYS } from '../lib/word-extra.js';
 
 // 欄位顯示三組（設定頁 master）：瀏覽器字卡正面／背面＋學習測驗共用
@@ -254,6 +254,22 @@ function renderSettingsContent(s) {
             <div class="config-field-label">顯示輔助說明文字</div>
           </div>
           <div class="switch ${s.state.uiHints ? 'on' : ''}" id="uiHintsToggle" role="switch" aria-checked="${!!s.state.uiHints}"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- UISCALE1：介面大小（五檔，目前＝最小；Ctrl +/- / Ctrl+0 / Ctrl+滾輪） -->
+    <div class="section">
+      <div class="section-title">${icon('search')} 介面大小</div>
+      <div class="config-section">
+        <div class="config-field-info" style="margin-bottom:var(--s2)">
+          <div class="config-field-hint">整頁等比縮放（跟瀏覽器 Ctrl +/- 同手感；Ctrl+0 回 100%）</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${UI_SCALE_LABELS.map((label, i) => `
+            <button class="btn btn-sm ${((s.state.uiScaleIdx ?? 0) === i) ? '' : 'btn-ghost'}" data-uiscale="${i}"
+              style="${((s.state.uiScaleIdx ?? 0) === i) ? '' : 'opacity:.65'}">${label}</button>
+          `).join('')}
         </div>
       </div>
     </div>
@@ -1048,6 +1064,15 @@ export function onMount(s) {
     if (sw) { sw.classList.toggle('on', v); sw.setAttribute('aria-checked', String(v)); }
     toast(v ? '介面備註已開啟' : '介面備註已關閉', '');
     renderInPlace(s);
+  });
+
+  // ── UISCALE1：介面大小五檔（點檔位即套用＋存 DB；快捷鍵走 main.js） ──
+  document.querySelectorAll('[data-uiscale]')?.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = await s.actions.setUiScale(parseInt(btn.dataset.uiscale, 10));
+      toast(`介面大小 ${UI_SCALE_LABELS[i]}`, '');
+      renderInPlace(s);
+    });
   });
 
   // ── OCR 錄入過濾：Cambridge 查證開關 ＋ 黑名單 增/刪（devMode） ──
