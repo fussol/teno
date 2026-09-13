@@ -9,6 +9,18 @@ import { exportCsvDialog } from '../lib/api.js';
 import { isAndroid, downloadBlob } from '../lib/platform.js';
 
 let _deckFilter = null;
+let _editingShelf = null;
+
+export function shelfWords(words, members) {
+  const set = new Set(members || []);
+  return (words || []).filter(w => set.has(w.deck || 'Default'))
+    .sort((a, b) => (a.word || '').localeCompare(b.word || ''));
+}
+
+function getShelves(s) {
+  const f = s?.state?.folders;
+  return (f && !Array.isArray(f)) ? f : {};
+}
 
 export function renderContent(s) {
   const { words, decks } = s.state;
@@ -50,6 +62,12 @@ export function render(s) {
       </div>
     </div>
     <div class="section">
+      <div class="section-title">${icon('book')} 書櫃</div>
+      <div class="config-section">
+        ${renderShelfBlock(s)}
+      </div>
+    </div>
+    <div class="section">
       <div class="section-title">${icon('upload')} 分享</div>
       <div class="config-section">
         ${share}
@@ -81,6 +99,120 @@ export function onMount(s, renderFn) {
   document.querySelectorAll('[data-share-deck]').forEach(btn => {
     btn.addEventListener('click', () => runShareDeck(s, btn.dataset.shareDeck || null, btn));
   });
+
+  document.querySelectorAll('[data-shelf-dl]').forEach(btn => {
+    btn.addEventListener('click', () => runShareShelf(s, btn.dataset.shelfDl, btn));
+  });
+  document.querySelectorAll('[data-shelf-edit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _editingShelf = _editingShelf === btn.dataset.shelfEdit ? null : btn.dataset.shelfEdit;
+      _renderInPlace(s);
+    });
+  });
+  document.querySelectorAll('[data-shelf-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.shelfDel;
+      if (!confirm(`確定刪除書櫃「${name}」？（字本本身不受影響）`)) return;
+      btn.disabled = true;
+      try { await s.actions.shelfDelete(name); } catch (e) { toast('刪除失敗: ' + e.message, 'toast-error'); }
+      if (_editingShelf === name) _editingShelf = null;
+      _renderInPlace(s);
+    });
+  });
+  document.querySelectorAll('[data-shelf-ren]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const old = btn.dataset.shelfRen;
+      const input = document.getElementById('shelfRenInput');
+      const v = (input?.value || '').trim();
+      if (!v) { toast('請輸入新名稱', 'toast-warn'); return; }
+      try {
+        await s.actions.shelfRename(old, v);
+        _editingShelf = v;
+        _renderInPlace(s);
+      } catch (e) { toast('改名失敗: ' + e.message, 'toast-error'); }
+    });
+  });
+  document.querySelectorAll('[data-shelf-toggle]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      try { await s.actions.shelfToggleDeck(cb.dataset.shelfToggle, cb.dataset.deck); } catch (e) { toast('更新失敗: ' + e.message, 'toast-error'); }
+      _renderInPlace(s);
+    });
+  });
+  const shelfNewBtn = document.getElementById('shelfNewBtn');
+  const shelfNewInput = document.getElementById('shelfNewInput');
+  const createShelf = async () => {
+    const v = (shelfNewInput?.value || '').trim();
+    if (!v) { toast('請輸入書櫃名稱', 'toast-warn'); return; }
+    try {
+      await s.actions.shelfCreate(v);
+      _editingShelf = v;
+      _renderInPlace(s);
+    } catch (e) { toast('新增失敗: ' + e.message, 'toast-error'); }
+  };
+  if (shelfNewBtn) shelfNewBtn.addEventListener('click', createShelf);
+  if (shelfNewInput) shelfNewInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') createShelf(); });
+}
+
+export function renderShelfBlock(s) {
+  const shelves = getShelves(s);
+  const names = Object.keys(shelves).sort((a, b) => a.localeCompare(b, 'zh-TW'));
+  const deckNames = (s.state.decks || []).map(d => d.name).sort((a, b) => a.localeCompare(b, 'zh-TW'));
+  const rows = names.map(name => {
+    const members = shelves[name] || [];
+    const n = shelfWords(s.state.words, members).length;
+    const editing = _editingShelf === name;
+    const memberChips = members.length
+      ? members.map(m => `<span style="font-size:11px;padding:1px 8px;border-radius:8px;background:var(--bg-hover);color:var(--text-secondary)">${escapeHtml(m)}</span>`).join('')
+      : '<span class="muted" style="font-size:11px">尚未選字本，點編輯加入</span>';
+    const editBox = editing ? `
+      <div style="margin-top:var(--s2);padding:var(--s2);border:1px dashed var(--border);border-radius:var(--r-md)">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
+          <input id="shelfRenInput" type="text" value="${escapeAttr(name)}" style="flex:1;min-width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+          <button class="btn btn-xs" data-shelf-ren="${escapeAttr(name)}" style="font-size:11px">改名</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${deckNames.map(d => `
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary);padding:3px 9px;border:1px solid var(--border-subtle);border-radius:12px;cursor:pointer">
+              <input type="checkbox" data-shelf-toggle="${escapeAttr(name)}" data-deck="${escapeAttr(d)}" ${members.includes(d) ? 'checked' : ''}>
+              ${escapeHtml(d)}
+            </label>`).join('') || '<span class="muted" style="font-size:12px">尚無字本，先去設定頁字本管理新增</span>'}
+        </div>
+      </div>` : '';
+    return `
+    <div style="padding:8px 0;border-top:1px solid var(--border-subtle)">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(name)}</span>
+        <span class="muted" style="font-size:11px;width:64px">${n} 詞</span>
+        <button class="btn btn-xs" data-shelf-dl="${escapeAttr(name)}" style="font-size:11px" ${n === 0 ? 'disabled' : ''}>${icon('upload')} 整櫃下載</button>
+        <button class="btn btn-xs" data-shelf-edit="${escapeAttr(name)}" style="font-size:11px">${editing ? '完成' : '編輯'}</button>
+        <button class="btn btn-xs" data-shelf-del="${escapeAttr(name)}" style="font-size:11px;color:var(--red)">${icon('x')}</button>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${memberChips}</div>
+      ${editBox}
+    </div>`;
+  }).join('');
+  return `
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:var(--s2)">
+      書櫃＝N 個字本的集合包 · 一櫃一點整包下載（內容不含 tag）· 刪櫃不動字本
+    </div>
+    ${rows || '<div class="muted" style="font-size:12px">尚無書櫃，下面建一個</div>'}
+    <div style="display:flex;gap:6px;align-items:center;margin-top:var(--s2)">
+      <input id="shelfNewInput" type="text" placeholder="新書櫃名稱，如 TOEFL 系列" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+      <button class="btn btn-sm" id="shelfNewBtn">${icon('plus')} 新增書櫃</button>
+    </div>
+  `;
+}
+
+async function runShareShelf(s, shelfName, btn) {
+  const members = getShelves(s)[shelfName] || [];
+  const list = shelfWords(s.state.words, members);
+  if (list.length === 0) { toast('這櫃沒有單字', 'toast-warn'); return; }
+  if (btn) btn.disabled = true;
+  try {
+    await saveShareCSV(list, '書櫃-' + shelfName);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 export function renderShareContent(s) {

@@ -1812,6 +1812,15 @@ export function createStore() {
             try { await db.saveWord(w); } catch (e) { console.warn('[store] updateDeck saveWord error:', e); }
           }
         }
+        // SHELF1：書櫃成員跟著改名
+        let shelfTouched = false;
+        for (const k of Object.keys(state.folders || {})) {
+          if ((state.folders[k] || []).includes(oldName)) {
+            state.folders[k] = state.folders[k].map(d => d === oldName ? updates.name : d);
+            shelfTouched = true;
+          }
+        }
+        if (shelfTouched) { try { await db.saveFolders(state.folders || {}); } catch (e) { console.warn('[store] updateDeck saveFolders error:', e); } }
       }
       await refreshDerived();
       notify();
@@ -1823,6 +1832,7 @@ export function createStore() {
       state.decks = state.decks.filter(d => d.id !== id);
       try { await db.deleteDeck(id); } catch (e) { console.warn('[store] deleteDeck deleteDeck error:', e); }
       if (deck) {
+        // SHELF1：刪字本時把書櫃成員清掉（櫃本身保留，不動其他本）
         const wordIds = new Set(state.words.filter(w => w.deck === deck.name).map(w => w.id));
         for (const wid of wordIds) deleteWordFromMemory(wid);   // BH-03: 清 memory 端 reviewLog/examHistory（Sets/buriedAt/examples 同 helper 冪等重清無害；用 wid 避遮蔽外層 deck id）
         state.words = state.words.filter(w => !wordIds.has(w.id));
@@ -1850,6 +1860,14 @@ export function createStore() {
           try { await db.setSetting(atKey, at || {}); } catch (e) { console.warn(`[store] deleteDeck setSetting ${atKey} error:`, e); }
         }
         try { await db.deleteWordsByDeck(deck.name); } catch (e) { console.warn('[store] deleteDeck deleteWordsByDeck error:', e); }
+        let shelfTouched = false;
+        for (const k of Object.keys(state.folders || {})) {
+          if ((state.folders[k] || []).includes(deck.name)) {
+            state.folders[k] = state.folders[k].filter(d => d !== deck.name);
+            shelfTouched = true;
+          }
+        }
+        if (shelfTouched) { try { await db.saveFolders(state.folders || {}); } catch (e) { console.warn('[store] deleteDeck saveFolders error:', e); } }
       }
       await saveDeckOrder();
       await refreshDerived();
@@ -1870,6 +1888,17 @@ export function createStore() {
       }
       state.decks = state.decks.filter(d => d.id !== sourceId);
       try { await db.deleteDeck(sourceId); } catch (e) { console.warn('[store] mergeDeck deleteDeck error:', e); }
+      // SHELF1：被合併掉的字本從書櫃移除；若櫃裡沒有目標本則補上（合併語意不斷鏈）
+      let shelfTouched = false;
+      for (const k of Object.keys(state.folders || {})) {
+        if ((state.folders[k] || []).includes(src.name)) {
+          const set = new Set(state.folders[k].filter(d => d !== src.name));
+          set.add(tgt.name);
+          state.folders[k] = [...set];
+          shelfTouched = true;
+        }
+      }
+      if (shelfTouched) { try { await db.saveFolders(state.folders || {}); } catch (e) { console.warn('[store] mergeDeck saveFolders error:', e); } }
       await saveDeckOrder();
       await refreshDerived();
       notify();
@@ -1883,6 +1912,59 @@ export function createStore() {
       if (target < 0 || target >= state.decks.length) return;
       [state.decks[idx], state.decks[target]] = [state.decks[target], state.decks[idx]];
       await saveDeckOrder();
+      notify();
+    },
+
+    /* ── SHELF1：書櫃＝字本集合包（存 folders 表：shelf 名 → 成員字本名陣列）──
+     * 語意：一櫃含 N 本，一本可進多櫃（分享打包方便優先；刪櫃不動字本） */
+    async persistShelves() {
+      try { await db.saveFolders(state.folders || {}); } catch (e) { console.warn('[store] persistShelves error:', e); }
+    },
+    async shelfCreate(name) {
+      const n = String(name ?? '').trim();
+      if (!n) throw new Error('書櫃名稱不能為空');
+      if ((state.folders || {})[n]) throw new Error('書櫃已存在');
+      state.folders = { ...(state.folders || {}), [n]: [] };
+      await actions.persistShelves();
+      notify();
+    },
+    async shelfRename(oldName, newName) {
+      const n = String(newName ?? '').trim();
+      if (!n) throw new Error('書櫃名稱不能為空');
+      if (oldName === n) return;
+      if ((state.folders || {})[n]) throw new Error('書櫃已存在');
+      const members = (state.folders || {})[oldName] || [];
+      const next = { ...(state.folders || {}) };
+      delete next[oldName];
+      next[n] = members;
+      state.folders = next;
+      await actions.persistShelves();
+      notify();
+    },
+    async shelfDelete(name) {
+      const next = { ...(state.folders || {}) };
+      delete next[name];
+      state.folders = next;
+      await actions.persistShelves();
+      notify();
+    },
+    async shelfSetDecks(name, deckNames) {
+      if (!(state.folders || {})[name]) return;
+      const valid = new Set((state.decks || []).map(d => d.name));
+      state.folders[name] = [...new Set((deckNames || []).filter(d => valid.has(d)))];
+      await actions.persistShelves();
+      notify();
+    },
+    async shelfToggleDeck(name, deckName) {
+      if (!(state.folders || {})[name]) return;
+      const set = new Set(state.folders[name] || []);
+      if (set.has(deckName)) set.delete(deckName);
+      else {
+        if (!(state.decks || []).some(d => d.name === deckName)) return;
+        set.add(deckName);
+      }
+      state.folders[name] = [...set];
+      await actions.persistShelves();
       notify();
     },
 
