@@ -333,6 +333,30 @@ export function buildCSV(words) {
 }
 
 /**
+ * Build share CSV — 內容資料 only，不含個人 tag。
+ * header 與 buildCSV 一致但拿掉 tags 欄（deck 保留，字本篩選照用）；
+ * 即使傳入的 word 帶 tags 也強制忽略，保證分享出去零個人標記。
+ * @param {object[]} words
+ * @returns {string}
+ */
+export function buildShareCSV(words) {
+  const header = ['word', 'definition', 'pos', 'pron', 'example', 'deck', 'image', 'description', 'related', 'forms', 'synonym', 'antonym', 'derivative', 'examples', 'etymology', 'syllables', 'phrases'];
+  const arrayKeys = new Set(['related', 'forms', 'examples']);
+  const lines = [header.join(',')];
+  for (const w of words) {
+    const row = header.map(k => {
+      let v = w[k] ?? '';
+      if (arrayKeys.has(k) && Array.isArray(v)) v = JSON.stringify(v);
+      v = String(v).replace(/"/g, '""');
+      if (v.includes(',') || v.includes('"') || v.includes('\n')) v = '"' + v + '"';
+      return v;
+    });
+    lines.push(row.join(','));
+  }
+  return lines.join('\n');
+}
+
+/**
  * Parse Anki-exported tab-separated (TSV) text into raw rows.
  * Anki exports typically have columns: Front, Back, My Notes (optional).
  * Strips UTF-8 BOM and handles HTML entity decoding.
