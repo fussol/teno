@@ -9,7 +9,15 @@
     "build": "vite build",
     "preview": "vite preview",
     "ocr:assets": "node tools/copy-ocr-assets.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "package:linux": "scripts/package-linux.sh all",
+    "package:deb": "scripts/package-linux.sh deb",
+    "package:rpm": "scripts/package-linux.sh rpm",
+    "package:appimage": "scripts/package-linux.sh appimage",
+    "package:apk": "scripts/package-android.sh apk",
+    "package:aab": "scripts/package-android.sh aab",
+    "package:arch": "scripts/package-arch.sh",
+    "package:all": "scripts/package-all-local.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
