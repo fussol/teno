@@ -142,7 +142,24 @@ export const importAppLogText = (text) =>
 export const exportBackupData = (filename) =>
   invoke('export_backup_data', { filename })
 
-// ─── Google Drive Sync ───────────────────────────────
+// ─── WebDAV Sync（同 LAN／Tailscale 自建空間；帳密存一次，之後自動帶）───
+export const webdavSaveConfig = (url, username, password) =>
+  invoke('webdav_save_config', { url, username, password })
+
+export const webdavStatus = () =>
+  invoke('webdav_status')
+
+export const webdavTest = () =>
+  invoke('webdav_test')
+
+export const webdavUpload = () =>
+  invoke('webdav_upload')
+
+export const webdavDownload = () =>
+  invoke('webdav_download')
+
+export const webdavLogout = () =>
+  invoke('webdav_logout')
 export const driveSaveCreds = (clientId, clientSecret) =>
   invoke('drive_save_creds', { clientId, clientSecret })
 

@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, driveSaveCreds, driveOAuth, driveUpload, driveDownload, driveStatus, driveLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, setLauncherIcon } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -422,39 +422,49 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
-    <!-- Google Drive Sync -->
+    <!-- WebDAV 同步（本地雲：同 LAN／Tailscale 自建空間） -->
     <div class="section">
-      <div class="section-title">${icon('upload')} Google Drive 同步</div>
+      <div class="section-title">${icon('upload')} WebDAV 同步</div>
       <div class="config-section">
-        <div id="driveCredsSection">
+        <div id="webdavConfigSection">
           <div class="config-field">
             <div class="config-field-info">
-              <div class="config-field-label">Client ID</div>
-              <div class="config-field-hint">OAuth 2.0 Desktop 用戶端的 Client ID</div>
+              <div class="config-field-label">伺服器 URL</div>
+              <div class="config-field-hint">桌機 WebDAV 位址，如 http://192.168.50.69:8080（尾 slash 可加可不加）</div>
             </div>
-            <input type="text" id="driveClientId" class="form-input" placeholder="貼上 Client ID" style="width:100%">
+            <input type="text" id="webdavUrl" class="form-input" placeholder="http://192.168.50.69:8080" style="width:100%">
           </div>
           <div class="config-field">
             <div class="config-field-info">
-              <div class="config-field-label">Client Secret</div>
+              <div class="config-field-label">帳號</div>
             </div>
-            <input type="text" id="driveClientSecret" class="form-input" placeholder="貼上 Client Secret" style="width:100%">
+            <input type="text" id="webdavUser" class="form-input" placeholder="帳號" style="width:100%">
           </div>
-          <button class="btn-primary btn-sm" id="driveSaveCredsBtn">${icon('check')} 儲存憑證</button>
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">密碼</div>
+              <div class="config-field-hint">帳密只輸這一次，存本機 0600，之後上傳下載自動帶</div>
+            </div>
+            <input type="password" id="webdavPass" class="form-input" placeholder="密碼（LAN 裸奔可空）" style="width:100%">
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
+            <button class="btn-primary btn-sm" id="webdavSaveBtn">${icon('check')} 儲存</button>
+            <button class="btn btn-sm btn-secondary" id="webdavTestBtn">${icon('zap')} 測試連線</button>
+          </div>
         </div>
-        <div id="driveSyncSection">
+        <div id="webdavSyncSection" style="margin-top:var(--s3)">
           <div class="config-field">
             <div class="config-field-info">
-              <div class="config-field-label">${icon('upload')} 同步狀態</div>
-              <div class="config-field-hint">將資料庫同步到 Google Drive appDataFolder</div>
+              <div class="config-field-label">${icon('upload')} 同步</div>
+              <div class="config-field-hint">整顆 teno.db 上傳／下載；每次上傳先對帳（本地大小＋時間 vs 遠端原大小＋時間）</div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
-              <button class="btn btn-sm btn-primary" id="driveSyncBtn">${icon('upload')} 上傳同步</button>
-              <button class="btn btn-sm btn-secondary" id="driveDownloadBtn">${icon('download')} 下載</button>
-              <button class="btn btn-sm btn-secondary" id="driveLogoutBtn" style="display:none">${icon('x')} 登出</button>
+              <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳同步</button>
+              <button class="btn btn-sm btn-secondary" id="webdavDownloadBtn">${icon('download')} 下載</button>
+              <button class="btn btn-sm btn-secondary" id="webdavClearBtn">${icon('x')} 清除設定</button>
             </div>
           </div>
-          <div style="font-size:12px;color:var(--text-tertiary)" id="driveStatusText">檢查中…</div>
+          <div style="font-size:12px;color:var(--text-tertiary)" id="webdavStatusText">檢查中…</div>
         </div>
       </div>
     </div>
@@ -1170,60 +1180,56 @@ export function onMount(s) {
     }
   });
 
-  // ── Google Drive Sync ──
-  async function updateDriveUI() {
-    const credsSection = document.getElementById('driveCredsSection');
-    const syncSection = document.getElementById('driveSyncSection');
-    const st = document.getElementById('driveStatusText');
-    const logoutBtn = document.getElementById('driveLogoutBtn');
+  // ── WebDAV Sync（帳密存一次，之後自動帶；上傳自動對帳）──
+  async function updateWebdavUI() {
+    const st = document.getElementById('webdavStatusText');
     try {
-      const status = await driveStatus();
-      if (status === '未設定') {
-        credsSection.style.display = '';
-        syncSection.style.display = 'none';
-      } else {
-        credsSection.style.display = 'none';
-        syncSection.style.display = '';
-        st.textContent = `狀態: ${status}`;
-        logoutBtn.style.display = '';
-      }
+      const status = await webdavStatus();
+      st.textContent = `狀態: ${status}`;
     } catch (e) {
       st.textContent = `狀態: ${e}`;
     }
   }
-  updateDriveUI();
+  updateWebdavUI();
 
-  document.getElementById('driveSaveCredsBtn')?.addEventListener('click', async () => {
-    const id = document.getElementById('driveClientId').value.trim();
-    const secret = document.getElementById('driveClientSecret').value.trim();
-    if (!id || !secret) { toast('請填寫 Client ID 和 Secret', 'toast-warn'); return; }
+  document.getElementById('webdavSaveBtn')?.addEventListener('click', async () => {
+    const url = document.getElementById('webdavUrl').value.trim();
+    const user = document.getElementById('webdavUser').value.trim();
+    const pass = document.getElementById('webdavPass').value;
+    if (!url || !user) { toast('請填寫 URL 和帳號', 'toast-warn'); return; }
     try {
-      const result = await driveSaveCreds(id, secret);
+      const result = await webdavSaveConfig(url, user, pass);
+      document.getElementById('webdavPass').value = '';
       toast(result, 'toast-success');
-      updateDriveUI();
+      updateWebdavUI();
     } catch (e) {
       toast(String(e), 'toast-error');
     }
   });
 
-  document.getElementById('driveSyncBtn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('driveSyncBtn');
+  document.getElementById('webdavTestBtn')?.addEventListener('click', async () => {
+    try {
+      const result = await webdavTest();
+      toast(result, 'toast-success');
+      updateWebdavUI();
+    } catch (e) {
+      toast(String(e), 'toast-error');
+    }
+  });
+
+  document.getElementById('webdavUploadBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('webdavUploadBtn');
     btn.disabled = true;
     btn.textContent = '處理中…';
     try {
-      const status = await driveStatus();
-      if (status === '未登入' || status === '憑證已過期' || status === '憑證可更新') {
-        const oauthResult = await driveOAuth();
-        toast(oauthResult, 'toast-success');
-      }
-      // D3: WAL checkpoint → 主檔完整後再上傳（drive_upload 只 fs::read 主檔）
+      // D3 同源：WAL checkpoint → 主檔完整後再上傳（webdav_upload 只 fs::read 主檔）
       const { checkpoint } = await import('../lib/db.js');
       await checkpoint();
-      const result = await driveUpload();
+      const result = await webdavUpload();
       toast(result, 'toast-success');
       const _d = await import('../lib/db.js');
-      await _d.addAudit('drive-upload', 'Google Drive 全庫上傳同步').catch(() => {});
-      updateDriveUI();
+      await _d.addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
+      updateWebdavUI();
     } catch (e) {
       toast(String(e), 'toast-error');
     } finally {
@@ -1232,18 +1238,18 @@ export function onMount(s) {
     }
   });
 
-  document.getElementById('driveDownloadBtn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('driveDownloadBtn');
+  document.getElementById('webdavDownloadBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('webdavDownloadBtn');
     btn.disabled = true;
     try {
-      if (!confirm('確定要從 Google Drive 下載備份並取代目前資料？（會自動備份目前資料庫）')) return;
+      if (!confirm('確定要從 WebDAV 下載備份並取代目前資料？（會自動備份目前資料庫）')) return;
       const { checkpoint, closeDB, initDB } = await import('../lib/db.js');
       const { closeAppLog } = await import('../lib/app-log.js');
       await checkpoint();
       await backupDb();
       await closeDB();
       await closeAppLog();
-      const result = await driveDownload();
+      const result = await webdavDownload();
       toast(result, 'toast-success');
       setTimeout(() => location.reload(), 500);
     } catch (e) {
@@ -1254,10 +1260,10 @@ export function onMount(s) {
     }
   });
 
-  document.getElementById('driveLogoutBtn')?.addEventListener('click', async () => {
-    await driveLogout();
-    toast('已登出 Google Drive', 'toast-success');
-    updateDriveUI();
+  document.getElementById('webdavClearBtn')?.addEventListener('click', async () => {
+    await webdavLogout();
+    toast('已清除 WebDAV 設定', 'toast-success');
+    updateWebdavUI();
   });
 
   // ── Anki 模式分頁 ──
