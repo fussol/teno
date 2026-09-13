@@ -356,7 +356,7 @@ function renderChartsBlocks(reviewLog, cards, words, timezoneOffset, dayCutoff) 
       </div>
       <div class="card" style="padding:var(--s5);margin-top:var(--s4)">
         <div class="chart-title">${icon('chart')} 按狀態的回答按鈕</div>
-        <div class="muted" style="font-size:11px;margin-bottom:var(--s4)">依複習當下的卡片狀態分組：學習中／未熟練（間隔&lt;21天）／熟練</div>
+        <div class="mode-desc" style="margin-bottom:var(--s4)">依複習當下的卡片狀態分組：學習中／未熟練（間隔&lt;21天）／熟練</div>
         ${renderButtonByStateChart(rangeLog)}
       </div>
     </div>
@@ -364,11 +364,11 @@ function renderChartsBlocks(reviewLog, cards, words, timezoneOffset, dayCutoff) 
     <div class="section">
       <div class="section-header">
         <div class="section-title">${icon('check')} 留存比率</div>
-        <span class="muted" style="font-size:12px">間隔大於 1 天的卡片通過率</span>
+        <span class="mode-desc">間隔大於 1 天的卡片通過率</span>
       </div>
       <div class="card" style="padding:var(--s5)">
         ${renderRetentionTable(rangeLog, timezoneOffset, dayCutoff)}
-        <div class="muted" style="font-size:11px;margin-top:var(--s3)">未熟練 = 複習間隔 &lt; 21 天；熟練 = ≥ 21 天。時間窗為累計（上一年包含上個月）。通過 = Good 以上。</div>
+        <div class="mode-desc" style="margin-top:var(--s3)">未熟練 = 複習間隔 &lt; 21 天；熟練 = ≥ 21 天。時間窗為累計（上一年包含上個月）。通過 = Good 以上。</div>
       </div>
     </div>
 

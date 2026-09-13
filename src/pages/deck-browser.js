@@ -582,7 +582,7 @@ function openAddModal(s) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <label class="form-label">圖片 <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
           <div id="deckAddImgsThumbs"></div>
           <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
             <input type="file" id="deckAddImgFiles" accept="image/*" multiple style="display:none">
@@ -1145,7 +1145,7 @@ function openEditModal(s, id) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <label class="form-label">圖片 <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
           <div id="deckEditImgsThumbs"></div>
           <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
             <input type="file" id="deckEditImgFiles" accept="image/*" multiple style="display:none">
@@ -2144,9 +2144,9 @@ async function openBatchModal(s) {
         <div style="display:flex;gap:var(--s2);align-items:center;margin:var(--s2) 0;flex:none;flex-wrap:wrap">
           <span style="font-size:12px;color:var(--text-secondary)">目標字本</span>
           <select class="form-input" id="deckBatchDeck" style="max-width:220px">${deckOpts}</select>
-          <span style="font-size:11px;color:var(--text-tertiary)">來源：跟組合包一樣（韋氏第一、劍橋第二；相關詞走 LLM）</span>
+          <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">來源：跟組合包一樣（韋氏第一、劍橋第二；相關詞走 LLM）</span>
         </div>
-        <textarea class="form-input" id="deckBatchInput" placeholder="像筆記本一樣一次貼很多字，用逗號或換行分開，例如：&#10;apply, rent, remember, pay, touch, torch" style="flex:1;min-height:30vh;resize:vertical;font-family:var(--mono);line-height:1.8;font-size:14px"></textarea>
+        <textarea class="form-input" id="deckBatchInput" placeholder="用逗號或換行分開" style="flex:1;min-height:30vh;resize:vertical;font-family:var(--mono);line-height:1.8;font-size:14px"></textarea>
         <div style="display:flex;gap:var(--s2);align-items:center;margin:var(--s2) 0;flex:none;flex-wrap:wrap">
           <button class="btn" id="deckBatchParse">${icon('search')} 分析</button>
           <span id="deckBatchHint" style="font-size:12px;color:var(--text-tertiary)"></span>

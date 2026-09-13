@@ -982,7 +982,7 @@ function openModal(s, word) {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">圖片 <span style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
+          <label class="form-label">圖片 <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">（可多張；儲存時全量替換）</span></label>
           <div id="fImagesThumbs"></div>
           <div style="display:flex;gap:var(--s2);align-items:center;margin-top:6px">
             <input type="file" id="fImageFiles" accept="image/*" multiple style="display:none">

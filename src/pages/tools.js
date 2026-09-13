@@ -139,7 +139,7 @@ export function render(s) {
       <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞、片語、字源與音節（下面一鍵全補組合包，各欄可各別開關＋選來源）</div>
       <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
         <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
-        <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位（開＝整欄取代＋無視門檻；關＝只補缺失）</span>
+        <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位<span class="hint-inline" style="color:var(--text-tertiary)">（開＝整欄取代＋無視門檻；關＝只補缺失）</span></span>
       </div>
     <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">

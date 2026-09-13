@@ -298,7 +298,7 @@ function renderSettingsContent(s) {
             : [...FIELD_KEYS];
           return `<div style="margin-bottom:var(--s3)">
             <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:2px">${name}</div>
-            <div class="muted" style="font-size:11px;margin-bottom:6px">${hint}</div>
+            <div class="config-field-hint" style="margin-bottom:6px">${hint}</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
               ${FIELD_KEYS.map(k => {
                 const forced = ctx === 'study' && k === 'word';
@@ -325,7 +325,7 @@ function renderSettingsContent(s) {
           <input type="number" id="logRetentionInput" min="0" max="365" value="${s.state.logRetentionDays ?? 14}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
         </div>
         <div class="config-field-info" style="margin:var(--s2) 0 6px">
-          <div class="config-field-label">記錄哪些分類（關掉＝不再寫入，已存的不刪）</div>
+          <div class="config-field-label">記錄哪些分類<span class="hint-inline" style="font-weight:400;color:var(--text-tertiary)">（關掉＝不再寫入，已存的不刪）</span></div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:6px">
           ${[['study', '學習'], ['sync', '同步'], ['ocr', '辨識'], ['system', '系統'], ['misc', '其他']].map(([sc, label]) => `
@@ -335,7 +335,7 @@ function renderSettingsContent(s) {
         </div>
         <div class="config-field" style="margin-top:var(--s2)">
           <div class="config-field-info">
-            <div class="config-field-label">除錯鏡像（console 轉發＋teno-monitor.log）</div>
+            <div class="config-field-label">除錯鏡像<span class="hint-inline" style="font-weight:400;color:var(--text-tertiary)">（console 轉發＋teno-monitor.log）</span></div>
             <div class="config-field-hint">關了只剩 error 會寫；除錯時再開</div>
           </div>
           <button class="switch-btn ${s.state.logMirror !== false ? 'on' : ''}" id="logMirrorToggle" style="flex-shrink:0" aria-pressed="${s.state.logMirror !== false}">${s.state.logMirror !== false ? '開' : '關'}</button>
@@ -460,7 +460,7 @@ function renderSettingsContent(s) {
               <div class="config-field-label">密碼</div>
               <div class="config-field-hint">帳密只輸這一次，存本機 0600，之後上傳下載自動帶</div>
             </div>
-            <input type="password" id="webdavPass" class="form-input" placeholder="密碼（LAN 裸奔可空）" style="width:100%">
+            <input type="password" id="webdavPass" class="form-input" placeholder="密碼" style="width:100%">
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
             <button class="btn-primary btn-sm" id="webdavSaveBtn">${icon('check')} 儲存</button>
@@ -515,7 +515,7 @@ function renderSettingsContent(s) {
               <input type="number" id="backupKeepMax" min="1" max="100" value="${s.state.backupKeepMax ?? 7}" style="width:64px">
             </label>
           </div>
-          <div class="muted" style="font-size:11px;margin-top:4px">預設一天備份一次、最多留 7 個（超出刪最舊）。修改即時生效。</div>
+          <div class="config-field-hint" style="margin-top:4px">預設一天備份一次、最多留 7 個（超出刪最舊）。修改即時生效。</div>
           ` : ''}
         </div>
       </div>
@@ -530,11 +530,11 @@ function renderSettingsContent(s) {
             <div class="config-field" style="justify-content:space-between;align-items:center">
               <div class="config-field-info">
                 <div class="config-field-label">Cambridge 查證</div>
-                <div class="muted" style="font-size:11px">錄入時連線 Cambridge 查證，查得到的才入庫；離線時自動降級放行</div>
+                <div class="config-field-hint">錄入時連線 Cambridge 查證，查得到的才入庫；離線時自動降級放行</div>
               </div>
               <button class="switch-btn ${s.state.ocrCambridgeVerify ? 'on' : ''}" id="ocrCambVerifyToggle" style="flex-shrink:0" aria-pressed="${s.state.ocrCambridgeVerify}">${s.state.ocrCambridgeVerify ? '開' : '關'}</button>
             </div>
-            <div class="muted" style="font-size:11px;margin:var(--s2) 0">黑名單（${s.state.blacklist.length} 詞）：功能詞＋草漯檢定詞，系統預設，無法修改</div>
+            <div class="config-field-hint" style="margin:var(--s2) 0">黑名單（${s.state.blacklist.length} 詞）：功能詞＋草漯檢定詞，系統預設，無法修改</div>
             <div id="blacklistList" style="max-height:160px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:var(--r-md);padding:var(--s1)">
               ${s.state.blacklist.slice().sort().map(w => `
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:3px 6px;font-size:12px;border-bottom:1px solid var(--border-subtle)">
@@ -542,12 +542,12 @@ function renderSettingsContent(s) {
                 </div>`).join('')}
             </div>
             <div style="border-top:1px solid var(--border-subtle);margin-top:var(--s3);padding-top:var(--s2)">
-              <div class="muted" style="font-size:11px;margin-bottom:var(--s1)">AI 還原模型（可選）：離線拼字還原找不到的字，丟本機 ollama 補強。留空＝關閉（純離線，手機預設）。桌面部屬可設 e.g. qwen3-ocr64k</div>
+              <div class="config-field-hint" style="margin-bottom:var(--s1)">AI 還原模型（可選）：離線拼字還原找不到的字，丟本機 ollama 補強。留空＝關閉（純離線，手機預設）。桌面部屬可設 e.g. qwen3-ocr64k</div>
               <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
                 <input type="text" id="ocrRestoreModelInput" placeholder="留空＝關閉；輸入 ollama 模型名啟用" value="${s.state.ocrRestoreModel || ''}" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
                 <button class="btn btn-sm" id="ocrRestoreModelBtn">${icon('check')} 設定</button>
               </div>
-              <div class="muted" style="font-size:11px;margin-bottom:var(--s1)">灰名單（${s.state.graylist.length} 詞）：OCR 辨識時「未勾選淘汰」的字自動加入，不進入一般學習序；可手動增刪或 CSV 匯入</div>
+              <div class="config-field-hint" style="margin-bottom:var(--s1)">灰名單（${s.state.graylist.length} 詞）：OCR 辨識時「未勾選淘汰」的字自動加入，不進入一般學習序；可手動增刪或 CSV 匯入</div>
               <div id="graylistInputRow" style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2)">
                 <input type="text" id="graylistAddInput" placeholder="輸入單字加入灰名單" style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
                 <button class="btn btn-sm" id="graylistAddBtn">${icon('plus')} 加入</button>
@@ -572,7 +572,7 @@ function renderSettingsContent(s) {
         <div class="section">
           <div class="section-title">${icon('book')} 韋氏字典</div>
           <div class="config-section">
-            <div class="muted" style="font-size:11px;margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。</div>
+            <div class="config-field-hint" style="margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。</div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Dictionary key</span>
               <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">

@@ -677,6 +677,7 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 body.no-hints .study-hint,
 body.no-hints .card-flip-hint,
 body.no-hints .config-field-hint,
+body.no-hints .hint-inline,
 body.no-hints .ocr-hint,
 body.no-hints .ocr-ov-hint,
 body.no-hints .drop-zone-sub,

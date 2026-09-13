@@ -69,11 +69,11 @@ export function render(s) {
     <div class="section">
       <div class="card" style="padding:var(--s4);display:flex;gap:var(--s2);flex-wrap:wrap;align-items:center">
         <button class="btn btn-sm" id="applogExportTxtBtn">${icon('list')} 匯出操作日誌 (.txt)</button>
-        <span style="font-size:11px;color:var(--text-tertiary)">文字檔（app_log＋模擬歷史）</span>
+        <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">文字檔（app_log＋模擬歷史）</span>
         <button class="btn btn-sm" id="applogImportTxtBtn">${icon('upload')} 匯入操作日誌 (.txt)</button>
-        <span style="font-size:11px;color:var(--text-tertiary)">文字檔（去重併入，重複不怕）</span>
+        <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">文字檔（去重併入，重複不怕）</span>
         <button class="btn btn-sm" id="applogExportBundleBtn">${icon('save')} 匯出完整備份 (.db)</button>
-        <span style="font-size:11px;color:var(--text-tertiary)">捆包（teno.db＋app-log.db，匯入可吃）</span>
+        <span class="hint-inline" style="font-size:11px;color:var(--text-tertiary)">捆包（teno.db＋app-log.db，匯入可吃）</span>
       </div>
     </div>
 
