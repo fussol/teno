@@ -66,6 +66,132 @@ fn save_config(app_handle: &tauri::AppHandle, cfg: &WebdavConfig) {
     }
 }
 
+/// SYNC2：last-sync 基準（分支偵測用；非機密，存 app_config_dir/webdav_sync_state.json）
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+struct SyncState {
+    /// 上次成功同步時本地 mtime／size
+    base_local_mtime: Option<u64>,
+    base_local_size: Option<u64>,
+    /// 上次成功同步時遠端 mtime（epoch）／size
+    base_remote_mtime: Option<u64>,
+    base_remote_size: Option<u64>,
+    /// 上次成功方向＋時間（"upload"|"download"，epoch）
+    last_dir: String,
+    at: u64,
+}
+
+fn sync_state_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let mut p = app_handle.path().app_config_dir().unwrap_or_default();
+    p.push("webdav_sync_state.json");
+    p
+}
+
+fn load_sync_state(app_handle: &tauri::AppHandle) -> SyncState {
+    std::fs::read_to_string(sync_state_path(app_handle))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_sync_state(app_handle: &tauri::AppHandle, st: &SyncState) {
+    if let Ok(s) = serde_json::to_string(st) {
+        let _ = std::fs::write(sync_state_path(app_handle), s);
+    }
+}
+
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 本地指紋（mtime＋size；讀不到＝None）
+fn local_fingerprint(app_handle: &tauri::AppHandle) -> (Option<u64>, Option<u64>) {
+    let m = std::fs::metadata(db_path(app_handle)).ok();
+    match m {
+        Some(m) => (
+            m.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()),
+            Some(m.len()),
+        ),
+        None => (None, None),
+    }
+}
+
+/// 自基準以來是否變過（mtime 超容忍 或 size 變；缺一邊＝當沒變，不誤報）
+fn changed_since(
+    base_mtime: Option<u64>,
+    base_size: Option<u64>,
+    cur_mtime: Option<u64>,
+    cur_size: Option<u64>,
+) -> bool {
+    match (base_mtime, cur_mtime) {
+        (Some(b), Some(c)) => {
+            if c > b.saturating_add(GUARD_TOL_SECS) || b > c.saturating_add(GUARD_TOL_SECS) {
+                return true;
+            }
+        }
+        _ => return false,
+    }
+    match (base_size, cur_size) {
+        (Some(b), Some(c)) => b != c,
+        _ => false,
+    }
+}
+
+/// 遠端指紋（mtime epoch＋size；解析失敗＝None＝不擋）
+fn remote_fingerprint(m: &RemoteMeta) -> (Option<u64>, Option<u64>) {
+    let mt = m.mtime.as_deref().and_then(parse_http_date);
+    (mt, m.size)
+}
+
+/// 空檔守門下限：本地 teno.db 小於此直接拒傳（22MB 級正常庫；空庫／半寫檔幾十 KB）
+const MIN_UPLOAD_SIZE: u64 = 100 * 1024;
+
+/// 上傳 payload：TENOC 容器（teno.db＋app-log.db；跟 pack_db_container 同佈局，檔名沿用 teno.db）
+/// 佈局：b"TENOC"＋0x01＋u32le(teno_len)＋teno＋u32le(log_len)＋log
+fn pack_sync_container(teno: &[u8], log: &[u8]) -> Result<Vec<u8>, String> {
+    let tl = u32::try_from(teno.len())
+        .map_err(|_| format!("teno.db 超過 4GB（{} bytes），拒絕打包", teno.len()))?;
+    let ll = u32::try_from(log.len())
+        .map_err(|_| format!("app-log.db 超過 4GB（{} bytes），拒絕打包", log.len()))?;
+    let mut out = Vec::with_capacity(5 + 1 + 4 + teno.len() + 4 + log.len());
+    out.extend_from_slice(b"TENOC");
+    out.push(1u8);
+    out.extend_from_slice(&tl.to_le_bytes());
+    out.extend_from_slice(teno);
+    out.extend_from_slice(&ll.to_le_bytes());
+    out.extend_from_slice(log);
+    Ok(out)
+}
+
+/// 讀本地要上傳的位元組：teno.db 必讀＋魔數驗＋下限驗；app-log.db 有就帶，無就空段
+fn read_upload_payload(app_handle: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+    let tp = db_path(app_handle);
+    let teno = std::fs::read(&tp).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
+    if (teno.len() as u64) < MIN_UPLOAD_SIZE {
+        return Err(format!(
+            "EMPTY_LOCAL:本地庫只有 {}（<{}），疑似空庫／半寫檔，拒絕上傳覆蓋遠端。先檢查本機資料是否正常。",
+            fmt_mb(teno.len() as u64),
+            fmt_mb(MIN_UPLOAD_SIZE),
+        ));
+    }
+    if teno.len() < 100 || !teno.starts_with(b"SQLite format 3\0") {
+        return Err("EMPTY_LOCAL:本地檔不是有效 SQLite（魔數不對），拒絕上傳。".into());
+    }
+    let mut lp = tp.clone();
+    lp.set_file_name("app-log.db");
+    let log = std::fs::read(&lp).unwrap_or_default();
+    if !log.is_empty() && (log.len() < 100 || !log.starts_with(b"SQLite format 3\0")) {
+        // 日誌壞了不擋主庫：丟掉 log 段照傳（主庫優先）
+        return pack_sync_container(&teno, &[]);
+    }
+    pack_sync_container(&teno, &log)
+}
+
 /// 最小 base64（標準字母表＋= 補齊；只吃 UTF-8 bytes，Basic Auth 夠用）
 fn base64_encode(input: &[u8]) -> String {
     const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -235,7 +361,47 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// 下載守門（與 drive_sync::validate_drive_download 同語意：TENOC／裸庫雙態放行）
+/// 分叉保留檔：app_config_dir/teno-conflict-<nanos>.db（遠端／本地被擋下的那一邊先落這，不丟）
+fn conflict_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let mut p = app_handle.path().app_config_dir().unwrap_or_default();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos().min(u64::MAX as u128) as u64)
+        .unwrap_or(0);
+    p.push(format!("teno-conflict-{ts}.db"));
+    p
+}
+
+/// 下載落檔：teno＋log 雙寫（tmp＋rename；跟 write_db_container 同範式）
+fn write_downloaded(app_handle: &tauri::AppHandle, teno: &[u8], log: &[u8]) -> Result<(), String> {
+    use std::io::Write as _;
+    let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let db = dir.join("teno.db");
+    let tmp = dir.join("teno.db.sync_tmp");
+    let mut f =
+        std::fs::File::create(&tmp).map_err(|e| format!("寫入暫存失敗：{e}"))?;
+    f.write_all(teno)
+        .map_err(|e| format!("寫入暫存失敗：{e}"))?;
+    f.sync_all().map_err(|e| format!("寫入暫存失敗：{e}"))?;
+    drop(f);
+    let _ = std::fs::remove_file(db.with_extension("db-wal"));
+    let _ = std::fs::remove_file(db.with_extension("db-shm"));
+    std::fs::rename(&tmp, &db).map_err(|e| format!("覆蓋資料庫失敗：{e}"))?;
+    if !log.is_empty() {
+        let lp = dir.join("app-log.db");
+        let ltmp = dir.join("app-log.db.sync_tmp");
+        let mut g =
+            std::fs::File::create(&ltmp).map_err(|e| format!("寫入日誌暫存失敗：{e}"))?;
+        g.write_all(log)
+            .map_err(|e| format!("寫入日誌暫存失敗：{e}"))?;
+        g.sync_all().map_err(|e| format!("寫入日誌暫存失敗：{e}"))?;
+        drop(g);
+        let _ = std::fs::remove_file(lp.with_extension("db-wal"));
+        let _ = std::fs::remove_file(lp.with_extension("db-shm"));
+        std::fs::rename(&ltmp, &lp).map_err(|e| format!("覆蓋操作日誌失敗：{e}"))?;
+    }
+    Ok(())
+}
 fn validate_download(buf: &[u8]) -> Result<Vec<u8>, String> {
     let (db_bytes, _log) = crate::unpack_db_container(buf)?;
     if db_bytes.len() < 100 || !db_bytes.starts_with(b"SQLite format 3\0") {
@@ -311,11 +477,57 @@ pub async fn webdav_upload(
             return Err(msg);
         }
     }
-    let data =
-        std::fs::read(db_path(&app_handle)).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
+    // SYNC2-Q1：雙改分支偵測（兩邊自 base 都動過＝平行做題分叉）→ 不蓋，留雙檔讓人選
+    if !force.unwrap_or(false) {
+        let base = load_sync_state(&app_handle);
+        let has_base = base.base_local_mtime.is_some() || base.base_remote_mtime.is_some();
+        if has_base {
+            let (lm, ls) = local_fingerprint(&app_handle);
+            let (rmt, rs) = match &remote {
+                Some(m) => remote_fingerprint(m),
+                None => (None, None),
+            };
+            let local_changed =
+                changed_since(base.base_local_mtime, base.base_local_size, lm, ls);
+            let remote_changed =
+                changed_since(base.base_remote_mtime, base.base_remote_size, rmt, rs);
+            if local_changed && remote_changed {
+                // 先把遠端拉下來存 conflict（ validate 過才落檔），本地一字不動
+                let cf = conflict_path(&app_handle);
+                match ureq::get(&file).set("Authorization", &auth).call() {
+                    Ok(resp) => {
+                        let mut buf: Vec<u8> = Vec::new();
+                        if resp.into_reader().read_to_end(&mut buf).is_ok() {
+                            if let Ok(db_bytes) = crate::unpack_db_container(&buf) {
+                                if db_bytes.0.len() >= 100 {
+                                    let _ = std::fs::write(&cf, &buf);
+                                }
+                            } else if buf.len() >= 100 && buf.starts_with(b"SQLite format 3\0") {
+                                let _ = std::fs::write(&cf, &buf);
+                            }
+                        }
+                    }
+                    Err(_) => {}
+                }
+                return Err(format!(
+                    "CONFLICT:兩邊自上次同步都各做各的（本地 {}／遠端 {}），直接上傳會吃掉一邊。遠端已先存到 {}，請二選一：看完差異後用 force 上傳蓋過去，或先下載遠端回來。",
+                    local_time,
+                    remote
+                        .as_ref()
+                        .and_then(|m| m.mtime.clone())
+                        .unwrap_or_else(|| "未知時間".into()),
+                    cf.display(),
+                ));
+            }
+        }
+    }
+    // SYNC2-Q2＋Q6：payload 走 TENOC 容器（teno.db＋app-log.db），空檔／壞魔數直接拒傳
+    let data = read_upload_payload(&app_handle)?;
+    let (local_len2, local_time2) = (data.len() as u64, local_time.clone());
+    let _ = (local_len, local_time);
     ureq::put(&file)
         .set("Authorization", &auth)
-        .set("Content-Type", "application/x-sqlite3")
+        .set("Content-Type", "application/octet-stream")
         .send_bytes(&data)
         .map_err(|e| match e {
             ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
@@ -324,7 +536,7 @@ pub async fn webdav_upload(
         })?;
     let remote_note = match &remote {
         Some(m) => format!(
-            "（遠端原 {}{}，已覆蓋）",
+            "（遠端原 {}{}，已覆蓋；舊版進伺服器 .history 留檔）",
             m.size.map(fmt_mb).unwrap_or_else(|| "大小未知".into()),
             m.mtime
                 .as_ref()
@@ -333,10 +545,25 @@ pub async fn webdav_upload(
         ),
         None => "（遠端原無檔）".into(),
     };
+    // 成功才前進 base（兩邊指紋都記：遠端＝剛傳上去的本地）
+    {
+        let (lm, ls) = local_fingerprint(&app_handle);
+        save_sync_state(
+            &app_handle,
+            &SyncState {
+                base_local_mtime: lm,
+                base_local_size: ls,
+                base_remote_mtime: lm,
+                base_remote_size: Some(data.len() as u64),
+                last_dir: "upload".into(),
+                at: now_epoch(),
+            },
+        );
+    }
     Ok(format!(
         "✅ 已上傳（本地 {}，{}{}）",
-        fmt_mb(local_len),
-        local_time,
+        fmt_mb(local_len2),
+        local_time2,
         remote_note
     ))
 }
@@ -370,17 +597,65 @@ pub async fn webdav_download(
             return Err(msg);
         }
     }
+    // SYNC2-Q1：下載側雙改分支偵測（兩邊自 base 都動過）→ 不蓋，遠端先存 conflict
+    if !force.unwrap_or(false) {
+        let base = load_sync_state(&app_handle);
+        let has_base = base.base_local_mtime.is_some() || base.base_remote_mtime.is_some();
+        if has_base {
+            let (lm, ls) = local_fingerprint(&app_handle);
+            let rmt = resp.header("Last-Modified").and_then(parse_http_date);
+            let local_changed =
+                changed_since(base.base_local_mtime, base.base_local_size, lm, ls);
+            let remote_changed = changed_since(
+                base.base_remote_mtime,
+                base.base_remote_size,
+                rmt,
+                remote_size,
+            );
+            if local_changed && remote_changed {
+                return Err(format!(
+                    "CONFLICT:兩邊自上次同步都各做各的（本地 {}／遠端 {}），直接下載會吃掉本地進度。請二選一：先上傳本地（force）蓋過去，或用 force 下載吃掉本地。",
+                    lm.map(chrono_naive).unwrap_or_else(|| "未知時間".into()),
+                    rmt.map(chrono_naive).unwrap_or_else(|| "未知時間".into()),
+                ));
+            }
+        }
+    }
     let mut buf: Vec<u8> = Vec::new();
     resp.into_reader()
         .read_to_end(&mut buf)
         .map_err(|e| format!("讀取資料失敗：{e}"))?;
-    let db_bytes = validate_download(&buf)?;
-    let db = db_path(&app_handle);
-    let tmp = db.with_extension("db.sync_tmp");
-    std::fs::write(&tmp, &db_bytes).map_err(|e| format!("寫入暫存失敗：{e}"))?;
-    let _ = std::fs::remove_file(db.with_extension("db-wal"));
-    let _ = std::fs::remove_file(db.with_extension("db-shm"));
-    std::fs::rename(&tmp, &db).map_err(|e| format!("覆蓋資料庫失敗：{e}"))?;
+    // 空遠端守門：遠端太小／壞魔數不准蓋本地（空的蓋好的＝完了）
+    if (buf.len() as u64) < MIN_UPLOAD_SIZE {
+        return Err(format!(
+            "EMPTY_REMOTE:遠端只有 {}（<{}），疑似空檔，拒絕下載覆蓋本地。先檢查伺服器上的檔。",
+            fmt_mb(buf.len() as u64),
+            fmt_mb(MIN_UPLOAD_SIZE),
+        ));
+    }
+    let (db_bytes, log_bytes) = crate::unpack_db_container(&buf)
+        .map_err(|e| format!("遠端內容無效（{e}），本機資料未變"))?;
+    if db_bytes.len() < 100 || !db_bytes.starts_with(b"SQLite format 3\0") {
+        return Err("遠端內容不是有效的 SQLite 資料庫，本機資料未變".into());
+    }
+    write_downloaded(&app_handle, &db_bytes, &log_bytes)?;
+    // 成功才前進 base（兩邊指紋都記：本地＝剛寫下的遠端）
+    {
+        let (lm, ls) = local_fingerprint(&app_handle);
+        let rmt = None::<u64>;
+        let _ = rmt;
+        save_sync_state(
+            &app_handle,
+            &SyncState {
+                base_local_mtime: lm,
+                base_local_size: ls,
+                base_remote_mtime: lm,
+                base_remote_size: Some(buf.len() as u64),
+                last_dir: "download".into(),
+                at: now_epoch(),
+            },
+        );
+    }
     Ok(format!(
         "✅ 已從 WebDAV 同步（遠端 {}{}）",
         remote_size.map(fmt_mb).unwrap_or_else(|| format!(
@@ -463,5 +738,53 @@ mod tests {
         assert!(guard_upload(local, None).is_none());
         assert!(guard_upload(local, Some("nope")).is_none());
         assert!(guard_download(None, remote_old).is_none());
+    }
+
+    #[test]
+    fn sync2_changed_since_matrix() {
+        // 同版（容忍內＋同 size）→ 沒變
+        assert!(!changed_since(Some(1000), Some(50), Some(1010), Some(50)));
+        // mtime 超容忍 → 變過
+        assert!(changed_since(Some(1000), Some(50), Some(2000), Some(50)));
+        // mtime 同但 size 變 → 變過（同秒重寫）
+        assert!(changed_since(Some(1000), Some(50), Some(1005), Some(51)));
+        // 缺一邊 → 當沒變（不誤報，沿用舊行為）
+        assert!(!changed_since(None, Some(50), Some(2000), Some(50)));
+        assert!(!changed_since(None, None, None, None));
+        // mtime 明顯變過時，size 缺也不影響判定（mtime 主導）
+        assert!(changed_since(Some(1000), None, Some(2000), Some(50)));
+    }
+
+    #[test]
+    fn sync2_pack_roundtrip() {
+        let teno = [b'S', b'Q', b'L', b'i'];
+        let mut teno_big = b"SQLite format 3\0".to_vec();
+        teno_big.extend(vec![0u8; 200]);
+        let log = b"LOG".to_vec();
+        let packed = pack_sync_container(&teno_big, &log).unwrap();
+        assert!(packed.starts_with(b"TENOC"));
+        assert_eq!(packed[5], 1u8);
+        // 手動拆段驗佈局
+        let tl = u32::from_le_bytes([packed[6], packed[7], packed[8], packed[9]]) as usize;
+        assert_eq!(tl, teno_big.len());
+        assert_eq!(&packed[10..10 + tl], &teno_big[..]);
+        let p = 10 + tl;
+        let ll = u32::from_le_bytes([packed[p], packed[p + 1], packed[p + 2], packed[p + 3]]) as usize;
+        assert_eq!(ll, log.len());
+        assert_eq!(&packed[p + 4..p + 4 + ll], &log[..]);
+        let _ = teno;
+    }
+
+    #[test]
+    fn sync2_conflict_branches() {
+        // base 之後兩邊都動 → 分叉（上傳／下載側同一判定）
+        let base_mt = Some(1000u64);
+        let base_sz = Some(50u64);
+        let local = (Some(2000u64), Some(51u64));
+        let remote = (Some(3000u64), Some(52u64));
+        assert!(changed_since(base_mt, base_sz, local.0, local.1));
+        assert!(changed_since(base_mt, base_sz, remote.0, remote.1));
+        // 只有一邊動 → 非分叉
+        assert!(!changed_since(base_mt, base_sz, Some(1005), Some(50)));
     }
 }

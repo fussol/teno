@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, setLauncherIcon } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -487,7 +487,7 @@ function renderSettingsContent(s) {
           <div class="config-field">
             <div class="config-field-info">
               <div class="config-field-label">${icon('upload')} 同步</div>
-              <div class="config-field-hint">整顆 teno.db 上傳／下載；以上傳前本地時間、下載前遠端時間為版本，舊蓋新會先擋下問過才放行</div>
+              <div class="config-field-hint">整顆 TENOC 同步包上傳／下載（teno.db＋app-log.db）；版本＝最後更改時間，舊蓋新先擋，分叉留雙檔，空檔拒傳</div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
               <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳同步</button>
@@ -501,6 +501,45 @@ function renderSettingsContent(s) {
             自動備份時同步上傳到這台 WebDAV（跟本地備份同一節奏，有變更才傳）
           </label>
         </div>
+        ${isAndroid ? '' : `
+        <div id="webdavServerSection" style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">${icon('cloud')} 內嵌本地雲（跟著 Teno 起）</div>
+              <div class="config-field-hint">桌機開 Teno 就等於開雲，手機直接連；跟 ~/teno-webdav-app 同一空間同一語義。App 關掉後換獨立版頂（狀態行會講誰在聽）。手機請用 Termux 獨立版。</div>
+            </div>
+          </div>
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">Port</div>
+            </div>
+            <input type="number" id="webdavSrvPort" class="form-input" min="1" max="65535" value="8080" style="width:110px">
+          </div>
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">帳號</div>
+            </div>
+            <input type="text" id="webdavSrvUser" class="form-input" placeholder="teno" style="width:100%">
+          </div>
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">密碼</div>
+              <div class="config-field-hint">只輸這一次，存本機 0600；內嵌不設裸奔（要裸奔請用獨立版 --no-auth）</div>
+            </div>
+            <input type="password" id="webdavSrvPass" class="form-input" placeholder="密碼（已存則留空＝不改）" style="width:100%">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)">
+            <input type="checkbox" id="webdavSrvAutostart">
+            Teno 啟動時自動開啟內嵌本地雲（獨立版已頂著時自動讓路）
+          </label>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2)">
+            <button class="btn-primary btn-sm" id="webdavSrvSaveBtn">${icon('check')} 儲存</button>
+            <button class="btn btn-sm btn-primary" id="webdavSrvStartBtn">${icon('play')} 啟動</button>
+            <button class="btn btn-sm btn-secondary" id="webdavSrvStopBtn">${icon('x')} 停止</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)" id="webdavSrvStatusText">檢查中…</div>
+        </div>
+        `}
       </div>
     </div>
 
@@ -1366,7 +1405,20 @@ export function onMount(s) {
       } catch (e) {
         // WEBDAV-GUARD1：遠端比較新→擋下，問過才硬蓋（舊蓋新防呆）
         const msg = String(e);
-        if (msg.includes('REMOTE_NEWER:') && confirm(msg.replace('REMOTE_NEWER:', '') + '\n\n確定要用本地舊版覆蓋遠端新版？')) {
+        if (msg.includes('CONFLICT:')) {
+          // SYNC2-Q1：分叉→不自動蓋，遠端已存 conflict 檔，人看完再選
+          toast(msg, 'toast-error');
+          if (confirm(msg.replace('CONFLICT:', '') + '\n\n確定要用本地版強制覆蓋遠端？（遠端舊版已存 conflict 檔＋伺服器 .history）')) {
+            const result = await webdavUpload(true);
+            toast(result + '（已強制覆蓋）', 'toast-success');
+          } else {
+            toast('已取消上傳（兩邊都在，本地未動）', '');
+            return;
+          }
+        } else if (msg.includes('EMPTY_LOCAL:')) {
+          toast(msg, 'toast-error');
+          return;
+        } else if (msg.includes('REMOTE_NEWER:') && confirm(msg.replace('REMOTE_NEWER:', '') + '\n\n確定要用本地舊版覆蓋遠端新版？')) {
           const result = await webdavUpload(true);
           toast(result + '（已強制覆蓋）', 'toast-success');
         } else if (!msg.includes('REMOTE_NEWER:')) {
@@ -1404,7 +1456,21 @@ export function onMount(s) {
       } catch (e) {
         // WEBDAV-GUARD1：本地比較新→擋下，問過才硬蓋（舊蓋新防呆）
         const msg = String(e);
-        if (msg.includes('LOCAL_NEWER:') && confirm(msg.replace('LOCAL_NEWER:', '') + '\n\n確定要用遠端舊版覆蓋本地新版？')) {
+        if (msg.includes('CONFLICT:')) {
+          toast(msg, 'toast-error');
+          if (confirm(msg.replace('CONFLICT:', '') + '\n\n確定要用遠端版強制覆蓋本地？（本地有新進度，會被吃掉）')) {
+            const result = await webdavDownload(true);
+            toast(result + '（已強制覆蓋）', 'toast-success');
+          } else {
+            toast('已取消下載（兩邊都在，本地未動）', '');
+            try { await initDB(2); } catch (_) {}
+            return;
+          }
+        } else if (msg.includes('EMPTY_REMOTE:')) {
+          toast(msg, 'toast-error');
+          try { await initDB(2); } catch (_) {}
+          return;
+        } else if (msg.includes('LOCAL_NEWER:') && confirm(msg.replace('LOCAL_NEWER:', '') + '\n\n確定要用遠端舊版覆蓋本地新版？')) {
           const result = await webdavDownload(true);
           toast(result + '（已強制覆蓋）', 'toast-success');
         } else if (!msg.includes('LOCAL_NEWER:')) {
@@ -1428,6 +1494,63 @@ export function onMount(s) {
     await webdavLogout();
     toast('已清除 WebDAV 設定', 'toast-success');
     updateWebdavUI();
+  });
+
+  // ── 內嵌本地雲 WEBDAV-EMBED1（桌機限定；手機走 Termux 獨立版）──
+  async function updateWebdavSrvUI() {
+    const st = document.getElementById('webdavSrvStatusText');
+    if (!st) return;
+    try {
+      const status = await webdavServerStatus();
+      st.textContent = `狀態: ${status}`;
+    } catch (e) {
+      st.textContent = `狀態: ${e}`;
+    }
+    try {
+      const cfg = await webdavServerGetConfig();
+      const port = document.getElementById('webdavSrvPort');
+      const user = document.getElementById('webdavSrvUser');
+      const auto = document.getElementById('webdavSrvAutostart');
+      if (port && cfg.port) port.value = cfg.port;
+      if (user && cfg.username) user.value = cfg.username;
+      if (auto) auto.checked = !!cfg.autostart;
+    } catch (_) {}
+  }
+  updateWebdavSrvUI();
+
+  document.getElementById('webdavSrvSaveBtn')?.addEventListener('click', async () => {
+    const port = parseInt(document.getElementById('webdavSrvPort')?.value, 10) || 8080;
+    const user = document.getElementById('webdavSrvUser')?.value.trim() || 'teno';
+    const pass = document.getElementById('webdavSrvPass')?.value || '';
+    const autostart = !!document.getElementById('webdavSrvAutostart')?.checked;
+    try {
+      const result = await webdavServerSaveConfig(port, user, pass, autostart);
+      document.getElementById('webdavSrvPass').value = '';
+      toast(result, 'toast-success');
+      updateWebdavSrvUI();
+    } catch (e) {
+      toast(String(e), 'toast-error');
+    }
+  });
+
+  document.getElementById('webdavSrvStartBtn')?.addEventListener('click', async () => {
+    try {
+      const result = await webdavServerStart();
+      toast(result, 'toast-success');
+      updateWebdavSrvUI();
+    } catch (e) {
+      toast(String(e), 'toast-error');
+    }
+  });
+
+  document.getElementById('webdavSrvStopBtn')?.addEventListener('click', async () => {
+    try {
+      const result = await webdavServerStop();
+      toast(result, 'toast-success');
+      updateWebdavSrvUI();
+    } catch (e) {
+      toast(String(e), 'toast-error');
+    }
   });
 
   // ── Anki 模式分頁 ──

@@ -70,12 +70,15 @@ try {
   ok('live:錯密碼→401', curl(`-X PROPFIND ${B}/ -u ${USER}:wrong`) === '401');
   ok('live:PROPFIND 207', curl(`-X PROPFIND ${B}/ ${AUTH}`) === '207');
   ok('live:HEAD 無檔→404', curl(`-I ${B}/teno.db ${AUTH}`) === '404');
-  execSync(`printf 'WEBDAV1-HELLO' > /tmp/w1up.bin`);
+  execSync(`python3 -c "open('/tmp/w1up.bin','wb').write(b'TENOC\\x01'+b'WEBDAV1-HELLO'+b'\\x00'*30000)"`);
   ok('live:PUT 201', curl(`-X PUT --data-binary @/tmp/w1up.bin ${B}/teno.db ${AUTH}`) === '201');
   ok('live:HEAD 有檔→200', curl(`-I ${B}/teno.db ${AUTH}`) === '200');
   ok('live:PUT 覆寫 204', curl(`-X PUT --data-binary @/tmp/w1up.bin ${B}/teno.db ${AUTH}`) === '204');
   execSync(`curl -s ${B}/teno.db -u ${USER}:${PASS} -o /tmp/w1down.bin`);
-  ok('live:GET 內容一致', readFileSync('/tmp/w1down.bin', 'utf8') === 'WEBDAV1-HELLO');
+  ok('live:GET 內容一致', readFileSync('/tmp/w1down.bin').equals(readFileSync('/tmp/w1up.bin')));
+  // SYNC2-Q6：空檔／壞魔數照樣拒收（舊版行為變更點，鎖死）
+  execSync(`printf 'hi' > /tmp/w1tiny`);
+  ok('live:空檔 PUT→422', curl(`-X PUT --data-binary @/tmp/w1tiny ${B}/tiny.db ${AUTH}`) === '422');
   ok('live:DELETE 204', curl(`-X DELETE ${B}/teno.db ${AUTH}`) === '204');
   ok('live:刪後 HEAD 404', curl(`-I ${B}/teno.db ${AUTH}`) === '404');
 } finally { srv.kill(); }

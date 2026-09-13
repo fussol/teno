@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 """Teno 本地雲 WebDAV server（零依賴，stdlib only）.
 
- canonical：~/teno-webdav-app/server.py（獨立 App，Teno 附屬）
- 本檔是鏡像，harness（tools/verify-webdav1.mjs）用，不 hand-edit；
- 改功能請改 canonical 那支再 cp 回來。
-
 跑法：
   python3 scripts/webdav-server.py --dir ~/teno-webdav --port 8080 --user teno --pass <密碼>
   或 ./scripts/webdav-serve.sh [port] [user] [pass]
@@ -28,7 +24,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from xml.sax.saxutils import escape as xml_escape
 
 ARGS = types.SimpleNamespace(dir=os.path.expanduser("~/teno-webdav"), port=8080,
-                               user="teno", password="", no_auth=False)
+                               user="teno", password="", no_auth=False,
+                               auth_file="", host="0.0.0.0")
+
+# SYNC2 多人：帳號→密碼表（--auth-file JSON：{"users": {"alice": "pw", ...}}）。
+# 有表＝多人模式（每人一目錄 <dir>/<user>/）；無表＝沿用單帳密舊行為。
+AUTH_USERS = {}
+
+
+def load_auth_file(path: str) -> dict:
+    import json
+    try:
+        with open(os.path.expanduser(path), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"auth-file 讀不到：{e}")
+    users = data.get("users", {}) if isinstance(data, dict) else {}
+    if not isinstance(users, dict) or not users:
+        raise SystemExit("auth-file 格式錯：要 {\"users\": {\"帳號\": \"密碼\", ...}}，至少一人")
+    flat = {}
+    for u, v in users.items():
+        pw = v.get("pass", "") if isinstance(v, dict) else v
+        if not u or not isinstance(pw, str) or not pw:
+            raise SystemExit(f"auth-file 帳號 {u!r} 密碼不能為空")
+        flat[str(u)] = pw
+    return flat
 
 
 def check_auth(handler: BaseHTTPRequestHandler) -> bool:
@@ -41,8 +61,32 @@ def check_auth(handler: BaseHTTPRequestHandler) -> bool:
         decoded = base64.b64decode(got[6:]).decode("utf-8", "replace")
     except Exception:
         return False
+    if AUTH_USERS:
+        # 多人：帳號對密碼，錯帳號也 401（不透露哪半錯）
+        user, sep, pw = decoded.partition(":")
+        if not sep:
+            return False
+        want = AUTH_USERS.get(user)
+        if want is None:
+            return False
+        return hmac.compare_digest(pw, want)
     want = f"{ARGS.user}:{ARGS.password}"
     return hmac.compare_digest(decoded, want)
+
+
+def auth_user(handler: BaseHTTPRequestHandler) -> str:
+    """當次請求的帳號（多人模式做目錄隔離；單人回 ''；no-auth 回 ''）。"""
+    if not AUTH_USERS or ARGS.no_auth:
+        return ""
+    got = handler.headers.get("Authorization", "")
+    try:
+        decoded = base64.b64decode(got[6:]).decode("utf-8", "replace")
+    except Exception:
+        return ""
+    user, _, _ = decoded.partition(":")
+    # 帳號只允許安全字元，防目錄逃逸
+    safe = "".join(c for c in user if c.isalnum() or c in ("-", "_", "."))
+    return safe if safe == user and user else ""
 
 
 def send_401(handler: BaseHTTPRequestHandler):
@@ -54,16 +98,73 @@ def send_401(handler: BaseHTTPRequestHandler):
     handler.wfile.write(body)
 
 
-def fs_path(url_path: str) -> str:
+def user_root(handler: BaseHTTPRequestHandler) -> str:
+    """當次請求的根目錄（多人＝<dir>/<user>/ 自動建；單人＝<dir>）。"""
+    u = auth_user(handler)
+    if not u:
+        return ARGS.dir
+    root = os.path.join(ARGS.dir, u)
+    try:
+        os.makedirs(root, exist_ok=True)
+    except OSError:
+        pass
+    return root
+
+
+def fs_path(url_path: str, root: str = "") -> str:
+    base = root or ARGS.dir
     rel = urllib.parse.unquote(url_path)
     rel = posixpath.normpath(rel).lstrip("/")
     if rel in ("", "."):
-        return ARGS.dir
-    # 防穿越：normpath 後仍限 dir 內
-    full = os.path.join(ARGS.dir, rel)
-    if os.path.commonpath([os.path.abspath(full), os.path.abspath(ARGS.dir)]) != os.path.abspath(ARGS.dir):
-        return ARGS.dir
+        return base
+    # 防穿越：normpath 後仍限 base 內
+    full = os.path.join(base, rel)
+    if os.path.commonpath([os.path.abspath(full), os.path.abspath(base)]) != os.path.abspath(base):
+        return base
     return full
+
+
+# SYNC2-Q6：伺服器端備用（上傳一個留幾個，不是一蓋就沒）＋空檔拒收
+HISTORY_KEEP = 5
+MIN_PUT_SIZE = 20 * 1024  # 遠小於正常容器（22MB 級）；擋空 PUT／半截傳輸
+
+
+def payload_ok(path: str) -> bool:
+    """PUT 檔魔數＋下限驗：TENOC 容器或 SQLite 才收."""
+    try:
+        if os.path.getsize(path) < MIN_PUT_SIZE:
+            return False
+        with open(path, "rb") as f:
+            head = f.read(16)
+        return head.startswith(b"TENOC") or head.startswith(b"SQLite format 3")
+    except OSError:
+        return False
+
+
+def rotate_history(fp: str) -> None:
+    """覆蓋前把舊版拷一份進 .history（只留最近 HISTORY_KEEP 個；失敗靜默）。"""
+    try:
+        if not os.path.isfile(fp):
+            return
+        hist = os.path.join(os.path.dirname(fp) or ARGS.dir, ".history")
+        os.makedirs(hist, exist_ok=True)
+        ts = int(datetime.now(timezone.utc).timestamp())
+        base = os.path.basename(fp)
+        dst = os.path.join(hist, f"{base}.{ts}")
+        import shutil
+        shutil.copy2(fp, dst)
+        # prune：同 basename 只留最新 K 個
+        cands = sorted(
+            (os.path.join(hist, n) for n in os.listdir(hist) if n.startswith(base + ".")),
+            key=lambda p: os.path.getmtime(p),
+        )
+        for old in cands[:-HISTORY_KEEP]:
+            try:
+                os.unlink(old)
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 
 def http_date(ts: float) -> str:
@@ -270,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
         depth = self.headers.get("Depth", "1")
         upath = urllib.parse.urlparse(self.path).path or "/"
-        fp = fs_path(upath)
+        fp = fs_path(upath, user_root(self))
         if not os.path.exists(fp):
             self.send_error(404, "not found")
             return
@@ -284,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_MKCOL(self):
         if not self._guard():
             return
-        fp = fs_path(urllib.parse.urlparse(self.path).path or "/")
+        fp = fs_path(urllib.parse.urlparse(self.path).path or "/", user_root(self))
         if os.path.exists(fp):
             self.send_error(405, "exists")
             return
@@ -299,7 +400,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_file(self, head_only: bool):
         if not self._guard():
             return
-        fp = fs_path(urllib.parse.urlparse(self.path).path or "/")
+        fp = fs_path(urllib.parse.urlparse(self.path).path or "/", user_root(self))
         if os.path.isdir(fp):
             # 目錄：回 dashboard（檔名＋大小＋上傳時間＋上傳鈕；WebDAV 語義不動）
             try:
@@ -355,8 +456,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         if not self._guard():
             return
-        fp = fs_path(urllib.parse.urlparse(self.path).path or "/")
-        if fp == ARGS.dir or fp.endswith("/"):
+        root = user_root(self)
+        fp = fs_path(urllib.parse.urlparse(self.path).path or "/", root)
+        if fp == root or fp.endswith("/"):
             self.send_error(405, "use file path")
             return
         try:
@@ -367,9 +469,22 @@ class Handler(BaseHTTPRequestHandler):
         if length > 512 * 1024 * 1024:
             self.send_error(413, "too large")
             return
+        if length < MIN_PUT_SIZE:
+            # 空／半截 PUT 直接拒收，連 .part 都不寫（Q6：空的上傳不到，蓋不掉好檔）
+            try:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+            except OSError:
+                pass
+            self.send_error(422, "too small: refuse empty/truncated upload")
+            return
         existed = os.path.exists(fp)
         try:
-            os.makedirs(os.path.dirname(fp) or ARGS.dir, exist_ok=True)
+            os.makedirs(os.path.dirname(fp) or root, exist_ok=True)
             remaining = length
             with open(fp + ".part", "wb") as f:
                 while remaining > 0:
@@ -378,6 +493,17 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     f.write(chunk)
                     remaining -= len(chunk)
+            # 魔數驗不過＝壞檔：刪 .part，原檔一字不動（Q6）
+            if not payload_ok(fp + ".part"):
+                try:
+                    os.unlink(fp + ".part")
+                except OSError:
+                    pass
+                self.send_error(422, "bad payload: not TENOC/SQLite")
+                return
+            # 先留備用再覆蓋（Q6：上傳一個留幾個）
+            if existed:
+                rotate_history(fp)
             os.replace(fp + ".part", fp)
             self.send_response(204 if existed else 201)
             self.send_header("Content-Length", "0")
@@ -392,8 +518,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not self._guard():
             return
-        fp = fs_path(urllib.parse.urlparse(self.path).path or "/")
-        if not os.path.exists(fp) or fp == ARGS.dir:
+        root = user_root(self)
+        fp = fs_path(urllib.parse.urlparse(self.path).path or "/", root)
+        if not os.path.exists(fp) or fp == root:
             self.send_error(404, "not found")
             return
         try:
@@ -408,23 +535,64 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(500, str(e))
 
 
+def local_ips() -> list:
+    """搬家免改碼：啟動時動態抓本機 LAN / Tailscale IP，只為顯示用（不影響綁定）。"""
+    import socket
+    ips = []
+    # ① UDP 探針：不發包，只問 kernel 出去會走哪個 src IP（Termux / Linux 通用）
+    for target in ("192.168.50.1", "8.8.8.8"):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(1)
+            s.connect((target, 80))
+            ip = s.getsockname()[0]
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+            s.close()
+        except OSError:
+            pass
+    # ② getaddrinfo 補漏（hostname 綁多 IP 的機器）
+    try:
+        for _fam, _typ, _pr, _cn, sockaddr in socket.getaddrinfo(
+            socket.gethostname(), None, socket.AF_INET
+        ):
+            ip = sockaddr[0]
+            if ip and not ip.startswith("127.") and ip not in ips:
+                ips.append(ip)
+    except OSError:
+        pass
+    return ips
+
+
 def main():
     global ARGS
     ap = argparse.ArgumentParser(description="Teno 本地雲 WebDAV server")
     ap.add_argument("--dir", default=os.path.expanduser("~/teno-webdav"))
     ap.add_argument("--port", type=int, default=8080)
+    ap.add_argument("--host", default="0.0.0.0", help="綁哪個網卡（預設 0.0.0.0＝全部網卡都聽，LAN＋Tailscale 才進得來）")
     ap.add_argument("--user", default="teno")
     ap.add_argument("--password", default="")
     ap.add_argument("--no-auth", action="store_true", help="關閉認證（僅 LAN 測試用）")
+    ap.add_argument("--auth-file", default="", help="多人模式：JSON 帳號檔 {\"users\": {\"帳號\": \"密碼\"}}，有表＝每人一目錄")
     ARGS = ap.parse_args()
+    global AUTH_USERS
+    if ARGS.auth_file:
+        AUTH_USERS = load_auth_file(ARGS.auth_file)
     os.makedirs(ARGS.dir, exist_ok=True)
-    if not ARGS.no_auth and not ARGS.password:
-        ap.error("--password 不能為空（或用 --no-auth 明示裸奔）")
-    srv = ThreadingHTTPServer(("0.0.0.0", ARGS.port), Handler)
-    mode = "無認證（LAN 測試）" if ARGS.no_auth else f"帳號 {ARGS.user}"
-    print(f"✅ teno-webdav listening on 0.0.0.0:{ARGS.port} dir={ARGS.dir} {mode}", flush=True)
-    print("   LAN:  http://192.168.50.69:%d" % ARGS.port, flush=True)
-    print("   Tailscale: http://100.105.166.123:%d（手機走這個也通）" % ARGS.port, flush=True)
+    if not ARGS.no_auth and not ARGS.password and not AUTH_USERS:
+        ap.error("--password 不能為空（或用 --no-auth 明示裸奔，或 --auth-file 走多人）")
+    srv = ThreadingHTTPServer((ARGS.host, ARGS.port), Handler)
+    if ARGS.no_auth:
+        mode = "無認證（LAN 測試）"
+    elif AUTH_USERS:
+        mode = f"多人模式 {len(AUTH_USERS)} 人（每人一目錄）"
+    else:
+        mode = f"帳號 {ARGS.user}"
+    print(f"✅ teno-webdav listening on {ARGS.host}:{ARGS.port} dir={ARGS.dir} {mode}", flush=True)
+    for ip in local_ips():
+        print(f"   http://{ip}:{ARGS.port}", flush=True)
+    if not local_ips():
+        print(f"   （抓不到 LAN IP，用 http://<本機IP>:{ARGS.port} 連）", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

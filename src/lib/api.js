@@ -169,6 +169,22 @@ export const webdavDownload = (force) =>
 
 export const webdavLogout = () =>
   invoke('webdav_logout')
+
+// ─── 內嵌本地雲（WEBDAV-EMBED1：桌機跟著 Teno 起；手機走 Termux 獨立版）───
+export const webdavServerGetConfig = () =>
+  invoke('webdav_server_get_config')
+
+export const webdavServerSaveConfig = (port, username, password, autostart) =>
+  invoke('webdav_server_save_config', { port, username, password, autostart })
+
+export const webdavServerStart = () =>
+  invoke('webdav_server_start')
+
+export const webdavServerStop = () =>
+  invoke('webdav_server_stop')
+
+export const webdavServerStatus = () =>
+  invoke('webdav_server_status')
 export const driveSaveCreds = (clientId, clientSecret) =>
   invoke('drive_save_creds', { clientId, clientSecret })
 

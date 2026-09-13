@@ -8,6 +8,7 @@ mod tts_android;
 mod icon_android;
 mod drive_sync;
 mod webdav_sync;
+mod webdav_serve;
 mod apkg;
 
 struct PiperAudio {
@@ -2660,7 +2661,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_logout, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, apkg::inspect_apkg_dialog, apkg::get_apkg_media])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {
@@ -2696,6 +2697,8 @@ pub fn run() {
                     log::error!("無法初始化音訊輸出，TTS 將無法播放");
                 }
             }
+            // WEBDAV-EMBED1：跟隨啟動（autostart 有開才起；Android 內部直接 no-op）
+            webdav_serve::maybe_autostart(&app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
