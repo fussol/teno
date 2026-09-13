@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Teno 本地雲 WebDAV server（零依賴，stdlib only）.
 
+ canonical：~/teno-webdav-app/server.py（獨立 App，Teno 附屬）
+ 本檔是鏡像，harness（tools/verify-webdav1.mjs）用，不 hand-edit；
+ 改功能請改 canonical 那支再 cp 回來。
+
 跑法：
   python3 scripts/webdav-server.py --dir ~/teno-webdav --port 8080 --user teno --pass <密碼>
   或 ./scripts/webdav-serve.sh [port] [user] [pass]
@@ -64,6 +68,135 @@ def fs_path(url_path: str) -> str:
 
 def http_date(ts: float) -> str:
     return email.utils.formatdate(ts, usegmt=True)
+
+
+def fmt_size(n: int) -> str:
+    try:
+        n = int(n)
+    except (ValueError, TypeError):
+        return '—'
+    if n < 1024:
+        return f'{n} B'
+    if n < 1024 * 1024:
+        return f'{n / 1024:.1f} KB'
+    if n < 1024 * 1024 * 1024:
+        return f'{n / 1024 / 1024:.1f} MB'
+    return f'{n / 1024 / 1024 / 1024:.2f} GB'
+
+
+def fmt_time(ts: float) -> str:
+    try:
+        return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, OSError, OverflowError):
+        return '—'
+
+
+def dashboard_html(files: list, total_size: int) -> bytes:
+    rows = []
+    for f in files:
+        name = f['name']
+        href = urllib.parse.quote(name) + ('/' if f['isdir'] else '')
+        dl = (f'<a href="{href}"'
+              + ('' if f['isdir'] else ' download') + '>下載</a>'
+              ) if not f['isdir'] else f'<a href="{href}">開啟</a>'
+        rows.append(
+            '<tr>'
+            f'<td class="name">{xml_escape(name)}{" /" if f["isdir"] else ""}</td>'
+            f'<td class="num">{fmt_size(f["size"])}</td>'
+            f'<td class="num">{fmt_time(f["mtime"])}</td>'
+            f'<td class="ops">{dl} '
+            f'<button data-del="{xml_escape(name)}">刪除</button></td>'
+            '</tr>')
+    body_rows = '\n'.join(rows) if rows else \
+        '<tr><td colspan="4" class="empty">空間是空的 — 從下面上傳第一個檔吧</td></tr>'
+    html = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>teno-webdav 本地雲</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:system-ui,'Noto Sans TC',sans-serif;background:#0b0911;color:#b9b2cc;line-height:1.6;padding:24px}}
+.wrap{{max-width:860px;margin:0 auto}}
+h1{{font-size:20px;color:#f3eefb;margin-bottom:4px}}
+.sub{{font-size:13px;color:#837b9c;margin-bottom:16px}}
+.sub b{{color:#b69dff}}
+.card{{background:#14111c;border:1px solid rgba(185,178,204,.13);border-radius:16px;padding:20px;margin-bottom:16px}}
+table{{width:100%;border-collapse:collapse;font-size:14px}}
+th{{text-align:left;font-size:12px;color:#837b9c;font-weight:600;padding:8px 10px;border-bottom:1px solid rgba(185,178,204,.13)}}
+td{{padding:10px;border-bottom:1px solid rgba(185,178,204,.07)}}
+tr:last-child td{{border-bottom:none}}
+td.name{{color:#f3eefb;font-weight:600;word-break:break-all}}
+td.num{{white-space:nowrap;color:#b9b2cc;font-variant-numeric:tabular-nums}}
+td.ops{{white-space:nowrap}}
+td.empty{{text-align:center;color:#837b9c;padding:24px 10px}}
+a{{color:#b69dff;text-decoration:none}}
+a:hover{{text-decoration:underline}}
+button{{border:1px solid rgba(185,178,204,.2);background:#1c1825;color:#f3eefb;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer}}
+button:hover{{border-color:#b69dff}}
+button.danger{{color:#f88a8a}}
+.uprow{{display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
+#status{{font-size:13px;color:#5ed98f;min-height:20px;margin-top:10px}}
+input[type=file]{{font-size:13px;color:#b9b2cc;max-width:100%}}
+.foot{{font-size:12px;color:#57506e;text-align:center;margin-top:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>📦 teno-webdav 本地雲</h1>
+<div class="sub"><b>{len(files)}</b> 個檔案 · 共 <b>{fmt_size(total_size)}</b></div>
+<div class="card">
+<table>
+<thead><tr><th>檔名</th><th>大小</th><th>上傳 / 修改時間</th><th>操作</th></tr></thead>
+<tbody>{body_rows}</tbody>
+</table>
+</div>
+<div class="card">
+<div class="uprow">
+<input type="file" id="up" multiple>
+<button id="upBtn">上傳</button>
+</div>
+<div id="status"></div>
+</div>
+<div class="foot">Teno 本地雲 · 同 LAN / Tailscale 自建空間 · stdlib only</div>
+</div>
+<script>
+const status = document.getElementById('status');
+const say = (t, ok=true) => {{ status.textContent = t; status.style.color = ok ? '#5ed98f' : '#f88a8a'; }};
+document.getElementById('upBtn').addEventListener('click', async () => {{
+  const files = document.getElementById('up').files;
+  if (!files.length) {{ say('請先選擇檔案', false); return; }}
+  for (const f of files) {{
+    say('上傳中：' + f.name + ' …');
+    try {{
+      const r = await fetch('/' + encodeURIComponent(f.name), {{ method: 'PUT', body: f }});
+      if (!r.ok && r.status !== 201 && r.status !== 204) throw new Error('HTTP ' + r.status);
+    }} catch (e) {{
+      say('上傳失敗：' + f.name + '（' + e.message + '）', false);
+      return;
+    }}
+  }}
+  say('上傳完成，重新整理…');
+  setTimeout(() => location.reload(), 500);
+}});
+document.querySelectorAll('[data-del]').forEach(btn => {{
+  btn.addEventListener('click', async () => {{
+    const name = btn.dataset.del;
+    if (!confirm('確定刪除「' + name + '」？')) return;
+    try {{
+      const r = await fetch('/' + encodeURIComponent(name), {{ method: 'DELETE' }});
+      if (!r.ok && r.status !== 204) throw new Error('HTTP ' + r.status);
+      location.reload();
+    }} catch (e) {{
+      say('刪除失敗：' + e.message, false);
+    }}
+  }});
+}});
+</script>
+</body>
+</html>"""
+    return html.encode('utf-8')
 
 
 def propfind_xml(url_path: str, fspath: str, depth: str) -> bytes:
@@ -168,16 +301,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         fp = fs_path(urllib.parse.urlparse(self.path).path or "/")
         if os.path.isdir(fp):
-            # 目錄：回最小列表（方便瀏覽器看空間內容）
+            # 目錄：回 dashboard（檔名＋大小＋上傳時間＋上傳鈕；WebDAV 語義不動）
             try:
                 names = sorted(n for n in os.listdir(fp) if not n.startswith("."))
             except OSError as e:
                 self.send_error(403, str(e))
                 return
-            rows = "".join(
-                f'<li><a href="{urllib.parse.quote(n)}">{xml_escape(n)}</a>'
-                f' ({os.path.getsize(os.path.join(fp, n))}B)</li>' for n in names)
-            body = f"<html><body><h1>teno-webdav</h1><ul>{rows}</ul></body></html>".encode()
+            files, total = [], 0
+            for n in names:
+                p = os.path.join(fp, n)
+                try:
+                    st = os.stat(p)
+                    isdir = os.path.isdir(p)
+                    sz = 0 if isdir else st.st_size
+                    total += sz
+                    files.append({'name': n, 'size': sz,
+                                  'mtime': st.st_mtime, 'isdir': isdir})
+                except OSError:
+                    continue
+            body = dashboard_html(files, total)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

@@ -487,7 +487,7 @@ function renderSettingsContent(s) {
           <div class="config-field">
             <div class="config-field-info">
               <div class="config-field-label">${icon('upload')} 同步</div>
-              <div class="config-field-hint">整顆 teno.db 上傳／下載；每次上傳先對帳（本地大小＋時間 vs 遠端原大小＋時間）</div>
+              <div class="config-field-hint">整顆 teno.db 上傳／下載；以上傳前本地時間、下載前遠端時間為版本，舊蓋新會先擋下問過才放行</div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
               <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳同步</button>
@@ -1360,8 +1360,22 @@ export function onMount(s) {
       // D3 同源：WAL checkpoint → 主檔完整後再上傳（webdav_upload 只 fs::read 主檔）
       const { checkpoint } = await import('../lib/db.js');
       await checkpoint();
-      const result = await webdavUpload();
-      toast(result, 'toast-success');
+      try {
+        const result = await webdavUpload();
+        toast(result, 'toast-success');
+      } catch (e) {
+        // WEBDAV-GUARD1：遠端比較新→擋下，問過才硬蓋（舊蓋新防呆）
+        const msg = String(e);
+        if (msg.includes('REMOTE_NEWER:') && confirm(msg.replace('REMOTE_NEWER:', '') + '\n\n確定要用本地舊版覆蓋遠端新版？')) {
+          const result = await webdavUpload(true);
+          toast(result + '（已強制覆蓋）', 'toast-success');
+        } else if (!msg.includes('REMOTE_NEWER:')) {
+          throw e;
+        } else {
+          toast('已取消上傳（遠端較新，本地未動）', '');
+          return;
+        }
+      }
       const _d = await import('../lib/db.js');
       await _d.addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
       updateWebdavUI();
@@ -1384,8 +1398,23 @@ export function onMount(s) {
       await backupDb();
       await closeDB();
       await closeAppLog();
-      const result = await webdavDownload();
-      toast(result, 'toast-success');
+      try {
+        const result = await webdavDownload();
+        toast(result, 'toast-success');
+      } catch (e) {
+        // WEBDAV-GUARD1：本地比較新→擋下，問過才硬蓋（舊蓋新防呆）
+        const msg = String(e);
+        if (msg.includes('LOCAL_NEWER:') && confirm(msg.replace('LOCAL_NEWER:', '') + '\n\n確定要用遠端舊版覆蓋本地新版？')) {
+          const result = await webdavDownload(true);
+          toast(result + '（已強制覆蓋）', 'toast-success');
+        } else if (!msg.includes('LOCAL_NEWER:')) {
+          throw e;
+        } else {
+          toast('已取消下載（本地較新，本地未動）', '');
+          try { await initDB(2); } catch (_) {}
+          return;
+        }
+      }
       setTimeout(() => location.reload(), 500);
     } catch (e) {
       toast(String(e), 'toast-error');

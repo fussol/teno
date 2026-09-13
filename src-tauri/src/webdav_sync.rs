@@ -2,7 +2,9 @@
 //!
 //! 設計對齊 drive_sync.rs：
 //! - 帳密只輸一次，存 app_config_dir/webdav_config.json（0600），之後上傳下載自動帶
-//! - 每次上傳先 HEAD 遠端做對帳（遠端大小＋時間 vs 本地大小＋時間），訊息一次講清
+//! - 版本＝最後更改時間（本地 mtime vs 遠端 Last-Modified，30s 容忍時鐘差）
+//! - WEBDAV-GUARD1：上傳時遠端新→擋（REMOTE_NEWER），下載時本地新→擋（LOCAL_NEWER）；
+//!   force=true 才硬蓋；自動備份一律不帶 force，只跳過不炸
 //! - 下載走同款守門（TENOC 容器／裸 SQLite 雙態放行，其餘零寫盤）＋ tmp＋清 WAL/SHM＋rename
 //! - ureq 2 無 base64 依賴，Basic Auth 自帶最小 base64_encode（標準字母表）
 //! - HEAD 404＝伺服器可達＋認證 OK＋遠端尚無檔（測試連線視為成功）
@@ -143,15 +145,72 @@ fn fmt_mb(bytes: u64) -> String {
 fn local_meta(app_handle: &tauri::AppHandle) -> Result<(u64, String), String> {
     let p = db_path(app_handle);
     let m = std::fs::metadata(&p).map_err(|e| format!("讀取本機資料庫失敗：{e}"))?;
-    let mtime = m
+    let epoch = m
         .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| {
-            chrono_naive(d.as_secs())
-        })
+        .map(|d| d.as_secs());
+    let mtime = epoch
+        .map(chrono_naive)
         .unwrap_or_else(|| "（未知時間）".into());
     Ok((m.len(), mtime))
+}
+
+/// 本機 mtime epoch（版本比對用；讀不到＝None＝不擋）
+fn local_epoch(app_handle: &tauri::AppHandle) -> Option<u64> {
+    std::fs::metadata(db_path(app_handle))
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs())
+}
+
+/// HTTP Last-Modified → epoch（版本比對用；解析失敗＝None＝不擋）
+/// 形如 "Sun, 13 Sep 2026 11:39:56 GMT"（email.utils.formatdate 口徑）
+fn parse_http_date(s: &str) -> Option<u64> {
+    // ① RFC2822（+0000 尾）② GMT 字面（python email.utils 口徑）③ 寬鬆 %Z
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc2822(s) {
+        return Some(dt.timestamp() as u64);
+    }
+    if let Ok(naive) =
+        chrono::NaiveDateTime::parse_from_str(s, "%a, %d %b %Y %H:%M:%S GMT")
+    {
+        return Some(naive.and_utc().timestamp() as u64);
+    }
+    None
+}
+
+/// 版本守門容忍（秒）：兩邊時鐘差＋FS 粒度，30s 內算同版不擋
+const GUARD_TOL_SECS: u64 = 30;
+
+/// 上傳守門：遠端比本地新（超容忍）→ Some(錯誤訊息)，否則 None（放行）
+fn guard_upload(local: Option<u64>, remote_mtime: Option<&str>) -> Option<String> {
+    let (l, r) = (local?, parse_http_date(remote_mtime?)?);
+    if r > l.saturating_add(GUARD_TOL_SECS) {
+        Some(format!(
+            "REMOTE_NEWER:遠端比較新（遠端 {}，本地 {}），上傳會蓋掉新資料。確定要用舊的覆蓋新的？",
+            chrono_naive(r),
+            chrono_naive(l),
+        ))
+    } else {
+        None
+    }
+}
+
+/// 下載守門：本地比遠端新（超容忍）→ Some(錯誤訊息)，否則 None（放行）
+fn guard_download(local: Option<u64>, remote_mtime: Option<&str>) -> Option<String> {
+    let (l, r) = (local?, parse_http_date(remote_mtime?)?);
+    if l > r.saturating_add(GUARD_TOL_SECS) {
+        Some(format!(
+            "LOCAL_NEWER:本地比較新（本地 {}，遠端 {}），下載會蓋掉新資料。確定要用舊的覆蓋新的？",
+            chrono_naive(l),
+            chrono_naive(r),
+        ))
+    } else {
+        None
+    }
 }
 
 /// epoch 秒→本地可讀時間（不拉 chrono 依賴；UTC+8 固定偏移顯示）
@@ -233,13 +292,25 @@ pub async fn webdav_test(app_handle: tauri::AppHandle) -> Result<String, String>
 }
 
 #[tauri::command]
-pub async fn webdav_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_upload(
+    app_handle: tauri::AppHandle,
+    force: Option<bool>,
+) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let file = file_url(&cfg)?;
     let auth = format!("Basic {}", auth_header(&cfg));
-    // 對帳：先讀遠端＋本地（遠端讀失敗不擋上傳，標「未知」照傳）
+    // 對帳＋版本守門：先讀遠端＋本地（遠端讀失敗不擋上傳，標「未知」照傳）
     let remote = head_remote(&file, &auth).ok().flatten();
     let (local_len, local_time) = local_meta(&app_handle)?;
+    // WEBDAV-GUARD1：遠端比本地新（超 30s 容忍）→ 擋下，force=true 才硬蓋
+    // （自動備份一律不帶 force，只會跳過不炸；手動可在確認後硬蓋）
+    if !force.unwrap_or(false) {
+        let le = local_epoch(&app_handle);
+        let rm = remote.as_ref().and_then(|m| m.mtime.as_deref());
+        if let Some(msg) = guard_upload(le, rm) {
+            return Err(msg);
+        }
+    }
     let data =
         std::fs::read(db_path(&app_handle)).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
     ureq::put(&file)
@@ -271,7 +342,10 @@ pub async fn webdav_upload(app_handle: tauri::AppHandle) -> Result<String, Strin
 }
 
 #[tauri::command]
-pub async fn webdav_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_download(
+    app_handle: tauri::AppHandle,
+    force: Option<bool>,
+) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let file = file_url(&cfg)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -287,6 +361,15 @@ pub async fn webdav_download(app_handle: tauri::AppHandle) -> Result<String, Str
     let remote_size = resp
         .header("Content-Length")
         .and_then(|v| v.parse::<u64>().ok());
+    // WEBDAV-GUARD1：本地比遠端新（超 30s 容忍）→ 擋下，force=true 才硬蓋
+    // （先比對再寫盤：位元組已在記憶體，但 DB 還沒動，擋下零副作用）
+    if !force.unwrap_or(false) {
+        let le = local_epoch(&app_handle);
+        let rm = resp.header("Last-Modified");
+        if let Some(msg) = guard_download(le, rm) {
+            return Err(msg);
+        }
+    }
     let mut buf: Vec<u8> = Vec::new();
     resp.into_reader()
         .read_to_end(&mut buf)
@@ -345,5 +428,40 @@ mod tests {
         // 2026-09-13 ≈ epoch 1789248000 → 日期應為 2026-09-13（±時區誤差容忍只驗年月）
         let s = chrono_naive(1789248000);
         assert!(s.starts_with("2026-09-1"), "{s}");
+    }
+
+    #[test]
+    fn guard_http_date_roundtrip() {
+        // python email.utils.formatdate 口徑（server.py http_date 同源）
+        assert_eq!(parse_http_date("Sun, 13 Sep 2026 11:39:56 GMT"), Some(1789299596));
+        assert_eq!(
+            parse_http_date("Sun, 13 Sep 2026 11:39:56 +0000"),
+            Some(1789299596)
+        );
+        assert_eq!(parse_http_date("garbage"), None);
+        assert_eq!(parse_http_date(""), None);
+    }
+
+    #[test]
+    fn guard_blocks_stale_overwrite() {
+        let local = Some(1_000_000u64);
+        let remote_new = Some("Sun, 13 Sep 2026 11:39:56 GMT"); // 遠大於 local
+        let remote_old = Some("Thu, 01 Jan 1970 00:00:00 GMT"); // epoch 0
+        // 上傳：遠端新→擋；遠端舊→放
+        assert!(guard_upload(local, remote_new).unwrap().starts_with("REMOTE_NEWER:"));
+        assert!(guard_upload(local, remote_old).is_none());
+        // 下載：本地新→擋；本地舊→放
+        assert!(guard_download(local, remote_old).unwrap().starts_with("LOCAL_NEWER:"));
+        assert!(guard_download(local, remote_new).is_none());
+        // 容忍內（±30s）→ 雙向都放
+        let same = Some("Sun, 13 Sep 2026 11:39:56 GMT");
+        let near = parse_http_date(same.unwrap()).map(|r| r + 10);
+        assert!(guard_upload(near, same).is_none());
+        assert!(guard_download(near, same).is_none());
+        // 缺一邊（讀不到／解析失敗）→ 不擋（fail-open，沿用舊行為）
+        assert!(guard_upload(None, remote_new).is_none());
+        assert!(guard_upload(local, None).is_none());
+        assert!(guard_upload(local, Some("nope")).is_none());
+        assert!(guard_download(None, remote_old).is_none());
     }
 }

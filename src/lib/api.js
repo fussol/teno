@@ -161,11 +161,11 @@ export const webdavStatus = () =>
 export const webdavTest = () =>
   invoke('webdav_test')
 
-export const webdavUpload = () =>
-  invoke('webdav_upload')
+export const webdavUpload = (force) =>
+  invoke('webdav_upload', force ? { force: true } : {})
 
-export const webdavDownload = () =>
-  invoke('webdav_download')
+export const webdavDownload = (force) =>
+  invoke('webdav_download', force ? { force: true } : {})
 
 export const webdavLogout = () =>
   invoke('webdav_logout')
