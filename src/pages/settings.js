@@ -313,20 +313,35 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
-    ${s.state.devMode ? `
-    <!-- 操作日誌 -->
+    <!-- 日誌分類（LOG-SCOPE1：源頭分開存；error 強制保留，開關擋不住它） -->
     <div class="section">
-      <div class="section-title">${icon('list')} 操作日誌</div>
+      <div class="section-title">${icon('list')} 日誌</div>
       <div class="config-section">
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">${icon('database')} 保留天數</div>
+            <div class="config-field-hint">error 級別固定保留 90 天，不受此數影響；0＝只留 error</div>
           </div>
           <input type="number" id="logRetentionInput" min="0" max="365" value="${s.state.logRetentionDays ?? 14}" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px;text-align:center;font-family:var(--mono)">
         </div>
+        <div class="config-field-info" style="margin:var(--s2) 0 6px">
+          <div class="config-field-label">記錄哪些分類（關掉＝不再寫入，已存的不刪）</div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${[['study', '學習'], ['sync', '同步'], ['ocr', '辨識'], ['system', '系統'], ['misc', '其他']].map(([sc, label]) => `
+            <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);border:1px solid var(--border);border-radius:100px;padding:3px 10px;cursor:pointer">
+              <input type="checkbox" data-logscope="${sc}" ${(s.state.logScopes || {})[sc] !== false ? 'checked' : ''}>${label}
+            </label>`).join('')}
+        </div>
+        <div class="config-field" style="margin-top:var(--s2)">
+          <div class="config-field-info">
+            <div class="config-field-label">除錯鏡像（console 轉發＋teno-monitor.log）</div>
+            <div class="config-field-hint">關了只剩 error 會寫；除錯時再開</div>
+          </div>
+          <button class="switch-btn ${s.state.logMirror !== false ? 'on' : ''}" id="logMirrorToggle" style="flex-shrink:0" aria-pressed="${s.state.logMirror !== false}">${s.state.logMirror !== false ? '開' : '關'}</button>
+        </div>
       </div>
     </div>
-    ` : ''}
 
     <!-- Anki Settings (per-mode) -->
     <div class="section">
@@ -1234,8 +1249,27 @@ export function onMount(s) {
     const val = parseInt(document.getElementById('logRetentionInput')?.value);
     if (Number.isFinite(val) && val >= 0) {
       await s.actions.setLogRetention(val);
-      toast(`${val === 0 ? '操作日誌已停用' : `操作日誌保留 ${val} 天`}`, 'toast-success');
+      toast(`${val === 0 ? '操作日誌已停用（僅保留 error）' : `操作日誌保留 ${val} 天（error 固定 90 天）`}`, 'toast-success');
     }
+  });
+
+  // LOG-SCOPE1：分類開關（關掉只擋新寫入，已存的不動；error 照寫）
+  document.querySelectorAll('[data-logscope]')?.forEach(cb => {
+    cb.addEventListener('change', async () => {
+      await s.actions.setLogScope(cb.dataset.logscope, cb.checked);
+      toast(`日誌「${cb.dataset.logscope}」${cb.checked ? '開始記錄' : '已暫停記錄（舊的不刪）'}`, 'toast-success');
+    });
+  });
+
+  // LOG-SCOPE1：除錯鏡像開關
+  document.getElementById('logMirrorToggle')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    await s.actions.setLogMirror(on);
+    btn.className = `switch-btn ${on ? 'on' : ''}`;
+    btn.setAttribute('aria-pressed', String(on));
+    btn.textContent = on ? '開' : '關';
+    toast(on ? '除錯鏡像已開啟' : '除錯鏡像已關閉（僅 error 保留）', 'toast-success');
   });
 
   // ── WebDAV Sync（帳密存一次，之後自動帶；上傳自動對帳）──

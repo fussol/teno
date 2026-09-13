@@ -105,6 +105,8 @@ export function createStore() {
     ankiSettingsSpell: { ...DEFAULT_ANKI },
     simParams: { ...DEFAULT_SIM },
     logRetentionDays: 14,
+    logScopes: { study: true, sync: true, ocr: true, system: true, misc: true },  // LOG-SCOPE1：各分類開關（error 無視開關強制留）
+    logMirror: true,            // LOG-SCOPE1：console 轉發＋teno-monitor.log 鏡像開關（預設開＝沿用舊行為）
     devMode: false,           // developer mode (tap version 10× in Settings → unlock CLI tools)
     backupIntervalH: 24,       // 自動備份間隔（小時）；devMode 可調，預設一天一次
     backupKeepMax: 7,         // 最多保留備份個數；devMode 可調，超出刪最舊
@@ -304,6 +306,8 @@ export function createStore() {
             fieldVisExam: await db.getSetting('fieldVisExam'),
             colorPalette: await db.getSetting('colorPalette'),
             logRetentionDays: await db.getSetting('logRetentionDays'),
+            logScopes: await db.getSetting('logScopes'),
+            logMirror: await db.getSetting('logMirror'),
             devMode: await db.getSetting('devMode'),
             backupIntervalH: await db.getSetting('backupIntervalH'),
             backupKeepMax: await db.getSetting('backupKeepMax'),
@@ -478,6 +482,18 @@ export function createStore() {
     // ── 操作日誌: 保留天數 (0 = 不記錄, 預設 14) ──
     const logDays = parseInt(settings.logRetentionDays, 10);
     state.logRetentionDays = Number.isFinite(logDays) && logDays >= 0 ? logDays : 14;
+    // LOG-SCOPE1：分類開關（缺鍵視為開；舊用戶無此設定＝全開，行為不變）
+    if (settings.logScopes && typeof settings.logScopes === 'object' && !Array.isArray(settings.logScopes)) {
+      for (const sc of ['study', 'sync', 'ocr', 'system', 'misc']) {
+        if (settings.logScopes[sc] !== undefined) {
+          state.logScopes[sc] = settings.logScopes[sc] !== false && settings.logScopes[sc] !== 0 && settings.logScopes[sc] !== '0';
+        }
+      }
+    }
+    // LOG-SCOPE1：鏡像開關（舊用戶無此設定＝開，沿用舊行為）
+    if (settings.logMirror !== null && settings.logMirror !== undefined) {
+      state.logMirror = settings.logMirror !== false && settings.logMirror !== 0 && settings.logMirror !== '0';
+    }
     state.devMode = !!settings.devMode;
     // 黑名單：預設 ⊎ db 自訂（小寫去重）。null → 全預設。
     state.blacklist = Array.from(new Set([
@@ -498,8 +514,10 @@ export function createStore() {
     state.uiHints = settings.uiHints === true;
     document.body.classList.toggle('no-hints', !state.uiHints);
     try {
-      const { initAppLog } = await import('./app-log.js');
+      const { initAppLog, setLogScopes } = await import('./app-log.js');
       initAppLog(state.logRetentionDays);
+      setLogScopes(state.logScopes);
+      if (typeof window !== 'undefined') window.__logMirrorEnabled = state.logMirror !== false;
     } catch (e) { console.warn('[store] initAppLog 失敗:', e); }
     await migrateBuriedAt();      // A5: 老埋卡補 today（buried Set 有、buriedAt 無記錄的舊資料）
     await autoUnburyIfNewDay();   // A5: 啟動即檢查跨日解除（guard 一天一次）
@@ -1128,6 +1146,26 @@ export function createStore() {
         const { setLogRetention } = await import('./app-log.js');
         setLogRetention(state.logRetentionDays);
       } catch (e) { console.warn('[store] setLogRetention app-log error:', e); }
+      notify();
+    },
+
+    /** LOG-SCOPE1：單一分類開關（error 無視開關照寫，由寫入層保證） */
+    async setLogScope(scope, on) {
+      if (!['study', 'sync', 'ocr', 'system', 'misc'].includes(scope)) return;
+      state.logScopes = { ...state.logScopes, [scope]: !!on };
+      try { await db.setSetting('logScopes', state.logScopes); } catch (e) { console.warn('[store] setLogScope setSetting error:', e); }
+      try {
+        const { setLogScopes } = await import('./app-log.js');
+        setLogScopes(state.logScopes);
+      } catch (e) { console.warn('[store] setLogScope app-log error:', e); }
+      notify();
+    },
+
+    /** LOG-SCOPE1：console 轉發＋teno-monitor.log 鏡像開關（關了只剩 error 轉發＋寫庫） */
+    async setLogMirror(on) {
+      state.logMirror = !!on;
+      try { await db.setSetting('logMirror', state.logMirror ? 1 : 0); } catch (e) { console.warn('[store] setLogMirror setSetting error:', e); }
+      if (typeof window !== 'undefined') window.__logMirrorEnabled = state.logMirror;
       notify();
     },
 

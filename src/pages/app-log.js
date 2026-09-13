@@ -13,9 +13,11 @@ let _sims = [];
 let _count = 0;
 let _search = '';
 let _level = '';
+let _scope = '';
 let _loaded = false;
 
 const LEVEL_COLOR = { log: 'var(--text-tertiary)', warn: 'var(--amber)', error: 'var(--red)' };
+const SCOPE_LABEL = { study: '學習', sync: '同步', ocr: '辨識', system: '系統', misc: '其他' };
 const KIND_LABEL = { simulate: '模擬', mature: '目標模擬' };
 
 function fmtTs(ts) {
@@ -53,6 +55,7 @@ function renderLogs(logs) {
     <div style="display:flex;gap:var(--s2);padding:3px 0;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border-subtle, var(--border));align-items:baseline">
       <span style="color:var(--text-tertiary);flex-shrink:0;min-width:150px">${fmtTs(l.ts)}</span>
       <span style="color:${LEVEL_COLOR[l.level] || 'var(--text-tertiary)'};flex-shrink:0;min-width:38px;font-weight:700">${l.level}</span>
+      <span style="flex-shrink:0;font-size:10px;padding:0 6px;border-radius:8px;background:var(--bg-hover);color:var(--text-tertiary)">${SCOPE_LABEL[l.scope] || l.scope || '其他'}</span>
       <span style="color:var(--text-secondary);word-break:break-all">${escapeHtml(l.message)}</span>
     </div>`).join('');
 }
@@ -90,6 +93,14 @@ export function render(s) {
             <option value="log" ${_level === 'log' ? 'selected' : ''}>log</option>
             <option value="warn" ${_level === 'warn' ? 'selected' : ''}>warn</option>
             <option value="error" ${_level === 'error' ? 'selected' : ''}>error</option>
+          </select>
+          <select id="logScope" style="padding:6px 8px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:12px">
+            <option value="">全部分類</option>
+            <option value="study" ${_scope === 'study' ? 'selected' : ''}>學習</option>
+            <option value="sync" ${_scope === 'sync' ? 'selected' : ''}>同步</option>
+            <option value="ocr" ${_scope === 'ocr' ? 'selected' : ''}>辨識</option>
+            <option value="system" ${_scope === 'system' ? 'selected' : ''}>系統</option>
+            <option value="misc" ${_scope === 'misc' ? 'selected' : ''}>其他</option>
           </select>
           <button class="btn btn-sm" id="logRefresh">${icon('refresh')} 重新整理</button>
           ${_logs.length >= PAGE ? '<button class="btn btn-sm" id="logMore">載入更多</button>' : ''}
@@ -175,8 +186,9 @@ export function onMount(s) {
     const myGen = ++_logGen;
     _search = document.getElementById('logSearch')?.value || '';
     _level = document.getElementById('logLevel')?.value || '';
+    _scope = document.getElementById('logScope')?.value || '';
     const [logs, sims, count] = await Promise.all([
-      fetchLogs({ limit: PAGE, level: _level || null, search: _search || null }),
+      fetchLogs({ limit: PAGE, level: _level || null, scope: _scope || null, search: _search || null }),
       fetchSimRuns({ limit: 50 }),
       countLogs(),
     ]);
@@ -188,10 +200,11 @@ export function onMount(s) {
   };
   document.getElementById('logSearch')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') refresh(); });
   document.getElementById('logLevel')?.addEventListener('change', refresh);
+  document.getElementById('logScope')?.addEventListener('change', refresh);
   document.getElementById('logRefresh')?.addEventListener('click', refresh);
   document.getElementById('logMore')?.addEventListener('click', async () => {
     const myGen = ++_logGen;          // load-more 搶最新 gen，使在途 refresh 失效
-    const more = await fetchLogs({ limit: PAGE, offset: _logs.length, level: _level || null, search: _search || null });
+    const more = await fetchLogs({ limit: PAGE, offset: _logs.length, level: _level || null, scope: _scope || null, search: _search || null });
     if (myGen !== _logGen) return;
     _logs = [..._logs, ...more];
     renderInPlace(s);

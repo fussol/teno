@@ -1519,27 +1519,45 @@ fn export_app_log_patch(app_dir: &std::path::Path, cursor: i64) -> Result<Option
     let log_path = app_dir.join("app-log.db");
     if !log_path.exists() { return Ok(None); }
     let conn = rusqlite::Connection::open(&log_path).map_err(|e| format!("開啟操作日誌失敗: {}", e))?;
+    ensure_applog_scope(&conn);
     let mut out = String::new();
     out.push_str("# Teno 日誌增量 patch (app_log delta)\n");
-    out.push_str("# 格式同操作日誌匯出: ISO時間 | level | message；回放用匯入（去重冪等）\n");
+    out.push_str("# 格式同操作日誌匯出: ISO時間 | level | scope | message；回放用匯入（去重冪等）\n");
     let mut max_ts = cursor;
     let mut rows = 0usize;
-    // app_log 段
-    match conn.prepare("SELECT ts, level, message FROM app_log WHERE ts > ? ORDER BY ts ASC") {
+    // app_log 段（LOG-SCOPE1：四段；舊庫無 scope 欄退三段＋misc 補齊）
+    match conn.prepare("SELECT ts, level, scope, message FROM app_log WHERE ts > ? ORDER BY ts ASC") {
         Ok(mut stmt) => {
-            let list: Vec<(i64, String, String)> = stmt.query_map([cursor], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            let list: Vec<(i64, String, String, String)> = stmt.query_map([cursor], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
                 .map_err(|e| format!("讀取 app_log 失敗: {}", e))?
                 .filter_map(|r| r.ok()).collect();
-            for (ts, level, msg) in list {
+            for (ts, level, scope, msg) in list {
                 let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
                     .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
                     .unwrap_or_else(|| ts.to_string());
-                out.push_str(&format!("{} | {} | {}\n", iso, level, msg.replace('\n', "\\n")));
+                out.push_str(&format!("{} | {} | {} | {}\n", iso, level, normalize_scope(&scope), msg.replace('\n', "\\n")));
                 if ts > max_ts { max_ts = ts; }
                 rows += 1;
             }
         }
-        Err(_) => { /* 表尚不存在＝無日誌，視為空 */ }
+        Err(_) => {
+            match conn.prepare("SELECT ts, level, message FROM app_log WHERE ts > ? ORDER BY ts ASC") {
+                Ok(mut stmt3) => {
+                    let list: Vec<(i64, String, String)> = stmt3.query_map([cursor], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                        .map_err(|e| format!("讀取 app_log 失敗: {}", e))?
+                        .filter_map(|r| r.ok()).collect();
+                    for (ts, level, msg) in list {
+                        let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
+                            .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
+                            .unwrap_or_else(|| ts.to_string());
+                        out.push_str(&format!("{} | {} | misc | {}\n", iso, level, msg.replace('\n', "\\n")));
+                        if ts > max_ts { max_ts = ts; }
+                        rows += 1;
+                    }
+                }
+                Err(_) => { /* 表尚不存在＝無日誌，視為空 */ }
+            }
+        }
     }
     // sim_runs 段（與 export_app_log_text 同欄序，回放解析相容）
     match conn.prepare("SELECT ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary FROM sim_runs WHERE ts > ? ORDER BY ts ASC") {
@@ -1911,23 +1929,50 @@ async fn export_db_bundle_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, 
     Ok(data)
 }
 
+/// LOG-SCOPE1: 確保 app_log.scope 欄存在（migration v2 未跑到的路徑：CLI 匯入、
+/// 舊檔重建等）。ALTER 已存在時報錯，呼叫端一律忽略錯誤。
+fn ensure_applog_scope(conn: &rusqlite::Connection) {
+    let _ = conn.execute("ALTER TABLE app_log ADD COLUMN scope TEXT NOT NULL DEFAULT 'misc'", []);
+    let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_app_log_scope ON app_log(scope)", []);
+}
+
+/// scope 正規化（非法值→misc；匯入端與匯出端共用，契約一致）。
+fn normalize_scope(s: &str) -> &str {
+    match s.trim() {
+        "study" | "sync" | "ocr" | "system" | "misc" => s.trim(),
+        _ => "misc",
+    }
+}
+
 #[tauri::command]
 async fn export_app_log_text(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
-    // devMode 限定：app_log + sim_runs 全表 → 文字檔（ts ISO | level | message）。
+    // LOG-SCOPE1：app_log 全表 → 文字檔（ts ISO | level | scope | message）。
     // 直接讀 sqlite 檔（不經 plugin-sql 連線，避免與前端 flush 競態）。
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let log_path = app_dir.join("app-log.db");
     if !log_path.exists() { return Ok("（尚無操作日誌）\n".as_bytes().to_vec()); }
     let conn = rusqlite::Connection::open(&log_path).map_err(|e| format!("開啟操作日誌失敗: {}", e))?;
+    ensure_applog_scope(&conn);
     let mut out = String::new();
     out.push_str("# Teno 操作日誌導出 (app_log)\n");
-    out.push_str("# 格式: ISO時間 | level | message\n");
-    let mut stmt = conn.prepare("SELECT ts, level, message FROM app_log ORDER BY ts ASC")
-        .map_err(|e| format!("讀取 app_log 失敗: {}", e))?;
-    let rows: Vec<(i64, String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .map_err(|e| format!("讀取 app_log 失敗: {}", e))?
-        .filter_map(|r| r.ok()).collect();
-    for (ts, level, msg) in rows {
+    out.push_str("# 格式: ISO時間 | level | scope | message\n");
+    // 舊庫無 scope 欄時退化（三欄 SELECT＋misc 補齊；只讀不寫，不丟訊息）
+    let rows: Vec<(i64, String, String, String)> = (|| {
+        let mut stmt = conn.prepare("SELECT ts, level, scope, message FROM app_log ORDER BY ts ASC")?;
+        let list: Vec<(i64, String, String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .filter_map(|r| r.ok()).collect();
+        Ok::<_, rusqlite::Error>(list)
+    })().unwrap_or_else(|_| {
+        let mut stmt = conn.prepare("SELECT ts, level, message FROM app_log ORDER BY ts ASC")
+            .expect("app_log 表必存在");
+        stmt.query_map([], |r| {
+            let ts: i64 = r.get(0)?;
+            let level: String = r.get(1)?;
+            let msg: String = r.get(2)?;
+            Ok((ts, level, "misc".to_string(), msg))
+        }).map(|rows| rows.filter_map(|r| r.ok()).collect()).unwrap_or_default()
+    });
+    for (ts, level, scope, msg) in rows {
         let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
             .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
             .unwrap_or_else(|| ts.to_string());
@@ -1962,14 +2007,16 @@ async fn export_app_log_text(app_handle: tauri::AppHandle) -> Result<Vec<u8>, St
 }
 
 // ─── 操作日誌文字檔匯入（import_app_log_text；export_app_log_text 的逆操作）───
-// 解析匯出格式（`#`註解＋`ISO | level | message`／`ISO | kind | days | …` 兩段），
+// 解析匯出格式（`#`註解＋新四段 `ISO | level | scope | message`／舊三段
+// `ISO | level | message`（scope 補 misc）／`ISO | kind | days | …` 模擬段），
 // 逐筆併入 app-log.db。語意：
-//  - 去重冪等：app_log 以 (ts, level, message) 判重，sim_runs 以 (ts, kind) 判重；
-//    重跑同一檔新增 0 筆，匯入前不需清空。
+//  - 去重冪等：app_log 以 (ts, level, scope, message) 判重，sim_runs 以 (ts, kind) 判重；
+//    重跑同一檔新增 0 筆，匯入前不需清空。舊三段檔匯入新庫：scope 落 misc。
 //  - 壞行跳過計數，不整單失敗（手改檔常見缺欄／壞時間）。
 //  - 時區：匯出端 chrono::DateTime::from_timestamp＝UTC，解析一律按 UTC，
 //    roundtrip 毫秒精確。message 內的 `\\n` 還原為換行。
-//  - 表不存在先建（空庫／刪檔重建後照吃）。
+//  - 表不存在先建（含 scope 欄；舊庫缺欄先 ALTER 補，舊 rows 全落 misc）。
+//  - 非法 scope 值正規為 misc（寫入端與匯出端同一契約）。
 #[derive(serde::Serialize)]
 struct AppLogImportResult {
     log_added: usize,
@@ -1999,17 +2046,19 @@ fn parse_opt_f64(s: &str) -> Option<f64> {
 
 fn import_app_log_text_into(conn: &mut rusqlite::Connection, text: &str) -> Result<AppLogImportResult, String> {
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS app_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, level TEXT NOT NULL DEFAULT 'log', message TEXT NOT NULL);
+        "CREATE TABLE IF NOT EXISTS app_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, level TEXT NOT NULL DEFAULT 'log', scope TEXT NOT NULL DEFAULT 'misc', message TEXT NOT NULL);
          CREATE INDEX IF NOT EXISTS idx_app_log_ts ON app_log(ts);
+         CREATE INDEX IF NOT EXISTS idx_app_log_scope ON app_log(scope);
          CREATE TABLE IF NOT EXISTS sim_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, kind TEXT NOT NULL, days INTEGER, target_pct REAL, seed INTEGER, from_zero INTEGER DEFAULT 0, total_reviews INTEGER, mature_cards INTEGER, mature_pct REAL, summary TEXT);
          CREATE INDEX IF NOT EXISTS idx_sim_runs_ts ON sim_runs(ts);"
     ).map_err(|e| format!("建表失敗: {}", e))?;
+    ensure_applog_scope(conn);
     let tx = conn.transaction().map_err(|e| format!("開啟交易失敗: {}", e))?;
     let mut res = AppLogImportResult { log_added: 0, log_skipped: 0, sim_added: 0, sim_skipped: 0, bad_lines: 0 };
     {
         let mut ins_log = tx.prepare(
-            "INSERT INTO app_log (ts, level, message) SELECT ?, ?, ?
-             WHERE NOT EXISTS (SELECT 1 FROM app_log WHERE ts = ? AND level = ? AND message = ?)"
+            "INSERT INTO app_log (ts, level, scope, message) SELECT ?, ?, ?, ?
+             WHERE NOT EXISTS (SELECT 1 FROM app_log WHERE ts = ? AND level = ? AND scope = ? AND message = ?)"
         ).map_err(|e| format!("準備 app_log 寫入失敗: {}", e))?;
         let mut ins_sim = tx.prepare(
             "INSERT INTO sim_runs (ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary)
@@ -2027,16 +2076,28 @@ fn import_app_log_text_into(conn: &mut rusqlite::Connection, text: &str) -> Resu
                 continue;
             }
             if !in_sim {
-                // splitn(3)：message 內含 " | " 照收（前兩欄固定，餘全是 message）
-                let mut it = line.splitn(3, " | ");
-                let (ts_s, level, msg) = match (it.next(), it.next(), it.next()) {
-                    (Some(a), Some(b), Some(c)) => (a, b.trim(), c),
-                    _ => { res.bad_lines += 1; continue; }
+                // 新四段 `ISO | level | scope | message`（message 內含 " | " 照收）；
+                // 舊三段 `ISO | level | message`（scope 補 misc，舊檔回放不斷鏈）。
+                // 判段：先按四段切——切出 4 段且第 3 段是合法 scope＝新格式；
+                // 否則按三段切（message 含 " | " 照收）。
+                let parts4: Vec<&str> = line.splitn(4, " | ").collect();
+                let (ts_s, level, scope, msg) = if parts4.len() == 4
+                    && matches!(parts4[2].trim(), "study" | "sync" | "ocr" | "system" | "misc")
+                {
+                    (parts4[0], parts4[1], parts4[2].trim().to_string(), parts4[3])
+                } else {
+                    let mut it = line.splitn(3, " | ");
+                    match (it.next(), it.next(), it.next()) {
+                        (Some(a), Some(b), Some(c)) => (a, b, "misc".to_string(), c),
+                        _ => { res.bad_lines += 1; continue; }
+                    }
                 };
-                if level != "log" && level != "warn" && level != "error" { res.bad_lines += 1; continue; }
+                if level.trim() != "log" && level.trim() != "warn" && level.trim() != "error" { res.bad_lines += 1; continue; }
+                let level = level.trim();
+                let scope = normalize_scope(&scope).to_string();
                 let ts = match parse_applog_ts(ts_s) { Some(v) => v, None => { res.bad_lines += 1; continue; } };
                 let msg = msg.replace("\\n", "\n");
-                let n = ins_log.execute(rusqlite::params![ts, level, msg, ts, level, msg])
+                let n = ins_log.execute(rusqlite::params![ts, level, scope, msg, ts, level, scope, msg])
                     .map_err(|e| format!("寫入 app_log 失敗: {}", e))?;
                 if n == 1 { res.log_added += 1; } else { res.log_skipped += 1; }
             } else {
@@ -2557,6 +2618,19 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            // LOG-SCOPE1：app_log 加 scope 欄（源頭分類；舊 rows 全落 misc，不動舊資料）。
+            // v1 SQL 一字不可改（sqlx SHA 校验），故另開 v2 ALTER；ADD COLUMN 冪等語意
+            // （已存在時 migration 仍會跑一次，SQLite 報 duplicate column 错误——
+            //  實測 plugin-sql migrator 對已套用版本跳過，未套用才跑，故只有 v1→v2 升級路徑會執行一次）。
+            version: 2,
+            description: "add scope column to app_log (LOG-SCOPE1 log classification)",
+            sql: "
+                ALTER TABLE app_log ADD COLUMN scope TEXT NOT NULL DEFAULT 'misc';
+                CREATE INDEX IF NOT EXISTS idx_app_log_scope ON app_log(scope);
+            ",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -2867,6 +2941,96 @@ mod applog_import_tests {
     }
 }
 
+/// LOG-SCOPE1: scope 欄契約（新四段／舊三段／去重鍵含 scope／非法值正規）
+#[cfg(test)]
+mod log_scope_tests {
+    use super::*;
+
+    fn memdb() -> rusqlite::Connection {
+        rusqlite::Connection::open_in_memory().unwrap()
+    }
+
+    #[test]
+    fn normalize_scope_vectors() {
+        assert_eq!(normalize_scope("study"), "study");
+        assert_eq!(normalize_scope(" sync "), "sync");
+        assert_eq!(normalize_scope("misc"), "misc");
+        assert_eq!(normalize_scope("bogus"), "misc");
+        assert_eq!(normalize_scope(""), "misc");
+        assert_eq!(normalize_scope("LOG"), "misc");
+    }
+
+    #[test]
+    fn new_format_roundtrip_with_scope() {
+        let mut conn = memdb();
+        let text = "# Teno 操作日誌導出 (app_log)\n\
+            # 格式: ISO時間 | level | scope | message\n\
+            2026-09-13 10:00:00.000 | log | study | 複習完成\n\
+            2026-09-13 10:01:00.000 | warn | ocr | 引擎忙碌 | 重試\n\
+            2026-09-13 10:02:00.000 | error | sync | 上傳失敗\n";
+        let r = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!((r.log_added, r.bad_lines), (3, 0));
+        let scopes: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT scope FROM app_log ORDER BY ts ASC").unwrap();
+            stmt.query_map([], |x| x.get(0)).unwrap().filter_map(|x| x.ok()).collect()
+        };
+        assert_eq!(scopes, vec!["study", "ocr", "sync"]);
+        // message 內 " | " 照收
+        let msg: String = conn.query_row(
+            "SELECT message FROM app_log WHERE level = 'warn'", [], |x| x.get(0)).unwrap();
+        assert_eq!(msg, "引擎忙碌 | 重試");
+        // 冪等
+        let r2 = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!((r2.log_added, r2.log_skipped), (0, 3));
+    }
+
+    #[test]
+    fn old_format_falls_back_to_misc() {
+        let mut conn = memdb();
+        let text = "2026-09-13 10:00:00.000 | log | hello world\n\
+            2026-09-13 10:01:00 | warn | pipe | inside | message\n";
+        let r = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!((r.log_added, r.bad_lines), (2, 0));
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM app_log WHERE scope = 'misc'", [], |x| x.get(0)).unwrap();
+        assert_eq!(n, 2);
+        let msg: String = conn.query_row(
+            "SELECT message FROM app_log WHERE level = 'warn'", [], |x| x.get(0)).unwrap();
+        assert_eq!(msg, "pipe | inside | message");
+    }
+
+    #[test]
+    fn dedup_key_includes_scope() {
+        // 同 ts/level/message 但 scope 不同＝兩筆（舊庫同鍵去重語意下會併成一筆，新語意分開）
+        let mut conn = memdb();
+        let text = "2026-09-13 10:00:00.000 | log | study | same\n\
+            2026-09-13 10:00:00.000 | log | sync | same\n";
+        let r = import_app_log_text_into(&mut conn, text).unwrap();
+        assert_eq!(r.log_added, 2);
+        // 非法 scope 的四段行：不斷章取義，整段按舊三段吃（message 含 " | " 照收，scope 落 misc）
+        let text2 = "2026-09-13 11:00:00.000 | log | bogus | hello\n";
+        let r2 = import_app_log_text_into(&mut conn, text2).unwrap();
+        assert_eq!(r2.log_added, 1);
+        let (sc, msg): (String, String) = conn.query_row(
+            "SELECT scope, message FROM app_log WHERE message = 'bogus | hello'", [], |x| Ok((x.get(0)?, x.get(1)?))).unwrap();
+        assert_eq!(sc, "misc");
+        assert_eq!(msg, "bogus | hello");
+    }
+
+    #[test]
+    fn ensure_scope_on_legacy_table() {
+        // 模擬舊庫：建無 scope 欄的表＋舊 row；ensure 後讀寫正常，舊 row 落 misc
+        let conn = memdb();
+        conn.execute_batch(
+            "CREATE TABLE app_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, level TEXT NOT NULL DEFAULT 'log', message TEXT NOT NULL);"
+        ).unwrap();
+        conn.execute("INSERT INTO app_log (ts, level, message) VALUES (1000, 'log', 'old')", []).unwrap();
+        ensure_applog_scope(&conn);
+        let sc: String = conn.query_row("SELECT scope FROM app_log WHERE ts = 1000", [], |x| x.get(0)).unwrap();
+        assert_eq!(sc, "misc");
+    }
+}
+
 #[cfg(test)]
 mod monitor_log_tests {
     use super::*;
@@ -3004,7 +3168,7 @@ mod log_backup_tests {
         let (text, cur, rows) = export_app_log_patch(&dir, 0).unwrap().expect("首備必有行");
         assert_eq!(rows, 2);
         assert_eq!(cur, 2000);
-        assert!(text.contains(" | log | a"), "首行格式沿用匯出，實際:\n{}", text);
+        assert!(text.contains(" | log | misc | a"), "首行格式沿用匯出（含 scope），實際:\n{}", text);
         assert!(text.contains("b|c | d"), "message 內 | 照收");
         // cursor 前進 → 無新行 → None（不寫空 patch）
         assert!(export_app_log_patch(&dir, cur).unwrap().is_none());

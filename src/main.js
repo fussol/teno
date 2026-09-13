@@ -8,7 +8,7 @@ import { icon } from './lib/svg.js';
 import { computeStreak } from './core/scheduler.js';
 import { initCustomSelects } from './lib/custom-select.js';
 import { invoke } from '@tauri-apps/api/core';
-import { logToDb } from './lib/app-log.js';
+import { logToDb, classifyScope } from './lib/app-log.js';
 import { ICON_PRESETS, iconImgPath } from './lib/icon-presets.js';
 
 // ─── G3：子頁 → 主頁 mapping（nav 高亮用）——子頁（study-v4/exam-flip/deck-browser…）
@@ -124,17 +124,25 @@ if (_cachedSplashIcon) applySplashIcon(_cachedSplashIcon, false);
 // [F7-SPLASH-END]
 
 // ─── Debug: forward console.log to file (via Rust) + DB (app_log) ───
+// LOG-SCOPE1：轉發先分類（scope 出生即定）；鏡像（Rust 檔＋DB）受 window.__logMirrorEnabled
+// 開關（store 載入設定後賦值，預設開＝沿用舊行為）。error 一律轉發＋寫庫（強制保留）。
 try {
+  if (typeof window !== 'undefined' && window.__logMirrorEnabled === undefined) window.__logMirrorEnabled = true;
   const fwd = (level) => (...args) => {
     const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-    invoke('log_msg', { msg: `[${level}] ${msg}` }).catch(() => {});
-    logToDb(level, msg);
+    const scope = classifyScope(msg);
+    const mirrorOn = typeof window === 'undefined' || window.__logMirrorEnabled !== false;
+    if (mirrorOn || level === 'error') {
+      invoke('log_msg', { msg: `[${level}] ${msg}` }).catch(() => {});
+    }
+    if (!mirrorOn && level !== 'error') return;
+    logToDb(level, scope, msg);
   };
   console.log = fwd('log');
   console.warn = fwd('warn');
   console.error = fwd('error');
   invoke('log_msg', { msg: '[boot] console forwarding enabled' }).catch(() => {});
-  logToDb('log', '[boot] console forwarding enabled');
+  logToDb('log', 'system', '[boot] console forwarding enabled');
 } catch (_) {}
 
 // ─── App state & toast (extracted to lib/ to avoid pages→main.js cycle) ───
