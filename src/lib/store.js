@@ -1566,7 +1566,9 @@ export function createStore() {
         for (const w of ok) {
           try {
             const { lookupCambridge } = await import('./api.js');
-            const raw = await lookupCambridge(w, 'en');
+            // LOGFIX1: 所有格／首尾撇號先剝（region's→region 查得到才有意義；原直接查必炸 not found 洗版）
+            const q = w.replace(/'s$/i, '').replace(/^'+|'+$/g, '') || w;
+            const raw = await lookupCambridge(q, 'en');
             const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
             if (data && Array.isArray(data.senses) && data.senses.length > 0) filtered.push(w);
             else notFound++;

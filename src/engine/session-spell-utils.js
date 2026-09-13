@@ -13,6 +13,7 @@ let _undoSnapshot = null;
 let _completionShown = false;
 let _ratingLock = false;
 let _goalPending = Promise.resolve(); // C9: incrementGoal in-flight 追縱鏈（undo 前必排空）
+let _overlapWarned = false; // LOGFIX1: overlap 偵測只報一次（原每幀 console.error 洗版 2k+ 筆 error）
 
 export function e(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
@@ -242,7 +243,8 @@ export function mount(store, renderFn) {
       const br = btns.getBoundingClientRect();
       const barR = bar.getBoundingClientRect();
       if (br.bottom > barR.top && br.top < barR.bottom) {
-        console.error('[overlap] study buttons overlap bottom bar', br, barR);
+        // LOGFIX1: 降級 warn＋同 session 只報一次（原 error 每進一題報一次，舊 log 2k+ 筆洗版淹掉真 error）
+        if (!_overlapWarned) { _overlapWarned = true; console.warn('[overlap] study buttons overlap bottom bar'); }
       }
     }
   }, 100);

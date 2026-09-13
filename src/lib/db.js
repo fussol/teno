@@ -175,6 +175,32 @@ function requireDB() {
   return db;
 }
 
+// ─── LOGFIX1: SQLite busy 排隊＋重試（舊 log 298 筆 database is locked）───
+// 成因：plugin-sql 寫入並發（評分 saveCard＋addReviewLog＋app-log flush＋setSetting）
+// 撞在同一時刻，輸家直接丟。修法：寫入走同一條鏈排隊＋busy 重試，最多等 ~600ms。
+let _writeChain = Promise.resolve();
+function _queued(fn) {
+  const p = _writeChain.then(fn, fn);
+  _writeChain = p.catch(() => {});
+  return p;
+}
+function _isBusy(e) {
+  return /locked|busy|code:\s*5\b|code:\s*517/i.test(String(e?.message ?? e ?? ''));
+}
+async function _retryBusy(fn, tries = 6) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try { return await fn(); } catch (e) {
+      last = e;
+      if (!_isBusy(e) || i === tries - 1) throw e;
+      await new Promise(r => setTimeout(r, 30 * (i + 1)));
+    }
+  }
+  throw last;
+}
+function _write(fn) { return _queued(() => _retryBusy(fn)); }
+async function _safeRollback(d) { try { await d.execute('ROLLBACK'); } catch (_) {} }
+
 // ─── Words ─────────────────────────────────────
 
 export async function getAllWords() {
@@ -211,7 +237,8 @@ export async function getWordCount() {
 }
 
 export async function saveWord(word) {
-  await requireDB().execute(
+  // LOGFIX1: 單寫入走排隊＋重試
+  return _write(() => requireDB().execute(
     `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      ON CONFLICT(id) DO UPDATE SET
@@ -245,7 +272,7 @@ export async function saveWord(word) {
       word.phrases || '',
       word.createdAt ?? new Date().toISOString(),   // E2: created_at ISO 帶 Z
     ]
-  );
+  ));
 }
 
 // G18: 批次存多個 words 於單一事務（tag 改動/批次編輯用 — 避免萬級詞庫逐詞 round-trip）
@@ -299,9 +326,13 @@ export async function deleteWordImagesForWord(wordId) {
 }
 
 export async function deleteWord(id) {
-  const d = requireDB();
-  await d.execute('BEGIN TRANSACTION');
-  try {
+  // LOGFIX1: inTxn 旗標——BEGIN 若因 locked 炸，catch 不可再 ROLLBACK（原報 cannot rollback - no transaction is active 洗版）；整筆走排隊＋重試
+  return _write(async () => {
+    const d = requireDB();
+    let inTxn = false;
+    try {
+      await d.execute('BEGIN TRANSACTION');
+      inTxn = true;
     // D14: 先取 word 文字（exam_history.word 存單字文字非 id，需其刪孤兒測驗紀錄）
     const wr = await d.select('SELECT word FROM words WHERE id = $1', [id]);
     const wordText = wr[0]?.word;
@@ -313,10 +344,12 @@ export async function deleteWord(id) {
     if (wordText) await d.execute('DELETE FROM exam_history WHERE word = $1', [wordText]);  // D14: B4 前 legacy 文字世代(存文字)
     await d.execute('DELETE FROM words WHERE id = $1', [id]);
     await d.execute('COMMIT');
+    inTxn = false;
   } catch (e) {
-    await d.execute('ROLLBACK');
+    if (inTxn) await _safeRollback(d);
     throw e;
   }
+  });
 }
 
 export async function bulkSaveWords(words) {
@@ -391,7 +424,8 @@ export async function getCard(wordId) {
 }
 
 export async function saveCard(wordId, card) {
-  await requireDB().execute(
+  // LOGFIX1: 評分寫入是 locked 重災區（舊 log rateCard saveCard 連炸），走排隊＋重試
+  return _write(() => requireDB().execute(
     `INSERT INTO cards (word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT(word_id) DO UPDATE SET
@@ -418,7 +452,7 @@ export async function saveCard(wordId, card) {
       card.mcData ? JSON.stringify(card.mcData) : null,
       card.spellData ? JSON.stringify(card.spellData) : null,
     ]
-  );
+  ));
 }
 
 export async function bulkSaveCards(cards) {
@@ -540,10 +574,11 @@ export async function getSetting(key) {
 
 export async function setSetting(key, value) {
   const str = typeof value === 'string' ? value : JSON.stringify(value);
-  await requireDB().execute(
+  // LOGFIX1: 設定寫入（setGraylist/TtsVoice/GoalStreak 全走這條）排隊＋重試
+  await _write(() => requireDB().execute(
     'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     [key, str]
-  );
+  ));
   // 審計: 設定變更軌跡 (CLI 與 GUI 統一)
   await addAudit('setting', `SET ${key}=${str.slice(0, 300)}`);
 }
@@ -551,10 +586,11 @@ export async function setSetting(key, value) {
 /** 審計日誌 — 記錄任何寫入動作 (GUI/CLI 共用, 存 teno.db) */
 export async function addAudit(action, detail = '') {
   try {
-    await requireDB().execute(
+    // LOGFIX1: 審計寫入排隊＋重試（舊 log 72 筆 locked 丟軌跡）
+    await _write(() => requireDB().execute(
       'INSERT INTO audit_log (ts, action, detail) VALUES ($1, $2, $3)',
       [Date.now(), String(action).slice(0, 100), String(detail).slice(0, 1000)]
-    );
+    ));
   } catch (e) {
     console.warn('[db] addAudit error:', e);
   }
@@ -575,11 +611,12 @@ export async function setAllTags(tags) {
 // ─── Review Log ─────────────────────────────────
 
 export async function addReviewLog(entry) {
-  await requireDB().execute(
+  // LOGFIX1: 評分紀錄寫入排隊＋重試（舊 log rateCard addReviewLog 連炸，丟了等於評分沒存）
+  return _write(() => requireDB().execute(
     `INSERT INTO review_log (word_id, rating, duration, elapsed_days, scheduled_days, stability, difficulty, mode, card_state, new_state, reviewed_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [entry.wordId, entry.rating, entry.duration ?? null, entry.elapsedDays ?? null, entry.scheduledDays ?? null, entry.stability ?? null, entry.difficulty ?? null, entry.mode || 'flip', entry.state ?? null, entry.newState ?? null, entry.reviewedAt ?? new Date().toISOString()]   // E2: reviewed_at ISO 帶 Z（不再靠 DEFAULT naive）
-  );
+  ));
 }
 
 export async function getAllReviewLogs() {
