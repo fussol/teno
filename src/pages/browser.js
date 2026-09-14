@@ -140,7 +140,8 @@ function wordRowHtml(w, tagColors, sysTags, deckNames) {
         ${w.pos ? w.pos.split(/[,，]/).map(s => s.trim()).filter(Boolean).map(s => `<span class="word-row-pos">${escapeHtml(s)}</span>`).join('') : ''}
       </div>
       <span class="word-row-def">${(() => {
-        const parts = (w.definition || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        // DEFSEP1：讀取寬容（舊資料 \n/;； 殘留也切得開；存檔端已統一 ，）
+        const parts = (w.definition || '').split(/[,，;；\n]/).map(s => s.trim()).filter(Boolean);
         if (!parts.length) return '<span class="muted" style="font-size:12px">-</span>';
         return parts.map(s => `<span style="display:inline-block;font-size:12px;color:var(--text-primary);background:var(--bg-surface);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px 1px 0">${escapeHtml(s)}</span>`).join('');
       })()}</span>
@@ -1111,7 +1112,8 @@ function openModal(s, word) {
     cont._tagInputApi = api;
     return api;
   };
-  const defSep = ',', defJn = ', ';
+  // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
+  const defSep = ',|;|；|\\n', defJn = ', ';
   const exSep = null, exJn = '\n';   // 例句模式：sep=null（逗號屬句子一部分）
   const defIn = word?.definition || '';
   const exIn = mergeExamplePhrases(word?.example, word?.phrases);

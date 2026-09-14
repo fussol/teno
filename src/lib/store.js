@@ -1452,11 +1452,13 @@ export function createStore() {
           if (!w.pos && pos) updates.pos = pos;
           if (!w.pron && (data.uk_ipa || data.us_ipa)) updates.pron = [data.uk_ipa, data.us_ipa].filter(Boolean).join(' / ');
           // definition/examples：overwrite 開啟覆寫殘缺；否則只填空欄
-          if (overwrite || !w.definition) updates.definition = defs.join('；');
+          // DEFSEP1：用 ，（顯示端切 badge 只認 [,，]；舊碼 ； 會黏成一顆）
+          if (overwrite || !w.definition) updates.definition = defs.join('，');
           if ((overwrite || !w.examples || w.examples.length === 0) && exs.length) updates.examples = exs.slice(0, 3);
           if (!w.example && exs[0]) updates.example = exs[0];
           // 例：複合欄位若 sense0 有而合併後空，兜底補
-          if (overwrite && !updates.definition && !w.definition && data.senses[0].definition) updates.definition = defs.join('；');
+          // DEFSEP1：用 ，（與 autofill-engine trans 同契約；舊碼 ； 顯示端切不開）
+          if (overwrite && !updates.definition && !w.definition && data.senses[0].definition) updates.definition = defs.join('，');
           if (Object.keys(updates).length === 0) return;   // V2: for-continue → 函式 return
           const merged = { ...w, ...updates };
           state.words = state.words.map(x => x.id === w.id ? merged : x);

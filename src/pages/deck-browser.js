@@ -198,7 +198,8 @@ function wordRowHtml(w, tagColors, sysTags, deckNames) {
         ${w.pos ? w.pos.split(/[,，]/).map(s => s.trim()).filter(Boolean).map(s => `<span class="word-row-pos">${escapeHtml(s)}</span>`).join('') : ''}
       </div>
       <span class="word-row-def">${(() => {
-        const parts = (w.definition || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+        // DEFSEP1：讀取寬容（舊資料 \n/;； 殘留也切得開；存檔端已統一 ，）
+        const parts = (w.definition || '').split(/[,，;；\n]/).map(s => s.trim()).filter(Boolean);
         if (!parts.length) return '<span class="muted" style="font-size:12px">-</span>';
         return parts.map(s => `<span style="display:inline-block;font-size:12px;color:var(--text-primary);background:var(--bg-surface);padding:2px 10px;border-radius:100px;border:1px solid var(--border-subtle);white-space:nowrap;margin:1px 3px 1px 0">${escapeHtml(s)}</span>`).join('');
       })()}</span>
@@ -728,7 +729,8 @@ function openAddModal(s) {
     cont._tagInputApi = api;   // LLM 填入函式透過 inputId+'Chips' 容器取用
     return api;
   };
-  const defSep = ',', defJn = ', ';
+  // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
+  const defSep = ',|;|；|\\n', defJn = ', ';
   const exSep = null, exJn = "\n";   // 例句模式：sep=null（逗號屬句子一部分，Enter 整句一顆）
   const deckDefChips = _tagInput('deckAddDefChips', 'deckAddDef', 'def-chip', '', defSep, defJn, 'display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   const deckExChips = _tagInput('deckAddExChips', 'deckAddExample', 'ex-chip', '', exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
@@ -1284,7 +1286,8 @@ function openEditModal(s, id) {
     cont._tagInputApi = api;
     return api;
   };
-  const defSep = ',', defJn = ', ', exSep = null, exJn = '\n';   // 例句模式
+  // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
+  const defSep = ',|;|；|\\n', defJn = ', ', exSep = null, exJn = '\n';   // 例句模式
   const editDefChips = _tagInputEdit('deckEditDefChips', 'deckEditDef', 'def-chip', w.definition || '', defSep, defJn, 'display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   const editExChips = _tagInputEdit('deckEditExChips', 'deckEditExample', 'ex-chip', mergeExamplePhrases(w.example, w.phrases), exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   // 統一膠囊（編輯 modal）：既有值預載入膠囊

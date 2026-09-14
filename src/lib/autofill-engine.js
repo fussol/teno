@@ -315,7 +315,9 @@ export async function fillWordFields({
           const t = (sense.translation || '').trim() || (sense.definition || '').trim();
           if (t && !zh.includes(t)) zh.push(t);
         }
-        const text = zh.slice(0, 3).join('\n');
+        // DEFSEP1：翻譯一律用全形逗號 join（顯示端只認 [,，] 切 badge；
+        // 舊碼 join('\n') 是 U6/U7 翻譯黏連的源頭）。單條內殘留換行也先壓成 ，。
+        const text = zh.slice(0, 3).map(t => t.replace(/\s*\n\s*/g, '，')).join('，');
         if (text) { patch.definition = text; bump('trans', 'ok'); } else bump('trans', 'fail');
       }
     } catch (e) { bump('trans', 'fail', e); }

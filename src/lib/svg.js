@@ -216,7 +216,8 @@ export function icon(name, px = 0, cls = '') {
  */
 export function splitFieldsHtml(pos, def) {
   const posParts = (pos || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
-  const defParts = (def || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  // DEFSEP1：讀取寬容——舊資料殘留 \n/;/； 也切得開（存檔端已統一用 ，）。
+  const defParts = (def || '').split(/[,，;；\n]/).map(s => s.trim()).filter(Boolean);
   if (!posParts.length && !defParts.length) return '';
   let html = '<div class="split-wrap">';
   if (posParts.length) {

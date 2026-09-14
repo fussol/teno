@@ -265,7 +265,9 @@ export function merriamToFields(payload, word) {
   const pick = entries.find(x => String(x.id).split(':')[0].toLowerCase() === norm) || entries[0];
   if (pick) {
     out.pos = pick.fl || '';
-    out.definition = (pick.shortdef.length ? pick.shortdef : pick.defs.slice(0, 3)).join('\n');
+    // DEFSEP1：definition 用 ，join（字卡 badge 只認 [,，] 切；\n 會黏連）。
+    // 目前引擎 trans 走 Cambridge 不讀此欄，先統一契約免後人踩。
+    out.definition = (pick.shortdef.length ? pick.shortdef : pick.defs.slice(0, 3)).join('，');
     out.pron = pick.pron || '';
     out.pronAudio = pick.pronAudio || '';
     out.example = pick.examples.slice(0, 3).join('\n');
