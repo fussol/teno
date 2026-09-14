@@ -916,17 +916,23 @@ function openAddModal(s) {
         try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {}
       } else if (src === 'dict-api') {
         try {
-          const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-          if (r.ok) {
-            const exs = (await r.json()).flatMap(e =>
-              (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean))
-            );
-            if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
-          }
+          // DICTAPI-TIMEOUT1：公網已死，10s 斷尾（同引擎；catch 靜默跳過不擋鏈）
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 10000);
+          try {
+            const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
+            if (r.ok) {
+              const exs = (await r.json()).flatMap(e =>
+                (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean))
+              );
+              if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
+            }
+          } finally { clearTimeout(timer); }
         } catch (e) {}
       } else if (src === 'tatoeba') {
         try {
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
+          // TATOEBA-SORT1：必帶 sort（同引擎；無則 400）
+          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
           if (r.ok) {
             const exs = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
             if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
@@ -1393,15 +1399,21 @@ function openEditModal(s, id) {
         try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {}
       } else if (src === 'dict-api') {
         try {
-          const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-          if (r.ok) {
-            const exs = (await r.json()).flatMap(e => (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean)));
-            if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
-          }
+          // DICTAPI-TIMEOUT1：公網已死，10s 斷尾（同引擎；catch 靜默跳過不擋鏈）
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 10000);
+          try {
+            const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
+            if (r.ok) {
+              const exs = (await r.json()).flatMap(e => (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean)));
+              if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
+            }
+          } finally { clearTimeout(timer); }
         } catch (e) {}
       } else if (src === 'tatoeba') {
         try {
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
+          // TATOEBA-SORT1：必帶 sort（同引擎；無則 400）
+          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
           if (r.ok) {
             const exs = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
             if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));

@@ -184,11 +184,20 @@ function collectSenseLists(node, synonyms, antonyms, related) {
   }
 }
 
-export function parseThesaurusEntries(arr) {
+export function parseThesaurusEntries(arr, word) {
   const synonyms = new Set(), antonyms = new Set(), phrases = new Set(), related = new Set();
   if (!Array.isArray(arr)) return { synonyms: [], antonyms: [], phrases: [], related: [] };
+  // MWFILTER1：id 對不上查詢詞的整筆丟掉（ant→driver 模糊匹配污染；實測
+  // mw-thes-ant.json 唯一條目 id=driver，stems 含 driver ant）。與 parseStems
+  // 同規則（純 homograph 才收）；不傳 word 時不過濾（舊 harness 相容）。
+  const norm = word == null || String(word).trim() === '' ? null : String(word).toLowerCase();
   for (const e of arr) {
     if (!e || typeof e !== 'object' || !e.meta) continue;
+    if (norm) {
+      const [idStem, idSuffix] = String(e.meta?.id || '').split(':');
+      if (!idStem || idStem.trim().toLowerCase() !== norm) continue;
+      if (idSuffix !== undefined && idSuffix !== '' && !/^\d+$/.test(idSuffix)) continue;
+    }
     for (const g of e.meta?.syns || []) for (const w of g || []) synonyms.add(String(w));
     for (const g of e.meta?.ants || []) for (const w of g || []) antonyms.add(String(w));
     for (const sl of e.syn_list || []) {
@@ -238,6 +247,10 @@ export function parseStems(arr, word) {
       const t = stripMwTokens(String(s)).replace(/\*/g, '').trim();
       // 大寫開頭＝專有名詞（Eternals／人名殘留）不要
       if (!t || t.toLowerCase() === norm || /^[A-Z]/.test(t) || out.includes(t)) continue;
+      // MWFILTER1：片語不要（derivative 只要單詞；run→up and running 實測）＋
+      // 必須含查詢詞字串（set→class 實測；eternalize 含 eternal 照留）
+      if (/\s/.test(t)) continue;
+      if (norm && !t.toLowerCase().includes(norm)) continue;
       out.push(t);
     }
   }
@@ -286,7 +299,7 @@ export function merriamToFields(payload, word) {
     const formLow = new Set([...formSet].map(x => String(x).toLowerCase()));
     out.derivative = parseStems(dict, word).filter(s => !formLow.has(String(s).toLowerCase())).join(', ');
   }
-  const t = parseThesaurusEntries(thes);
+  const t = parseThesaurusEntries(thes, word);
   out.synonym = t.synonyms.join(', ');
   out.antonym = t.antonyms.join(', ');
   // Thesaurus 片語併入（去重）

@@ -1450,7 +1450,8 @@ export function createStore() {
           const updates = {};
           // pos/pron 保守：不覆寫已有（填補空缺）——配合完整單字卡需求
           if (!w.pos && pos) updates.pos = pos;
-          if (!w.pron && (data.uk_ipa || data.us_ipa)) updates.pron = [data.uk_ipa, data.us_ipa].filter(Boolean).join(' / ');
+          // PRON-SLASH1：包斜線（同 autofill-engine 三分支；裸 IPA 顯示不一致）
+          if (!w.pron && (data.uk_ipa || data.us_ipa)) updates.pron = [data.uk_ipa, data.us_ipa].filter(Boolean).map(s => `/${String(s).trim().replace(/^\/+|\/+$/g, '')}/`).join(' / ');
           // definition/examples：overwrite 開啟覆寫殘缺；否則只填空欄
           // DEFSEP1：用 ，（顯示端切 badge 只認 [,，]；舊碼 ； 會黏成一顆）
           if (overwrite || !w.definition) updates.definition = defs.join('，');

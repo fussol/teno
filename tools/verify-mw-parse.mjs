@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════
 import {
   stripMwTokens, hwToSyllables, parseDictionaryEntries,
-  parseThesaurusEntries, merriamToFields,
+  parseThesaurusEntries, parseStems, merriamToFields,
 } from '../src/lib/merriam.js';
 
 let failures = 0;
@@ -153,6 +153,29 @@ const check = (label, got, expect) => {
   const f2 = merriamToFields({ word: 'testt', dictionary: ['testt', 'taste'], thesaurus: [] }, 'testt');
   check('T8i suggest透出', f2.suggest, ['testt', 'taste']);
   check('T8j 查無字pos空', f2.pos, '');
+}
+
+// ── MWFILTER1（live 實錘：mw-thes-ant.json 唯一條目 id=driver）──
+{
+  const driver = [{ meta: { id: 'driver', syns: [['automobilist', 'motorist']] }, syn_list: [{ wd: 'driver', syn: ['automobilist'] }] }];
+  const t = parseThesaurusEntries(driver, 'ant');
+  check('MWFILTER1a ant 不吃 driver（syn 空）', t.synonyms, []);
+  check('MWFILTER1b ant 不吃 driver（related 空）', t.related, []);
+  // 同 id 照收（run/run:1；後綴數字外丟）
+  const runs = [
+    { meta: { id: 'run', syns: [['dash']] } },
+    { meta: { id: 'run:1', syns: [['sprint']] } },
+    { meta: { id: 'run away', syns: [['flee']] } },
+    { meta: { id: 'run:b', syns: [['junk']] } },
+  ];
+  const t2 = parseThesaurusEntries(runs, 'run');
+  check('MWFILTER1c run 本體＋數字後綴收', t2.synonyms.sort(), ['dash', 'sprint']);
+  // stems 兩刀：片語丟＋須含查詢詞（run/set 實測）
+  check('MWFILTER1d 片語不出 derivative', !parseStems([{ meta: { id: 'run', stems: ['runs', 'up and running'] } }], 'run').includes('up and running'), true);
+  check('MWFILTER1e 無關字不出 derivative', !parseStems([{ meta: { id: 'set:2', stems: ['class', 'seth'] } }], 'set').includes('class'), true);
+  check('MWFILTER1f 含查詢詞照留', parseStems([{ meta: { id: 'set:2', stems: ['class', 'seth'] } }], 'set'), ['seth']);
+  // 不傳 word＝舊行為（T7 相容，不炸）
+  check('MWFILTER1g 不傳 word 不過濾', parseThesaurusEntries(driver).synonyms.includes('automobilist'), true);
 }
 
 // ── NC 負控制 ──

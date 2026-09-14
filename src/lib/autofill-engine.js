@@ -203,7 +203,8 @@ export async function fillWordFields({
           if (t.trim()) fresh.push(t.trim());
         }
       } else if (M === 'tatoeba') {
-        const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
+        // TATOEBA-SORT1：API 必帶 sort（無則 400；實測 relevance 回 220 筆 ant）。
+        const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
         if (!res.ok) throw new Error('tatoeba');
         const body = await res.json();
         // AUTOFILL-CONTRACT1：trim（同 dictionary-api 分支；免空白句佔位）
@@ -215,11 +216,20 @@ export async function fillWordFields({
           fresh = String(text ?? '').split('\n').filter(Boolean).map(l => l.trim()).filter(l => l.length > 5).slice(0, count);
         }
       } else {
-        const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`);
-        if (res.ok) {
-          const data = await res.json();
-          for (const entry of data) for (const m of entry.meanings || []) for (const d of m.definitions || []) if (d.example) fresh.push(d.example.trim());
-        } else throw new Error('dictapi');
+        // DICTAPI-TIMEOUT1：公網已死（實測 15s+ hang 零位元組），10s 斷尾
+        // fail-fast，不卡例句鏈；活著時行為不變。
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 10000);
+        try {
+          const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
+          if (res.ok) {
+            const data = await res.json();
+            for (const entry of data) for (const m of entry.meanings || []) for (const d of m.definitions || []) if (d.example) fresh.push(d.example.trim());
+          } else throw new Error('dictapi');
+        } catch (e) {
+          if (e?.name === 'AbortError') throw new Error('dictapi-timeout');
+          throw e;
+        } finally { clearTimeout(timer); }
       }
       if (fresh === null) { /* llm 跳過，已記 skip */ }
       else {
