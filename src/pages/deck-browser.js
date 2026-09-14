@@ -2196,13 +2196,16 @@ async function openBatchModal(s) {
       const toMove = (pending?.existing || []).filter(w => (w.deck || 'Default') !== pending.targetDeck);
       for (const w of toMove) { try { await s.actions.editWord(w.id, { deck: pending.targetDeck }); } catch (_) {} }
       toast(toMove.length ? `已把 ${toMove.length} 字搬到「${pending.targetDeck}」` : `已存在的字都在「${pending.targetDeck}」了`, 'toast-success');
-      renderInPlace(s);
+      // BATCHADD2: modal 不關（關閉僅限叉叉/取消/點背景）；搬完原地刷新已存在區的 deck 顯示
+      const hint = document.getElementById('deckBatchHint');
+      if (hint) hint.textContent = `已存在 ${toMove.length} 字搬到「${pending.targetDeck}」。`;
     });
     document.getElementById('deckBatchStart')?.addEventListener('click', async () => {
       const list = [...(pending?.fresh || [])];
       const target = pending?.targetDeck || curDeck;
       if (!list.length) return;
-      close();
+      // BATCHADD2: 開始批量也不關 modal — 背景執行本來就跟 modal 無關，
+      // 關掉等於強迫使用者離開分析結果（關閉僅限叉叉/取消/點背景）。
       await runBatchAdd(s, list, target, normalizePos);
     });
   });

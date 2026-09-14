@@ -117,7 +117,8 @@ function loadState() {
   // E15: 17 欄全集對齊 app 真值源 db.js getAllWords（曾缺 pronunciation/example/
   // image/description/created_at＝偽契約，讀者靜默 undefined 零回聲）。
   // 契約面=SELECT 投影欄集合（釘見 verify-e15）；非 store camelCase 形態契約。
-  const words = db.prepare('SELECT id, word, definition, part_of_speech, pronunciation, example, image, description, deck, tags, created_at, synonym, antonym, derivative, related, forms, examples FROM words').all();
+  // AUTOFIX1: 補 etymology/syllables/phrases（getAllWords 同步補，CLI 鏡像對齊）。
+  const words = db.prepare('SELECT id, word, definition, part_of_speech, pronunciation, example, image, description, deck, tags, created_at, synonym, antonym, derivative, related, forms, examples, etymology, syllables, phrases FROM words').all();
   const rows = db.prepare(
     'SELECT word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data FROM cards'
   ).all();

@@ -57,7 +57,7 @@ try {
     const a = extractCliCols(cli), b = extractDbjsCols(dbjs);
     T('T1a 雙邊擷取成功（錨點＋段內恰 1 條 SQL）', !a.err && !b.err, `cli=${a.err || 'ok'} db=${b.err || 'ok'}`);
     if (!a.err && !b.err) {
-      T('T1b size 斷言：兩邊皆=17（空集/半抓假綠封死）', a.cols.length === 17 && b.cols.length === 17, `cli=${a.cols.length} db=${b.cols.length}`);
+      T('T1b size 斷言：兩邊皆=20（空集/半抓假綠封死；AUTOFIX1 17→20）', a.cols.length === 20 && b.cols.length === 20, `cli=${a.cols.length} db=${b.cols.length}`);
       const missing = b.cols.filter(c => !a.cols.includes(c));
       const extra = a.cols.filter(c => !b.cols.includes(c));
       T('T1c set 相等（缺集∪多集=∅）', missing.length === 0 && extra.length === 0, `缺=[${missing}] 多=[${extra}]`);
@@ -85,7 +85,8 @@ try {
         pronunciation TEXT, example TEXT, deck TEXT NOT NULL DEFAULT 'Default', tags TEXT DEFAULT '',
         image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), description TEXT DEFAULT '',
         related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]', synonym TEXT NOT NULL DEFAULT '',
-        antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+        antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '',
+        etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '', phrases TEXT NOT NULL DEFAULT '');
       CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT NOT NULL, stability REAL NOT NULL DEFAULT 2.5,
         difficulty REAL NOT NULL DEFAULT 0.0, elapsed_days INTEGER NOT NULL DEFAULT 0,
         scheduled_days INTEGER NOT NULL DEFAULT 0, reps INTEGER NOT NULL DEFAULT 0,
@@ -113,7 +114,7 @@ try {
 
   console.log('T4 負控制（R1 處方：12 欄同構反換 → T1 紅因=set 差非抽取落空）');
   {
-    const FIXED17 = `'SELECT id, word, definition, part_of_speech, pronunciation, example, image, description, deck, tags, created_at, synonym, antonym, derivative, related, forms, examples FROM words'`;
+    const FIXED17 = `'SELECT id, word, definition, part_of_speech, pronunciation, example, image, description, deck, tags, created_at, synonym, antonym, derivative, related, forms, examples, etymology, syllables, phrases FROM words'`;
     const hasOrig = cli.includes(ORIG12);
     const hasFixed = cli.includes(FIXED17);
     if (hasOrig && !hasFixed) {
@@ -128,7 +129,7 @@ try {
       const a = extractCliCols(swapped), b = extractDbjsCols(dbjs);
       const missing = !a.err && !b.err ? b.cols.filter(c => !a.cols.includes(c)) : null;
       T('T4a 反換版擷取仍成功（紅因=set 差非錨點失效）', !a.err && a.cols.length === 12, `err=${a.err} n=${a.cols && a.cols.length}`);
-      T('T4b 反換版欄缺集=5 欄精準重現', !!missing && missing.length === 5, `missing=[${missing}]`);
+      T('T4b 反換版欄缺集=8 欄精準重現', !!missing && missing.length === 8, `missing=[${missing}]`);
     } else {
       throw new Error(`工作區 SQL 狀態异常：hasOrig=${hasOrig} hasFixed=${hasFixed}（两者皆無=loadState 被改寫，先同步腳本）`);
     }

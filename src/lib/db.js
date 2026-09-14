@@ -205,7 +205,7 @@ async function _safeRollback(d) { try { await d.execute('ROLLBACK'); } catch (_)
 
 export async function getAllWords() {
   const rows = await requireDB().select(
-    'SELECT id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, created_at, related, forms, synonym, antonym, derivative, examples FROM words ORDER BY created_at'
+    'SELECT id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, created_at, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases FROM words ORDER BY created_at'
   );
   return rows.map(r => ({
     id: r.id,
