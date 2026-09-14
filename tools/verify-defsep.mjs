@@ -46,8 +46,18 @@ console.log('== T3 行為：舊髒資料照樣切得開 ==');
 
 console.log('== T4 例句欄未被誤傷（\\n 仍是例句分隔） ==');
 ok('engine example 維持 join(\\n)', engine.includes("join('\\n')"));
-ok('merriam example 維持 join(\\n)', mw.includes('pick.examples.slice(0, 3).join'));
+ok('merriam example 維持 join(\\n)', mw.includes('patch.example = [exBase, ...unique]') || mw.includes('pick.examples.slice(0, 3).join'));
 ok('例句 exSep=null 模式不變', deck.includes("exSep = null") && browser.includes("exSep = null"));
+
+console.log('== T5 AUTOFILL-CONTRACT1：四洞靜態釘 ==');
+ok('洞一 pron 包斜線（cambridge 分支）',
+  engine.includes('AUTOFILL-CONTRACT1') && engine.includes('patch.pron = `/${pron}/`'));
+ok('洞二 trans 壓 [;；]（同 DEFSEP1 join）',
+  engine.includes(".replace(/[;；]/g, '，')"));
+ok('洞三 mergeComma 認全形（/,，/ 切分）',
+  engine.includes('const spl = /[,，]/;'));
+ok('洞四 tatoeba trim（空白句不過）',
+  engine.includes("String(x.text ?? '').trim()"));
 
 console.log(fail === 0 ? `DEFSEP1: PASS (${pass} pass, 0 fail)` : `DEFSEP1: FAIL (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

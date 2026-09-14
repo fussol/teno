@@ -78,9 +78,10 @@ export function dedupSentences(text, newLines) {
 }
 
 export function mergeComma(cur, fresh) {
-  const seen = new Set(String(cur || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
+  const spl = /[,，]/;
+  const seen = new Set(String(cur || '').split(spl).map(x => x.trim().toLowerCase()).filter(Boolean));
   const add = [...new Set(fresh.map(x => String(x || '').trim()).filter(Boolean))].filter(x => !seen.has(x.toLowerCase()));
-  return [...String(cur || '').split(',').map(x => x.trim()).filter(Boolean), ...add].join(', ');
+  return [...String(cur || '').split(spl).map(x => x.trim()).filter(Boolean), ...add].join(', ');
 }
 
 export function mergeExamplePhrases(example, phrases) {
@@ -205,7 +206,8 @@ export async function fillWordFields({
         const res = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng`);
         if (!res.ok) throw new Error('tatoeba');
         const body = await res.json();
-        fresh = (body.data || []).map(x => x.text).filter(Boolean);
+        // AUTOFILL-CONTRACT1：trim（同 dictionary-api 分支；免空白句佔位）
+        fresh = (body.data || []).map(x => String(x.text ?? '').trim()).filter(Boolean);
       } else if (M === 'llm') {
         if (!llmOk) { bump('example', 'skip'); fresh = null; }
         else {
@@ -247,8 +249,9 @@ export async function fillWordFields({
         }
       } else {
         const data = await camEn();
-        const pron = String(data.uk_ipa || data.us_ipa || '').trim();
-        if (pron) { patch.pron = pron; bump('pron', 'ok'); } else bump('pron', 'fail');
+        const pron = String(data.uk_ipa || data.us_ipa || '').trim().replace(/^\/+|\/+$/g, '');
+        // AUTOFILL-CONTRACT1：包斜線（同 merriam/llm 分支；裸 IPA 顯示不一致）
+        if (pron) { patch.pron = `/${pron}/`; bump('pron', 'ok'); } else bump('pron', 'fail');
       }
     } catch (e) { bump('pron', 'fail', e); if (quota(e)) return { patch: null, aborted, abortError, errors, usedRemote }; }
   }
@@ -317,7 +320,8 @@ export async function fillWordFields({
         }
         // DEFSEP1：翻譯一律用全形逗號 join（顯示端只認 [,，] 切 badge；
         // 舊碼 join('\n') 是 U6/U7 翻譯黏連的源頭）。單條內殘留換行也先壓成 ，。
-        const text = zh.slice(0, 3).map(t => t.replace(/\s*\n\s*/g, '，')).join('，');
+        // AUTOFILL-CONTRACT1：單條內 [;；] 同壓（ant「進行…動作的人；起…作用的人」同例）。
+        const text = zh.slice(0, 3).map(t => t.replace(/\s*\n\s*/g, '，').replace(/[;；]/g, '，')).join('，');
         if (text) { patch.definition = text; bump('trans', 'ok'); } else bump('trans', 'fail');
       }
     } catch (e) { bump('trans', 'fail', e); }
