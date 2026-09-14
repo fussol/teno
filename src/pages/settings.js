@@ -966,7 +966,89 @@ function renderFilteredDecks(s) {
   `;
 }
 
+// ─── 設定頁收合（整頓：標題常駐＋內容下拉，狀態記 localStorage）───
+// 設計：render 零改動（以後加新 section 自動跟上）；onMount 枚举頂層 .section
+// 掛 .collapsible＋chevron；內嵌（匯入／匯出／標籤頁自己的子 section）保持展開。
+const COLLAPSE_KEY = 'teno-settings-collapsed';
+function _collapseKeyOf(titleEl) {
+  const t = (titleEl?.textContent || '').replace(/\s+/g, '').slice(0, 24);
+  return t || 'untitled';
+}
+function _loadCollapsedSet() {
+  try {
+    const a = JSON.parse(localStorage.getItem(COLLAPSE_KEY));
+    if (Array.isArray(a)) return new Set(a);
+  } catch (_) {}
+  return null; // 首次：全部收起（只留標題）
+}
+function _saveCollapsedSet(set) {
+  try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...set])); } catch (_) {}
+}
+function bindCollapsibleSections() {
+  const container = document.getElementById('pageContainer');
+  if (!container) return;
+  // 頂層 section：沒有 .section 祖先（排除匯入／匯出／標籤內嵌的子 section）
+  const sections = [...container.querySelectorAll('.section')]
+    .filter(el => !(el.parentElement && el.parentElement.closest('.section')));
+  if (!sections.length) return;
+  let collapsed = _loadCollapsedSet();
+  const firstRun = collapsed === null;
+  if (firstRun) collapsed = new Set();
+  // 工具列：全部展開／全部收起（只加一次）
+  const title = container.querySelector('.page-title');
+  if (title && !container.querySelector('.collapse-toolbar')) {
+    const bar = document.createElement('div');
+    bar.className = 'collapse-toolbar';
+    bar.innerHTML = `<button class="btn btn-sm btn-secondary" data-collapse-act="expand">全部展開</button>
+      <button class="btn btn-sm btn-secondary" data-collapse-act="collapse">全部收起</button>`;
+    title.after(bar);
+    bar.addEventListener('click', (e) => {
+      const act = e.target?.dataset?.collapseAct;
+      if (!act) return;
+      const next = new Set();
+      sections.forEach(sec => {
+        const key = sec.dataset.collapseKey;
+        const shouldCollapse = act === 'collapse';
+        sec.classList.toggle('collapsed', shouldCollapse);
+        sec.querySelector(':scope > .section-title, :scope > .section-header > .section-title')
+          ?.setAttribute('aria-expanded', String(!shouldCollapse));
+        if (shouldCollapse && key) next.add(key);
+      });
+      _saveCollapsedSet(next);
+    });
+  }
+  sections.forEach(sec => {
+    const head = sec.querySelector(':scope > .section-header');
+    const titleEl = sec.querySelector(':scope > .section-title')
+      || head?.querySelector('.section-title');
+    if (!titleEl) return;
+    const key = _collapseKeyOf(titleEl);
+    sec.dataset.collapseKey = key;
+    sec.classList.add('collapsible');
+    if (!titleEl.querySelector('.collapse-chevron')) {
+      titleEl.insertAdjacentHTML('beforeend', `<span class="collapse-chevron">${icon('chevronD')}</span>`);
+    }
+    const isCollapsed = firstRun ? true : collapsed.has(key);
+    sec.classList.toggle('collapsed', isCollapsed);
+    titleEl.setAttribute('aria-expanded', String(!isCollapsed));
+    const clickTarget = head || titleEl;
+    if (clickTarget.dataset.collapseBound) return;
+    clickTarget.dataset.collapseBound = '1';
+    clickTarget.addEventListener('click', (e) => {
+      // 標題列裡的按鈕／輸入（字本管理的新增字本等）點了只做自己的事，不觸發收合
+      if (e.target.closest('button, a, input, select, textarea, label')) return;
+      const nowCollapsed = sec.classList.toggle('collapsed');
+      titleEl.setAttribute('aria-expanded', String(!nowCollapsed));
+      const cur = _loadCollapsedSet() || new Set();
+      if (nowCollapsed) cur.add(key); else cur.delete(key);
+      _saveCollapsedSet(cur);
+    });
+  });
+  if (firstRun) _saveCollapsedSet(new Set(sections.map(s => s.dataset.collapseKey).filter(Boolean)));
+}
+
 export function onMount(s) {
+  bindCollapsibleSections();
   const modelList = document.getElementById('piperModelList');
   if (modelList) modelList.innerHTML = '';
 

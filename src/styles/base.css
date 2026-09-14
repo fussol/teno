@@ -298,6 +298,22 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 }
 .section-title .ic{font-size:18px;color:var(--accent)}
 
+/* ─── Settings collapsible sections（設定頁整頓：標題常駐＋內容下拉）─── */
+/* 只作用於被 JS 掛上 .collapsible 的 section（目前僅設定頁），其他頁不受影響 */
+.section.collapsible > .section-title,
+.section.collapsible > .section-header{cursor:pointer;user-select:none;border-radius:var(--r-md)}
+.section.collapsible > .section-title:hover,
+.section.collapsible > .section-header:hover{background:var(--bg-elevated)}
+.section.collapsible .collapse-chevron{margin-left:auto;color:var(--text-tertiary);display:inline-flex;flex-shrink:0;transition:transform var(--t-fast)}
+.section.collapsible .collapse-chevron .ic{font-size:16px;color:var(--text-tertiary)}
+.section.collapsible.collapsed .collapse-chevron{transform:rotate(-90deg)}
+/* 收起時只留標題列：header 本體保留（裡面的操作鈕照樣能按），其餘直屬內容全藏 */
+.section.collapsible.collapsed > :not(.section-title):not(.section-header):not(.collapse-toolbar){display:none}
+/* 標題列內的按鈕（字本管理的新增字本等）點了不觸發收合，由 JS stopPropagation */
+.section.collapsible .section-header .btn{flex-shrink:0}
+.collapse-toolbar{display:flex;gap:var(--s2);margin-bottom:var(--s4)}
+.collapse-toolbar .btn{font-size:12px}
+
 /* ─── Cards ─── */
 .card{
   background:var(--bg-surface);border:1px solid var(--border-subtle);
