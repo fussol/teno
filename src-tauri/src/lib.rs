@@ -3209,15 +3209,78 @@ mod sim_tests {
     use super::*;
     use chrono::Datelike;
 
-    fn load_req(path: &str) -> SimulateFsrsRequest {
-        let data = std::fs::read_to_string(path).unwrap();
-        serde_json::from_str(&data).unwrap()
+    // SIMFIX1: 自帶糧食 — 原先讀 /tmp/sim-req-*.json（d339121 清內部筆記時移除，
+    // fixture 無源可考，三測試永久紅）。改合成確定性測資：60 張 review 卡＋
+    // 90 天 300 筆 revlog，權重用 simulator.js 同款 FSRS-6 預設 21 參數。
+    const FSRS6_DEFAULT_W: [f32; 21] = [
+        0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722,
+        0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425,
+        0.0912, 0.0658, 0.1542,
+    ];
+    fn synth_sim_req(mode: &str) -> SimulateFsrsRequest {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let day_ms: i64 = 86_400_000;
+        // 60 張 review 卡：stability 1..30 分散、difficulty 1..10、due 交錯過去/未來
+        let cards: Vec<SimCardEntry> = (0..60)
+            .map(|i| {
+                let s = 1.0 + (i % 30) as f32;
+                SimCardEntry {
+                    stability: s,
+                    difficulty: 1.0 + (i % 10) as f32,
+                    interval: s,
+                    lapses: (i % 3) as u32,
+                    state: 2,
+                    due_ms: Some(now_ms - ((i % 20) as i64 - 10) * day_ms),
+                }
+            })
+            .collect();
+        // 90 天約 300 筆：每詞 5 筆，好評為主（Good 3 為主＋零星 Again/Hard/Easy）
+        let mut reviews = Vec::with_capacity(320);
+        for c in 0..60 {
+            for k in 0..5 {
+                let rating = match (c + k) % 10 {
+                    0 => 1,
+                    1 => 2,
+                    9 => 4,
+                    _ => 3,
+                };
+                reviews.push(SimReviewEntry {
+                    word_id: format!("w{:03}", c),
+                    rating,
+                    duration_ms: 8000,
+                    card_state: 2,
+                    reviewed_at_ms: now_ms - ((89 - ((c * 5 + k) % 90)) as i64) * day_ms,
+                });
+            }
+        }
+        SimulateFsrsRequest {
+            cards,
+            reviews,
+            params: FSRS6_DEFAULT_W.to_vec(),
+            desired_retention: 0.9,
+            max_interval: 36500,
+            learn_limit: 20,
+            review_limit: 200,
+            days: 30,
+            seed: 42,
+            mode: mode.to_string(),
+            from_zero: false,
+            review_order: "day".to_string(),
+            new_cards_ignore_review_limit: false,
+            suspend_after_lapse_count: None,
+            easy_days_percentages: vec![1.0; 7],
+            timezone_offset_minutes: 480,
+            day_cutoff_minutes: 360,
+        }
     }
 
     #[test]
     fn simulate_all_modes_from_real_db() {
         for mode in ["flip", "mc", "spell"] {
-            let req = load_req(&format!("/tmp/sim-req-{}.json", mode));
+            let req = synth_sim_req(mode);
             let resp = simulate_fsrs(req).expect("simulate failed");
             assert_eq!(resp.memorized_per_day.len(), 30, "{} days", mode);
             assert_eq!(resp.review_per_day.len(), 30, "{} days", mode);
@@ -3234,7 +3297,7 @@ mod sim_tests {
 
     #[test]
     fn workload_matches_anki_semantics() {
-        let req = load_req("/tmp/sim-req-workload.json");
+        let req = synth_sim_req("workload");
         let resp = simulate_fsrs(req).expect("workload failed");
         assert_eq!(resp.drs.len(), 30, "70~99 共 30 組");
         // DR 越高 cost 越高（單調趨勢允許小波動, 但整體應上升）
@@ -3251,7 +3314,7 @@ mod sim_tests {
 
     #[test]
     fn optimal_retention_returns_reasonable_value() {
-        let req = load_req("/tmp/sim-req-optimal.json");
+        let req = synth_sim_req("optimal");
         let resp = simulate_fsrs(req).expect("optimal failed");
         let dr = resp.optimal_retention.expect("應有最佳留存率");
         println!("optimal retention = {:.4} ({}%)", dr, dr * 100.0);
