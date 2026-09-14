@@ -4,6 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 import * as db from './db.js';
+import { isAndroid } from './platform.js';
 import { startAutoBackup } from './backup-scheduler.js';
 import { FSRS, AGAIN, HARD, GOOD, EASY, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING, generateFuzzFactor, parseStepsStr } from '../core/fsrs.js';
 import { mulberry32 } from './rng.js';
@@ -535,8 +536,9 @@ export function createStore() {
     // 介面備註開關（no-hints body class；預設關＝備註隱藏）
     state.uiHints = settings.uiHints === true;
     document.body.classList.toggle('no-hints', !state.uiHints);
-    // UISCALE1：還原縮放檔位（髒值夾回 0..4；body zoom 即時套用）
-    state.uiScaleIdx = clampUiScaleIdx(settings.uiScaleIdx);
+    // UISCALE1：還原縮放檔位（髒值夾回 0..4；body zoom 即時套用）。
+    // 手機一律 100%（isAndroid→0，不理 DB 設定值；設定頁該區手機版不顯示）。
+    state.uiScaleIdx = isAndroid ? 0 : clampUiScaleIdx(settings.uiScaleIdx);
     applyUiScale(state.uiScaleIdx);
     try {
       const { initAppLog, setLogScopes } = await import('./app-log.js');
@@ -1402,9 +1404,9 @@ export function createStore() {
       notify();
       return state.uiHints;
     },
-    /** UISCALE1：設縮放檔位（夾 0..4，body zoom 即時套用＋DB 持久化） */
+    /** UISCALE1：設縮放檔位（夾 0..4，body zoom 即時套用＋DB 持久化；手機一律 100%） */
     async setUiScale(idx) {
-      const i = applyUiScale(idx);
+      const i = applyUiScale(isAndroid ? 0 : idx);
       state.uiScaleIdx = i;
       try { await db.setSetting('uiScaleIdx', i); } catch (e) { console.warn('[store] setUiScale error:', e); }
       notify();

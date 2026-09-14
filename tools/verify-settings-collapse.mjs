@@ -16,7 +16,7 @@ console.log('== T1 CSS：收合樣式（作用域只限 .collapsible，不污染
 ok('collapsible 標題可點（cursor）', css.includes('.section.collapsible > .section-title'));
 ok('收起隱藏內容（:not 保留標題列，!important 蓋 inline display）',
   css.includes('.section.collapsible.collapsed > :not(.section-title):not(.section-header){display:none !important}'));
-ok('chevron 指示＋旋轉', css.includes('.collapse-chevron') && css.includes('rotate(-90deg)'));
+ok('無 chevron 樣式殘留（點標題即收合）', !css.includes('collapse-chevron'));
 ok('無工具列樣式殘留（使用者不要全部展開/收起）', !css.includes('.collapse-toolbar'));
 ok('無全域 .section.collapsed 裸規則（他頁免疫）',
   !/^(\s*)\.section\.collapsed\s*>/m.test(css.replace(/\.section\.collapsible\.collapsed/g, '')));
@@ -27,7 +27,8 @@ ok('onMount 首行呼叫', /export function onMount\(s\) \{\n  bindCollapsibleSe
 ok('localStorage 記憶（key＋讀寫）', js.includes("const COLLAPSE_KEY = 'teno-settings-collapsed'")
   && js.includes('_loadCollapsedSet') && js.includes('_saveCollapsedSet'));
 ok('首次預設全收（只留標題）', js.includes('firstRun') && /firstRun \? true/.test(js));
-ok('chevron 掛載（chevronD）', js.includes("icon('chevronD')") && js.includes('collapse-chevron'));
+ok('無下拉圖標（點標題即收合，不掛 chevron）',
+  !js.includes('collapse-chevron') && !css.includes('collapse-chevron'));
 ok('頂層過濾（內嵌匯入/匯出/標籤子 section 不收）',
   js.includes("!(el.parentElement && el.parentElement.closest('.section'))"));
 ok('標題列按鈕不觸發收合（字本管理新增鈕等）',

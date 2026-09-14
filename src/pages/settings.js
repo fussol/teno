@@ -245,7 +245,8 @@ function renderSettingsContent(s) {
       </div>
     </div>
 
-    <!-- 介面備註（使用者 2026-09-10 裁示：預設關，設定頁可開） -->
+    <!-- 介面備註（僅 devMode 顯示：一般用戶不需要開關說明文字） -->
+    ${s.state.devMode ? `
     <div class="section">
       <div class="section-title">${icon('info')} 介面備註</div>
       <div class="config-section">
@@ -257,8 +258,10 @@ function renderSettingsContent(s) {
         </div>
       </div>
     </div>
+    ` : ''}
 
-    <!-- UISCALE1：介面大小（五檔，目前＝最小；Ctrl +/- / Ctrl+0 / Ctrl+滾輪） -->
+    <!-- UISCALE1：介面大小（僅桌機顯示設定；手機一律 100% 不理設定值） -->
+    ${isAndroid ? '' : `
     <div class="section">
       <div class="section-title">${icon('search')} 介面大小</div>
       <div class="config-section">
@@ -273,6 +276,7 @@ function renderSettingsContent(s) {
         </div>
       </div>
     </div>
+    `}
 
     <!-- Exam Saved Sessions Settings -->
     <div class="section">
@@ -1002,9 +1006,6 @@ function bindCollapsibleSections() {
     const key = _collapseKeyOf(titleEl);
     sec.dataset.collapseKey = key;
     sec.classList.add('collapsible');
-    if (!titleEl.querySelector('.collapse-chevron')) {
-      titleEl.insertAdjacentHTML('beforeend', `<span class="collapse-chevron">${icon('chevronD')}</span>`);
-    }
     const isCollapsed = firstRun ? true : collapsed.has(key);
     sec.classList.toggle('collapsed', isCollapsed);
     titleEl.setAttribute('aria-expanded', String(!isCollapsed));

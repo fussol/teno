@@ -304,9 +304,6 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .section.collapsible > .section-header{cursor:pointer;user-select:none;border-radius:var(--r-md)}
 .section.collapsible > .section-title:hover,
 .section.collapsible > .section-header:hover{background:var(--bg-elevated)}
-.section.collapsible .collapse-chevron{margin-left:auto;color:var(--text-tertiary);display:inline-flex;flex-shrink:0;transition:transform var(--t-fast)}
-.section.collapsible .collapse-chevron .ic{font-size:16px;color:var(--text-tertiary)}
-.section.collapsible.collapsed .collapse-chevron{transform:rotate(-90deg)}
 /* 收起時只留標題列：header 本體保留（裡面的操作鈕照樣能按），其餘直屬內容全藏 */
 /* !important：危險區域等 config-section 帶 inline display:flex，會蓋掉普通規則 */
 .section.collapsible.collapsed > :not(.section-title):not(.section-header){display:none !important}
