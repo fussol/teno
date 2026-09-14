@@ -25,6 +25,9 @@ pub struct Sense {
     pub definition: String,
     pub examples: Vec<String>,
     pub cefr_level: Option<String>,
+    /// 所屬條目 headword（ANTFIX：同頁多條目如 ant/-ant 時，供呼叫端過濾串台）
+    #[serde(default)]
+    pub headword: String,
 }
 
 // ── Selectors ─────────────────────────────────────────────────────────────
@@ -94,6 +97,14 @@ pub fn scrape_cambridge_html(html: &str) -> Result<EnglishLookup> {
                 None => continue,
             };
 
+            // ANTFIX：記住本 entry 的 headword（同頁 ant/-ant 兩條目時，sense 才分得開）
+            let entry_headword = entry
+                .select(&SEL.headword)
+                .next()
+                .or_else(|| entry.select(&SEL.headword_new).next())
+                .map(|el| flatten_text(&el))
+                .unwrap_or_default();
+
             let pos: Vec<String> = section
                 .select(&SEL.pos)
                 .map(|e| flatten_text(&e))
@@ -134,6 +145,7 @@ pub fn scrape_cambridge_html(html: &str) -> Result<EnglishLookup> {
                     definition,
                     examples,
                     cefr_level,
+                    headword: entry_headword.clone(),
                 });
             }
         }
@@ -165,11 +177,14 @@ pub fn scrape_cambridge_html(html: &str) -> Result<EnglishLookup> {
             // pos：往最近的感群（di-info）向上爬取 `.pos.dpos`；取不到 → ""（不 fail）。
             let current_pos = nearest_pos(&block).unwrap_or_default();
 
+            // ANTFIX：新模板同頁多條目時，sense 盡量歸屬最近的 headword；爬不到→頁面主 headword
+            let hw = nearest_headword(&block).unwrap_or_else(|| word.clone());
             senses.push(Sense {
                 part_of_speech: current_pos,
                 definition,
                 examples,
                 cefr_level,
+                headword: hw,
             });
         }
     }
@@ -188,9 +203,30 @@ pub fn scrape_cambridge_html(html: &str) -> Result<EnglishLookup> {
     })
 }
 
-/// 新模板 sense 群 pos 匹配：從 def_block 沿 parent 往上爬，找到第一個含 `.pos.dpos`
-/// 的元素即取其 pos（新模板 `.di-info > .pos.dpos` 為 def_block 所在感群的 sibling 鏈）。
-/// 爬不到 → None（呼叫端降級為 ""）。
+/// 新模板 sense 群 headword 歸屬：從 def_block 沿 parent 往上爬，找到第一個含
+/// headword（舊 `.hw.dhw` 或新 `.headword`）的元素即取其文字；爬不到 → None
+///（呼叫端降級為頁面主 headword）。與 nearest_pos 同構。
+fn nearest_headword(block: &scraper::ElementRef) -> Option<String> {
+    let mut cur = block.parent()?;
+    for _ in 0..8 {
+        if let Some(er) = scraper::ElementRef::wrap(cur) {
+            if let Some(h) = er
+                .select(&SEL.headword)
+                .next()
+                .or_else(|| er.select(&SEL.headword_new).next())
+            {
+                let t = flatten_text(&h);
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+            cur = er.parent()?;
+        } else {
+            cur = cur.parent()?;
+        }
+    }
+    None
+}
 fn nearest_pos(block: &scraper::ElementRef) -> Option<String> {
     // 沿 parent 鏈爬（ElementRef Deref→NodeRef，NodeRef::parent() 可用）
     let mut cur = block.parent()?; // 第一步已越過 def_block 本身

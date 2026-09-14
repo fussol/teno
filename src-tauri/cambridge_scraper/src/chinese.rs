@@ -26,6 +26,9 @@ pub struct ChineseSense {
     pub translation: String,
     pub examples: Vec<ChineseExample>,
     pub cefr_level: Option<String>,
+    /// 所屬條目 headword（ANTFIX：同頁多條目如 ant/-ant 時，供呼叫端過濾串台）
+    #[serde(default)]
+    pub headword: String,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -104,6 +107,13 @@ pub fn scrape_cambridge_chinese_html(html: &str) -> Result<ChineseLookup> {
             None => continue,
         };
 
+        // ANTFIX：記住本 entry 的 headword（同頁 ant/-ant 兩條目時，sense 才分得開）
+        let entry_headword = entry
+            .select(&SEL.headword)
+            .next()
+            .map(|el| flatten_text(&el))
+            .unwrap_or_default();
+
         let pos: Vec<String> = section
             .select(&SEL.pos)
             .map(|e| flatten_text(&e))
@@ -164,6 +174,7 @@ pub fn scrape_cambridge_chinese_html(html: &str) -> Result<ChineseLookup> {
                 translation,
                 examples,
                 cefr_level,
+                headword: entry_headword.clone(),
             });
         }
     }
@@ -306,5 +317,58 @@ mod tests {
             scrape_cambridge_chinese_html("<html></html>"),
             Err(Error::WordNotFound)
         ));
+    }
+
+    // ANTFIX：同頁 ant/-ant 兩條目時，sense 帶各自 headword（呼叫端才濾得掉後綴串台）
+    fn two_entry_html() -> String {
+        r#"<!DOCTYPE html><html lang="zh-Hant"><head><title>ant</title></head><body>
+<div class="di-body"><div class="entry"><div class="entry-body">
+  <div class="pr entry-body__el">
+    <div class="pos-header dpos-h"><div class="di-title">
+      <span class="headword"><span class="hw dhw">ant</span></span>
+    </div><div class="posgram dpos-g"><span class="pos dpos">noun</span></div></div>
+    <div class="pos-body"><div class="pr dsense"><div class="sense-body dsense_b">
+      <div class="def-block ddef_block"><div class="ddef_h">
+        <div class="def ddef_d db">a very small insect:</div></div>
+        <div class="def-body ddef_b"><span class="trans dtrans" lang="zh-Hant">螞蟻</span></div>
+      </div>
+    </div></div></div>
+  </div>
+</div></div>
+<div class="di-body"><div class="entry"><div class="entry-body">
+  <div class="pr entry-body__el">
+    <div class="pos-header dpos-h"><div class="di-title">
+      <span class="headword"><span class="hw dhw">-ant</span></span>
+    </div><div class="posgram dpos-g"><span class="pos dpos">suffix</span></div></div>
+    <div class="pos-body"><div class="pr dsense"><div class="sense-body dsense_b">
+      <div class="def-block ddef_block"><div class="ddef_h">
+        <div class="def ddef_d db">doing something:</div></div>
+        <div class="def-body ddef_b"><span class="trans dtrans" lang="zh-Hant">進行…動作的人</span></div>
+      </div>
+    </div></div></div>
+  </div>
+</div></div>
+</body></html>"#
+            .to_string()
+    }
+
+    #[test]
+    fn senses_carry_own_headword() {
+        let r = scrape_cambridge_chinese_html(&two_entry_html()).unwrap();
+        assert_eq!(r.senses.len(), 2);
+        assert_eq!(r.senses[0].headword, "ant");
+        assert_eq!(r.senses[0].translation, "螞蟻");
+        assert_eq!(r.senses[1].headword, "-ant");
+        assert_eq!(r.senses[1].translation, "進行…動作的人");
+    }
+
+    #[test]
+    fn headword_matches_matrix() {
+        use crate::shared::headword_matches;
+        assert!(headword_matches("ant", "ant"));
+        assert!(headword_matches("Ant", "ant")); // 大小寫無關
+        assert!(!headword_matches("-ant", "ant")); // 後綴條目必須濾掉
+        assert!(!headword_matches("ant", "ants"));
+        assert!(headword_matches("get rid of something", "get rid of something"));
     }
 }

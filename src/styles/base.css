@@ -1247,7 +1247,8 @@ body.no-hints .mode-desc{display:none}
 .split-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
 .split-badge{display:inline-block;font-weight:600;white-space:nowrap}
 .split-badge-pos{font-size:10px;color:var(--accent);background:var(--accent-container);padding:2px 10px;border-radius:var(--r-full);letter-spacing:.08em}
-.split-badge-def{font-size:15px;color:var(--text-primary);background:var(--bg-base);padding:4px 14px;border:1px solid var(--border-subtle);border-radius:var(--r-full)}
+/* ANTFIX：定義膠囊允許換行（長翻譯不再一條線爆框；詞性短標籤維持 nowrap） */
+.split-badge-def{font-size:15px;color:var(--text-primary);background:var(--bg-base);padding:4px 14px;border:1px solid var(--border-subtle);border-radius:var(--r-full);white-space:normal;overflow-wrap:anywhere;max-width:100%}
 .study-counts{display:flex;gap:16px;font-size:11px;font-weight:500;font-family:var(--mono);font-feature-settings:'tnum';font-variant-numeric:tabular-nums}
 .study-count-new{color:var(--amber)}
 .study-count-learn{color:var(--accent)}

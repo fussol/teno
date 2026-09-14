@@ -374,12 +374,21 @@ async fn lookup_cambridge(word: String, lang: Option<String>) -> Result<String, 
         let html = resp.into_string()
             .map_err(|e| format!("body error: {}", e))?;
         if is_zh {
-            let result = cambridge_scraper::scrape_cambridge_chinese_html(&html)
+            let mut result = cambridge_scraper::scrape_cambridge_chinese_html(&html)
                 .map_err(|e| format!("解析失敗: {}", e))?;
+            // ANTFIX：同頁多條目（ant/-ant）只留查詢字的 sense；對不上半個回退全留（舊行為）
+            let kept: Vec<_> = result.senses.iter()
+                .filter(|s| cambridge_scraper::headword_matches(&s.headword, &word))
+                .cloned().collect();
+            if !kept.is_empty() { result.senses = kept; }
             serde_json::to_string(&result).map_err(|e| format!("JSON 序列化失敗: {}", e))
         } else {
-            let result = cambridge_scraper::scrape_cambridge_html(&html)
+            let mut result = cambridge_scraper::scrape_cambridge_html(&html)
                 .map_err(|e| format!("解析失敗: {}", e))?;
+            let kept: Vec<_> = result.senses.iter()
+                .filter(|s| cambridge_scraper::headword_matches(&s.headword, &word))
+                .cloned().collect();
+            if !kept.is_empty() { result.senses = kept; }
             serde_json::to_string(&result).map_err(|e| format!("JSON 序列化失敗: {}", e))
         }
     });
