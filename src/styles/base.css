@@ -308,11 +308,10 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 .section.collapsible .collapse-chevron .ic{font-size:16px;color:var(--text-tertiary)}
 .section.collapsible.collapsed .collapse-chevron{transform:rotate(-90deg)}
 /* 收起時只留標題列：header 本體保留（裡面的操作鈕照樣能按），其餘直屬內容全藏 */
-.section.collapsible.collapsed > :not(.section-title):not(.section-header):not(.collapse-toolbar){display:none}
+/* !important：危險區域等 config-section 帶 inline display:flex，會蓋掉普通規則 */
+.section.collapsible.collapsed > :not(.section-title):not(.section-header){display:none !important}
 /* 標題列內的按鈕（字本管理的新增字本等）點了不觸發收合，由 JS stopPropagation */
 .section.collapsible .section-header .btn{flex-shrink:0}
-.collapse-toolbar{display:flex;gap:var(--s2);margin-bottom:var(--s4)}
-.collapse-toolbar .btn{font-size:12px}
 
 /* ─── Cards ─── */
 .card{

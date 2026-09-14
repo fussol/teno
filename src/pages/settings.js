@@ -994,29 +994,6 @@ function bindCollapsibleSections() {
   let collapsed = _loadCollapsedSet();
   const firstRun = collapsed === null;
   if (firstRun) collapsed = new Set();
-  // 工具列：全部展開／全部收起（只加一次）
-  const title = container.querySelector('.page-title');
-  if (title && !container.querySelector('.collapse-toolbar')) {
-    const bar = document.createElement('div');
-    bar.className = 'collapse-toolbar';
-    bar.innerHTML = `<button class="btn btn-sm btn-secondary" data-collapse-act="expand">全部展開</button>
-      <button class="btn btn-sm btn-secondary" data-collapse-act="collapse">全部收起</button>`;
-    title.after(bar);
-    bar.addEventListener('click', (e) => {
-      const act = e.target?.dataset?.collapseAct;
-      if (!act) return;
-      const next = new Set();
-      sections.forEach(sec => {
-        const key = sec.dataset.collapseKey;
-        const shouldCollapse = act === 'collapse';
-        sec.classList.toggle('collapsed', shouldCollapse);
-        sec.querySelector(':scope > .section-title, :scope > .section-header > .section-title')
-          ?.setAttribute('aria-expanded', String(!shouldCollapse));
-        if (shouldCollapse && key) next.add(key);
-      });
-      _saveCollapsedSet(next);
-    });
-  }
   sections.forEach(sec => {
     const head = sec.querySelector(':scope > .section-header');
     const titleEl = sec.querySelector(':scope > .section-title')
