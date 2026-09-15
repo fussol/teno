@@ -158,6 +158,30 @@ fn is_media_put(url_path: &str, fp: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// LOGARCHIVE1 parity（跟獨立版 is_log_put 同規）：PUT 到 /logs/<name>.txt.gz 走日誌通道。
+fn is_log_put(url_path: &str, fp: &std::path::Path) -> bool {
+    let segs: Vec<&str> = url_path.split('/').collect();
+    if segs.len() < 3 || segs[segs.len() - 2] != "logs" {
+        return false;
+    }
+    let name = segs[segs.len() - 1];
+    if !name.ends_with(".txt.gz") || name.len() > 128 {
+        return false;
+    }
+    let stem = &name[..name.len() - 7];
+    if stem.is_empty()
+        || !stem
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
+        return false;
+    }
+    fp.parent()
+        .and_then(|d| d.file_name())
+        .map(|d| d == "logs")
+        .unwrap_or(false)
+}
+
 /// SYNC2-Q3：port 誰在聽（內嵌／外掛獨立版／都沒跑）
 fn port_occupied(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
@@ -495,6 +519,162 @@ fn http_date_now() -> String {
     format!("ts-{ts}")
 }
 
+/// PATCHDIFF1 parity helpers（跟獨立版 tenoc_unpack/pack＋page patch 同規）。
+fn patch_sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(data);
+    let out = h.finalize();
+    let mut s = String::with_capacity(64);
+    for b in out { s.push_str(&format!("{:02x}", b)); }
+    s
+}
+fn patch_sqlite_ps(db: &[u8]) -> usize {
+    if db.len() < 18 || !db.starts_with(b"SQLite format 3\0") { return 4096; }
+    let v = u16::from_be_bytes([db[16], db[17]]) as usize;
+    if v == 1 { 65536 } else if (512..=65536).contains(&v) { v } else { 4096 }
+}
+fn handle_patch_put(stream: &mut TcpStream, root: &std::path::Path, req: &Request, body: &[u8]) {
+    let get_h = |k: &str| req.headers.get(k).map(|v| v.trim().to_string()).unwrap_or_default();
+    let base_h = get_h("x-base-sha256").to_lowercase();
+    let target_h = get_h("x-target-sha256").to_lowercase();
+    let ps: usize = get_h("x-page-size").parse().unwrap_or(0);
+    if base_h.is_empty() || target_h.is_empty() {
+        send(stream, "422 Unprocessable Entity", &[], b"missing base/target");
+        return;
+    }
+    if ![512,1024,2048,4096,8192,16384,32768,65536].contains(&ps) {
+        send(stream, "422 Unprocessable Entity", &[], b"bad page size");
+        return;
+    }
+    if body.len() > 64 * 1024 * 1024 {
+        send(stream, "413 Payload Too Large", &[], b"patch too large");
+        return;
+    }
+    let fp = root.join("teno.db");
+    let cur = match std::fs::read(&fp) {
+        Ok(b) => b,
+        Err(_) => { send(stream, "409 Conflict", &[], b"no base file"); return; }
+    };
+    if patch_sha256_hex(&cur) != base_h {
+        send(stream, "409 Conflict", &[], b"base mismatch");
+        return;
+    }
+    // 解 gzip → 套 patch → 驗 SQLite → 重包 → 驗 target → 原子換檔＋history
+    let raw_patch = match crate::webdav_sync::gzip_decompress(body) {
+        Ok(b) => b,
+        Err(e) => { send(stream, "422 Unprocessable Entity", &[], format!("gunzip fail: {e}").as_bytes()); return; }
+    };
+    let (teno_raw, log_raw) = match crate::unpack_db_container(&cur) {
+        Ok(v) => v,
+        Err(e) => { send(stream, "422 Unprocessable Entity", &[], format!("unpack fail: {e}").as_bytes()); return; }
+    };
+    let new_raw = match crate::webdav_sync::apply_patch(&teno_raw, &raw_patch, ps) {
+        Ok(b) => b,
+        Err(e) => { send(stream, "422 Unprocessable Entity", &[], format!("apply fail: {e}").as_bytes()); return; }
+    };
+    if new_raw.len() < 100 || !new_raw.starts_with(b"SQLite format 3\0") {
+        send(stream, "422 Unprocessable Entity", &[], b"patched result not SQLite");
+        return;
+    }
+    // 重包 v2（跟 client pack_sync_container 同佈局：調用 webdav_sync 的 gzip 再手組）
+    let rebuilt = match (|| -> Result<Vec<u8>, String> {
+        let tg = crate::webdav_sync::gzip_compress(&new_raw)?;
+        let lg = crate::webdav_sync::gzip_compress(&log_raw)?;
+        let mut out = Vec::with_capacity(5+1+4+tg.len()+4+lg.len());
+        out.extend_from_slice(b"TENOC"); out.push(2u8);
+        out.extend_from_slice(&(tg.len() as u32).to_le_bytes());
+        out.extend_from_slice(&tg);
+        out.extend_from_slice(&(lg.len() as u32).to_le_bytes());
+        out.extend_from_slice(&lg);
+        Ok(out)
+    })() {
+        Ok(b) => b,
+        Err(e) => { send(stream, "500 Internal Server Error", &[], e.as_bytes()); return; }
+    };
+    if patch_sha256_hex(&rebuilt) != target_h {
+        send(stream, "422 Unprocessable Entity", &[], b"target mismatch");
+        return;
+    }
+    rotate_history_file(&fp);
+    let tmp = fp.with_extension("part");
+    match std::fs::write(&tmp, &rebuilt).and_then(|_| std::fs::rename(&tmp, &fp)) {
+        Ok(_) => send(stream, "204 No Content", &[], b""),
+        Err(e) => send(stream, "500 Internal Server Error", &[], e.to_string().as_bytes()),
+    }
+}
+fn handle_patch_get(stream: &mut TcpStream, root: &std::path::Path, full_path: &str) {
+    // query base=
+    let query = full_path.split('?').nth(1).unwrap_or("");
+    let mut base_h = String::new();
+    for kv in query.split('&') {
+        if let Some(v) = kv.strip_prefix("base=") {
+            base_h = v.trim().to_lowercase();
+        }
+    }
+    if base_h.is_empty() {
+        send(stream, "422 Unprocessable Entity", &[], b"missing base");
+        return;
+    }
+    let fp = root.join("teno.db");
+    let cur = match std::fs::read(&fp) {
+        Ok(b) => b,
+        Err(_) => { send(stream, "404 Not Found", &[], b"not found"); return; }
+    };
+    if patch_sha256_hex(&cur) == base_h {
+        send(stream, "204 No Content", &[], b"");
+        return;
+    }
+    // history 翻 base
+    let hist = fp.parent().map(|p| p.join(".history")).unwrap_or(".history".into());
+    let mut base_raw: Option<Vec<u8>> = None;
+    if let Ok(rd) = std::fs::read_dir(&hist) {
+        let mut names: Vec<_> = rd.flatten().map(|e| e.path()).filter(|p| p.file_name().map(|n| n.to_string_lossy().starts_with("teno.db.")).unwrap_or(false)).collect();
+        names.sort();
+        names.reverse();
+        for p in names {
+            if let Ok(d) = std::fs::read(&p) {
+                if patch_sha256_hex(&d) == base_h {
+                    if let Ok((t, _)) = crate::unpack_db_container(&d) {
+                        base_raw = Some(t);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let base_raw = match base_raw {
+        Some(b) => b,
+        None => { send(stream, "409 Conflict", &[], b"base not found, use full download"); return; }
+    };
+    let (cur_raw, _) = match crate::unpack_db_container(&cur) {
+        Ok(v) => v,
+        Err(e) => { send(stream, "422 Unprocessable Entity", &[], format!("unpack fail: {e}").as_bytes()); return; }
+    };
+    let ps = patch_sqlite_ps(&cur_raw);
+    if ps != patch_sqlite_ps(&base_raw) {
+        send(stream, "422 Unprocessable Entity", &[], b"page size changed");
+        return;
+    }
+    let pages = match crate::webdav_sync::page_diff(&base_raw, &cur_raw, ps) {
+        Ok(v) => v,
+        Err(e) => { send(stream, "422 Unprocessable Entity", &[], format!("diff fail: {e}").as_bytes()); return; }
+    };
+    let raw = match crate::webdav_sync::pack_patch(&pages, ps) {
+        Ok(v) => v,
+        Err(e) => { send(stream, "500 Internal Server Error", &[], e.as_bytes()); return; }
+    };
+    let gz = match crate::webdav_sync::gzip_compress(&raw) {
+        Ok(v) => v,
+        Err(e) => { send(stream, "500 Internal Server Error", &[], e.as_bytes()); return; }
+    };
+    send(stream, "200 OK", &[
+        ("Content-Type", "application/octet-stream".into()),
+        ("X-Target-Sha256", patch_sha256_hex(&cur)),
+        ("X-Page-Size", ps.to_string()),
+    ], &gz);
+}
+
 fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pass: String) {
     let (req, body) = match read_request(&mut stream) {
         Some(v) => v,
@@ -517,7 +697,7 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
             "200 OK",
             &[
                 ("DAV", "1".into()),
-                ("Allow", "OPTIONS,GET,HEAD,PUT,DELETE,MKCOL,PROPFIND".into()),
+                ("Allow", "OPTIONS,GET,HEAD,PUT,PATCH,DELETE,MKCOL,PROPFIND".into()),
             ],
             b"",
         ),
@@ -609,6 +789,15 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
         }
         "GET" | "HEAD" => {
             let head_only = req.method == "HEAD";
+            // PATCHDIFF1 parity：GET /teno.patch?base=<sha> 回 patch（HEAD 不支援）
+            if url_path.ends_with("/teno.patch") {
+                if head_only {
+                    send(&mut stream, "405 Method Not Allowed", &[], b"use GET");
+                    return;
+                }
+                handle_patch_get(&mut stream, &root, &req.path);
+                return;
+            }
             let fp = match resolve_fs_path(&root, &url_path) {
                 Some(p) => p,
                 None => {
@@ -720,7 +909,12 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
                 Err(e) => send(&mut stream, "500 Internal Server Error", &[], e.to_string().as_bytes()),
             }
         }
-        "PUT" => {
+        "PUT" | "PATCH" => {
+            // PATCHDIFF1 parity：PUT /teno.patch 套 patch（X-Base/X-Target/X-Page-Size）
+            if url_path.ends_with("/teno.patch") {
+                handle_patch_put(&mut stream, &root, &req, &body);
+                return;
+            }
             let fp = match resolve_fs_path(&root, &url_path) {
                 Some(p) => p,
                 None => {
@@ -751,9 +945,10 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
             // MEDIAPEEL1：media 通道只驗檔名＋非空（內容 hash 即檔名；覆蓋不留 .history）；
             // 主通道維持 SYNC2-Q6 parity：空檔拒收＋魔數驗＋覆蓋前留 .history
             let is_media = is_media_put(&url_path, &fp);
-            if is_media {
+            let is_log = is_log_put(&url_path, &fp);
+            if is_media || is_log {
                 if body.is_empty() {
-                    send(&mut stream, "422 Unprocessable Entity", &[], b"bad media: empty file");
+                    send(&mut stream, "422 Unprocessable Entity", &[], b"bad media/log: empty file");
                     return;
                 }
             } else {

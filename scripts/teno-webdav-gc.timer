@@ -1,0 +1,9 @@
+[Unit]
+Description=每日 04:00 跑 teno-webdav GC
+
+[Timer]
+OnCalendar=04:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

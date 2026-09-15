@@ -378,6 +378,8 @@ export async function addWordImage(wordId, filename, data) {
           const ext = o.ext ? `.${o.ext}` : '';
           const fn2 = filename && filename.includes('.') ? filename : `${(filename || 'img')}${ext}`;
           await requireDB().execute('INSERT INTO word_images (word_id, filename, data, sha1) VALUES ($1, $2, $3, $4)', [wordId, fn2, '', sha]);
+          // MEDIAPEEL1 上傳序：只記 sha，有時間慢慢傳（失敗不擋加圖）
+          try { const { enqueueMedia } = await import('./media-queue.js'); enqueueMedia(sha, fn2); } catch (_) {}
           return;
         }
       }

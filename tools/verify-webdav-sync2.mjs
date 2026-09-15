@@ -34,6 +34,13 @@ ok('sync:should_use_patch 70pct', rs.includes('fn should_use_patch('));
 ok('sync:base_usable gate', rs.includes('fn base_usable('));
 ok('sync:next_seq monotonic', rs.includes('fn next_seq('));
 ok('sync:try_snapshot_read torn-guard', rs.includes('fn try_snapshot_read('));
+ok('sync:decide_sync_direction', rs.includes('fn decide_sync_direction('));
+ok('sync:sqlite_page_size', rs.includes('fn sqlite_page_size('));
+ok('sync:patch upload command', rs.includes('pub async fn webdav_patch_upload('));
+ok('sync:patch download command', rs.includes('pub async fn webdav_patch_download('));
+ok('sync:log archive upload', rs.includes('pub async fn webdav_log_archive_upload('));
+ok('sync:log archive prune', rs.includes('pub async fn webdav_log_archive_prune('));
+ok('sync:base copy file', rs.includes('teno.base.db'));
 ok('sync:upload base records hash', rs.includes('sha256_hex(&data)'));
 ok('sync:download base records hash', rs.includes('sha256_hex(&buf)'));
 
@@ -67,6 +74,14 @@ ok('py:file_sha256 cached', py.includes('def file_sha256('));
 ok('py:tombstone add+hit', py.includes('def tombstone_add(') && py.includes('def tombstone_hit('));
 ok('py:gc two-phase helpers', py.includes('def gc_is_orphan(') && py.includes('def gc_second_pass_due('));
 ok('py:manifest parent gate', py.includes('def manifest_parent_ok('));
+ok('py:patch PUT endpoint', py.includes('/teno.patch') && py.includes('X-Base-Sha256'));
+ok('py:patch GET endpoint', py.includes('_handle_patch_get'));
+ok('py:tenoc helpers', py.includes('def tenoc_unpack(') && py.includes('def tenoc_pack('));
+ok('py:logs channel', py.includes('def is_log_put('));
+ok('py:server helper tests', existsSync('/home/jupiter/teno-webdav-app/test-server-helpers.py'));
+ok('embed:patch PUT handler', sv.includes('handle_patch_put('));
+ok('embed:patch GET handler', sv.includes('handle_patch_get('));
+ok('embed:logs channel', sv.includes('is_log_put('));
 
 console.log('== SYNC2 static: frontend ==');
 const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');
@@ -91,7 +106,7 @@ const curl = (args) => {
 };
 // --- 單人：floors＋rotation（先清殘留，保持冪等）---
 {
-  execSync(`rm -rf /tmp/sync2-one /tmp/sync2-multi /tmp/s2tiny /tmp/s2bad.bin /tmp/s2g1.bin /tmp/s2g2.bin /tmp/s2down.bin /tmp/s2auth.json /tmp/s2a.bin /tmp/s2b.bin /tmp/s2ga.bin /tmp/s2v2.bin /tmp/s2v2down.bin`);
+  execSync(`rm -rf /tmp/sync2-one /tmp/sync2-multi /tmp/s2tiny /tmp/s2bad.bin /tmp/s2g1.bin /tmp/s2g2.bin /tmp/s2down.bin /tmp/s2auth.json /tmp/s2a.bin /tmp/s2b.bin /tmp/s2ga.bin /tmp/s2v2.bin /tmp/s2v2down.bin /tmp/sync2-patch /tmp/v0.bin /tmp/pp.gz /tmp/gp.gz /tmp/ph.txt /tmp/hashes.txt`);
   const PORT = 18091;
   const srv = spawn('python3', [APP, '--dir', '/tmp/sync2-one', '--port', String(PORT), '--user', 'teno', '--password', 'p1'],
     { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -176,6 +191,27 @@ print('V2SEG-OK')
     ok('live:media 覆寫不留 history', hist === '0', `got ${hist}`);
     const hd = execSync(`curl -sI ${B}/media/${SHA}.png ${A} | grep -i X-Content-Sha256`).toString().trim();
     ok('live:media HEAD 帶 sha 頭', hd.toLowerCase().includes('x-content-sha256'));
+  } finally { srv.kill(); }
+}
+// --- PATCHDIFF1 live：patch 雙向（PUT 套用＋驗 target／409／GET 差集＋未知 base 409）---
+{
+  const PORT = 18095;
+  execSync('rm -rf /tmp/sync2-patch /tmp/v0.bin /tmp/pp.gz /tmp/gp.gz /tmp/ph.txt /tmp/hashes.txt');
+  execSync('mkdir -p /tmp/sync2-patch');
+  const srv = spawn('python3', [APP, '--dir', '/tmp/sync2-patch', '--port', String(PORT), '--user', 'teno', '--password', 'p1'],
+    { stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise(r => setTimeout(r, 1200));
+  const B = `http://127.0.0.1:${PORT}`, A = `-u teno:p1`;
+  try {
+    execSync(`python3 "${R}/tools/mkpatch-fixture.py" > /tmp/hashes.txt`);
+    const [V0, V1] = readFileSync('/tmp/hashes.txt','utf8').trim().split(/\s+/);
+    ok('live:patch full v0→201', curl(`-T /tmp/v0.bin ${B}/teno.db ${A}`) === '201');
+    ok('live:patch PUT→204', execSync(`curl -s -o /dev/null -w "%{http_code}" -X PUT --data-binary @/tmp/pp.gz -H "X-Base-Sha256: ${V0}" -H "X-Target-Sha256: ${V1}" -H "X-Page-Size: 4096" ${B}/teno.patch ${A}`).toString().trim() === '204');
+    ok('live:patch target hash matches', execSync(`curl -sI ${B}/teno.db ${A} | grep -i X-Content-Sha256`).toString().toLowerCase().includes(V1.toLowerCase()));
+    ok('live:patch bad base→409', execSync(`curl -s -o /dev/null -w "%{http_code}" -X PUT --data-binary @/tmp/pp.gz -H "X-Base-Sha256: ${'0'.repeat(64)}" -H "X-Target-Sha256: ${V1}" -H "X-Page-Size: 4096" ${B}/teno.patch ${A}`).toString().trim() === '409');
+    ok('live:patch GET diff→200', execSync(`curl -s -D /tmp/ph.txt -o /tmp/gp.gz "${B}/teno.patch?base=${V0}" ${A} -w "%{http_code}"`).toString().trim() === '200');
+    ok('live:patch GET target header', execSync(`grep -i X-Target-Sha256 /tmp/ph.txt`).toString().toLowerCase().includes(V1.toLowerCase()));
+    ok('live:patch GET unknown base→409', execSync(`curl -s -o /dev/null -w "%{http_code}" "${B}/teno.patch?base=${'f'.repeat(64)}" ${A}`).toString().trim() === '409');
   } finally { srv.kill(); }
 }
 // --- 多人：隔離 ---

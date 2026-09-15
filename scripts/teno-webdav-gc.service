@@ -1,0 +1,7 @@
+[Unit]
+Description=Teno WebDAV 每日 GC（媒體兩階段＋logs 30 天）
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'python3 %h/teno-webdav-app/gc-media.py && python3 %h/teno-webdav-app/prune-logs.py'

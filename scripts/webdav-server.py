@@ -157,6 +157,24 @@ def is_media_put(url_path: str, fp: str) -> bool:
         return False
 
 
+def is_log_put(url_path: str, fp: str) -> bool:
+    """LOGARCHIVE1：PUT 到 /logs/<name>.txt.gz 走日誌通道（免 TENOC 魔數驗）。
+    檔名嚴格：.txt.gz 結尾＋安全字元；路徑必須落在 <root>/logs/ 下。"""
+    try:
+        parts = urllib.parse.unquote(url_path).split("/")
+        if len(parts) < 3 or parts[-2] != "logs":
+            return False
+        name = parts[-1]
+        if not name.endswith(".txt.gz") or len(name) > 128:
+            return False
+        stem = name[:-7]
+        if not stem or any(c not in "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_." for c in stem):
+            return False
+        return os.path.basename(os.path.dirname(fp)) == "logs"
+    except Exception:
+        return False
+
+
 def payload_ok(path: str) -> bool:
     """PUT 檔魔數＋下限驗：TENOC 容器或 SQLite 才收."""
     try:
@@ -217,6 +235,76 @@ def quota_ok(root: str, incoming: int) -> bool:
         return dir_size(root) + int(incoming) <= QUOTA_BYTES
     except (ValueError, TypeError):
         return False
+
+def tenoc_unpack(data: bytes):
+    """TENOC v1/v2 解包 → (teno_raw, log_raw)。v2 段 gzip；失敗拋 ValueError。"""
+    import gzip as _gz
+    if data[:5] != b"TENOC" or len(data) < 6:
+        raise ValueError("not TENOC")
+    ver = data[5]
+    if ver not in (1, 2):
+        raise ValueError(f"unsupported v{ver}")
+    import struct as _st
+    pos = 6
+    if len(data) < pos + 4: raise ValueError("truncated len1")
+    tl = _st.unpack_from("<I", data, pos)[0]; pos += 4
+    if len(data) < pos + tl: raise ValueError("truncated seg1")
+    seg1 = data[pos:pos+tl]; pos += tl
+    if len(data) < pos + 4: raise ValueError("truncated len2")
+    ll = _st.unpack_from("<I", data, pos)[0]; pos += 4
+    if len(data) < pos + ll: raise ValueError("truncated seg2")
+    seg2 = data[pos:pos+ll]; pos += ll
+    if pos != len(data): raise ValueError("trailing garbage")
+    if ver == 2:
+        try: seg1 = _gz.decompress(seg1); seg2 = _gz.decompress(seg2)
+        except Exception as e: raise ValueError(f"gunzip fail: {e}")
+    return seg1, seg2
+
+def tenoc_pack(teno: bytes, log: bytes = b"") -> bytes:
+    """重包 v2（段 gzip；跟 Rust pack_sync_container 同佈局）。"""
+    import gzip as _gz, struct as _st
+    tg, lg = _gz.compress(teno), _gz.compress(log)
+    return b"TENOC\x02" + _st.pack("<I", len(tg)) + tg + _st.pack("<I", len(lg)) + lg
+
+def sqlite_page_size_raw(db: bytes) -> int:
+    if len(db) < 18 or db[:16] != b"SQLite format 3\x00": return 4096
+    v = int.from_bytes(db[16:18], "big")
+    if v == 1: return 65536
+    return v if 512 <= v <= 65536 else 4096
+
+def page_diff_raw(base: bytes, cur: bytes, ps: int):
+    """回 [(pageno, pagedata)]；尾頁補零整頁。"""
+    import math
+    n = max(math.ceil(len(base)/ps), math.ceil(len(cur)/ps))
+    out = []
+    for i in range(n):
+        a, b = base[i*ps:(i+1)*ps], cur[i*ps:(i+1)*ps]
+        if a != b:
+            pg = bytearray(ps); pg[:len(b)] = b
+            out.append((i, bytes(pg)))
+    return out
+
+def pack_patch_raw(pages, ps: int) -> bytes:
+    import struct as _st
+    out = bytearray()
+    for no, pg in pages:
+        assert len(pg) == ps
+        out += _st.pack("<I", no) + pg
+    return bytes(out)
+
+def apply_patch_raw(base: bytes, patch: bytes, ps: int) -> bytes:
+    import struct as _st
+    stride = 4 + ps
+    if len(patch) % stride != 0: raise ValueError("patch misaligned")
+    out = bytearray(base)
+    for pos in range(0, len(patch), stride):
+        no = _st.unpack_from("<I", patch, pos)[0]
+        pg = patch[pos+4:pos+stride]
+        need = (no+1)*ps
+        if need > 512*1024*1024: raise ValueError("page out of range")
+        if need > len(out): out.extend(b"\x00"*(need-len(out)))
+        out[no*ps:no*ps+ps] = pg
+    return bytes(out)
 
 def manifest_parent_ok(manifest_parent, latest_seq) -> bool:
     """HOLE6 manifest 更新只接受 parent 對得上的（防壞 client 蓋掉好版）。
@@ -569,6 +657,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(chunk)
 
     def do_GET(self):
+        _up = urllib.parse.urlparse(self.path)
+        if _up.path.endswith("/teno.patch"):
+            if not self._guard():
+                return
+            self._handle_patch_get(user_root(self), _up.query)
+            return
         self._serve_file(head_only=False)
 
     def do_HEAD(self):
@@ -576,6 +670,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self):
         if not self._guard():
+            return
+        _upath = urllib.parse.urlparse(self.path).path or "/"
+        if _upath.endswith("/teno.patch"):
+            self._handle_patch_put()
             return
         root = user_root(self)
         fp = fs_path(urllib.parse.urlparse(self.path).path or "/", root)
@@ -624,14 +722,15 @@ class Handler(BaseHTTPRequestHandler):
             # MEDIAPEEL1：media 通道只驗檔名＋大小（內容 hash 即檔名，不驗魔數）；
             # 主通道維持魔數驗（壞檔刪 .part，原檔一字不動，Q6）
             _is_media = is_media_put(urllib.parse.urlparse(self.path).path or "/", fp)
-            if _is_media:
+            _is_log = is_log_put(urllib.parse.urlparse(self.path).path or "/", fp)
+            if _is_media or _is_log:
                 try:
                     if os.path.getsize(fp + ".part") < 1:
-                        raise OSError("empty media")
+                        raise OSError("empty media/log")
                 except OSError:
                     try: os.unlink(fp + ".part")
                     except OSError: pass
-                    self.send_error(422, "bad media: empty file")
+                    self.send_error(422, "bad media/log: empty file")
                     return
             elif not payload_ok(fp + ".part"):
                 try:
@@ -640,8 +739,8 @@ class Handler(BaseHTTPRequestHandler):
                     pass
                 self.send_error(422, "bad payload: not TENOC/SQLite")
                 return
-            # 先留備用再覆蓋（Q6：上傳一個留幾個；media 內容尋址不可變，跳過留檔）
-            if existed and not _is_media:
+            # 先留備用再覆蓋（Q6：上傳一個留幾個；media 內容尋址不可變＋logs 隻寫歸檔，跳過留檔）
+            if existed and not _is_media and not _is_log:
                 rotate_history(fp)
             os.replace(fp + ".part", fp)
             self.send_response(204 if existed else 201)
@@ -653,6 +752,133 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
             self.send_error(500, str(e))
+
+    def _patch_paths(self, root):
+        """patch 目標檔：跟主檔同目錄的 teno.db（多人模式各 user_root 內）。"""
+        return os.path.join(root, "teno.db")
+
+    def do_PATCH(self):
+        # 兼容部分 client 送 PATCH 動詞；語義同 PUT /teno.patch
+        self._handle_patch_put()
+
+    def _handle_patch_put(self):
+        if not self._guard():
+            return
+        root = user_root(self)
+        up = urllib.parse.urlparse(self.path)
+        if not up.path.endswith("/teno.patch"):
+            self.send_error(404, "not found")
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(411, "length required"); return
+        if length > 64 * 1024 * 1024:
+            self.send_error(413, "patch too large"); return
+        base_h = (self.headers.get("X-Base-Sha256") or "").strip().lower()
+        target_h = (self.headers.get("X-Target-Sha256") or "").strip().lower()
+        try: ps = int(self.headers.get("X-Page-Size") or "4096")
+        except ValueError: ps = 4096
+        if not base_h or not target_h or ps not in (512,1024,2048,4096,8192,16384,32768,65536):
+            # 頁大小嚴格白名單（防錯配炸檔）
+            if ps not in (512,1024,2048,4096,8192,16384,32768,65536):
+                self.send_error(422, "bad page size"); return
+            if not base_h or not target_h:
+                self.send_error(422, "missing base/target"); return
+        try:
+            body = self.rfile.read(length)
+            if len(body) != length: raise OSError("short read")
+        except OSError as e:
+            self.send_error(500, str(e)); return
+        fp = self._patch_paths(root)
+        if not os.path.isfile(fp):
+            self.send_error(409, "no base file"); return
+        try:
+            cur = open(fp, "rb").read()
+        except OSError as e:
+            self.send_error(500, str(e)); return
+        if file_sha256(fp) != base_h:
+            self.send_error(409, "base mismatch"); return
+        try:
+            import gzip as _gz
+            raw_patch = _gz.decompress(body)
+            teno_raw, log_raw = tenoc_unpack(cur)
+            new_raw = apply_patch_raw(teno_raw, raw_patch, ps)
+            if len(new_raw) < 100 or new_raw[:16] != b"SQLite format 3\x00":
+                raise ValueError("patched result not SQLite")
+            rebuilt = tenoc_pack(new_raw, log_raw)
+            if hashlib.sha256(rebuilt).hexdigest() != target_h:
+                raise ValueError("target mismatch")
+        except ValueError as e:
+            self.send_error(422, f"patch reject: {e}"); return
+        # 原子換檔＋history（主通道同範式）
+        try:
+            with open(fp + ".part", "wb") as f: f.write(rebuilt)
+            rotate_history(fp)
+            os.replace(fp + ".part", fp)
+            try: os.unlink(fp + ".part")
+            except OSError: pass
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        except OSError as e:
+            try: os.unlink(fp + ".part")
+            except OSError: pass
+            self.send_error(500, str(e))
+
+    def _handle_patch_get(self, root, query):
+        import urllib.parse as _up
+        qs = _up.parse_qs(query or "")
+        base_h = (qs.get("base", [""])[0] or "").strip().lower()
+        if not base_h:
+            self.send_error(422, "missing base"); return
+        fp = self._patch_paths(root)
+        if not os.path.isfile(fp):
+            self.send_error(404, "not found"); return
+        try:
+            cur = open(fp, "rb").read()
+        except OSError as e:
+            self.send_error(500, str(e)); return
+        if file_sha256(fp) == base_h:
+            self.send_error(204, "already current")
+            return
+        # 找 base：現檔不是 → 翻 .history 按 sha 找
+        base_raw = None
+        hist = os.path.join(os.path.dirname(fp) or root, ".history")
+        try:
+            names = sorted(os.listdir(hist)) if os.path.isdir(hist) else []
+        except OSError: names = []
+        for n in reversed(names):
+            if not n.startswith("teno.db."): continue
+            p = os.path.join(hist, n)
+            try:
+                d = open(p, "rb").read()
+            except OSError: continue
+            if hashlib.sha256(d).hexdigest() == base_h:
+                try:
+                    base_raw, _ = tenoc_unpack(d)
+                    break
+                except ValueError: continue
+        if base_raw is None:
+            self.send_error(409, "base not found, use full download"); return
+        try:
+            cur_raw, _ = tenoc_unpack(cur)
+            ps = sqlite_page_size_raw(cur_raw)
+            if ps != sqlite_page_size_raw(base_raw):
+                raise ValueError("page size changed")
+            pages = page_diff_raw(base_raw, cur_raw, ps)
+            import gzip as _gz
+            gz = _gz.compress(pack_patch_raw(pages, ps))
+            target = hashlib.sha256(cur).hexdigest()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(gz)))
+            self.send_header("X-Target-Sha256", target)
+            self.send_header("X-Page-Size", str(ps))
+            self.end_headers()
+            self.wfile.write(gz)
+        except ValueError as e:
+            self.send_error(422, f"cannot diff: {e}")
 
     def do_DELETE(self):
         if not self._guard():

@@ -65,5 +65,20 @@ console.log('== LOGPEEL static ==');
 ok('upload skips app-log', ws.includes('LOGPEEL1') && ws.includes('pack_sync_container(&teno, &[])'));
 ok('download keeps local log on empty seg', ws.includes('if (!log.is_empty())') || ws.includes('if !log.is_empty()'));
 
+console.log('== LOGARCHIVE static ==');
+ok('log archive status cmd', ws.includes('webdav_log_archive_status'));
+ok('log archive prune cmd', ws.includes('webdav_log_archive_prune'));
+ok('log 24h release rule', ws.includes('24 * 3600') && ws.includes("level != 'error'"));
+ok('log uploaded_until state', ws.includes('log_archive_state.json'));
+ok('settings log archive UI', st.includes('logArchiveUploadBtn') && st.includes('logArchivePruneBtn'));
+ok('settings log archive dev-gated', st.includes('logArchiveUploadBtn') && st.includes('devMode'));
+console.log('== MEDIAQUEUE static ==');
+ok('media queue module', existsSync(`${R}/src/lib/media-queue.js`));
+ok('enqueue on addWordImage', db.includes('enqueueMedia'));
+ok('settings patch buttons', st.includes('webdavPatchUploadBtn') && st.includes('webdavPatchDownloadBtn'));
+ok('settings media flush UI', st.includes('webdavMediaFlushBtn') && st.includes('mediaWifiOnly'));
+ok('api patch fns', api.includes('webdavPatchUpload') && api.includes('webdavPatchDownload'));
+ok('api log archive fns', api.includes('webdavLogArchiveUpload') && api.includes('webdavLogArchivePrune'));
+
 console.log(fail === 0 ? `MEDIAPEEL: PASS (${pass} pass, 0 fail)` : `MEDIAPEEL: FAIL (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

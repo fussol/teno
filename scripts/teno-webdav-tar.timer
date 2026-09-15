@@ -1,0 +1,9 @@
+[Unit]
+Description=每日 03:00 跑 teno-webdav tar
+
+[Timer]
+OnCalendar=03:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

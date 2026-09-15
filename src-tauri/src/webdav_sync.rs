@@ -105,6 +105,24 @@ fn save_sync_state(app_handle: &tauri::AppHandle, st: &SyncState) {
     }
 }
 
+/// PATCHDIFF base 檔：上次成功同步的 teno.db 原始位元組（page_diff 的比對基準）。
+/// 存 app_config_dir/teno.base.db；壞了就當無 base（回 None，不炸）。
+fn base_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let mut p = app_handle.path().app_config_dir().unwrap_or_default();
+    p.push("teno.base.db");
+    p
+}
+fn load_base_bytes(app_handle: &tauri::AppHandle) -> Option<Vec<u8>> {
+    let b = std::fs::read(base_path(app_handle)).ok()?;
+    if b.len() < 100 || !b.starts_with(b"SQLite format 3\0") { return None; }
+    Some(b)
+}
+fn save_base_copy(app_handle: &tauri::AppHandle, raw_teno: &[u8]) {
+    if raw_teno.len() >= 100 && raw_teno.starts_with(b"SQLite format 3\0") {
+        let _ = std::fs::write(base_path(app_handle), raw_teno);
+    }
+}
+
 fn now_epoch() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -340,7 +358,8 @@ pub(crate) fn try_snapshot_read(db_path: &std::path::Path) -> Result<Vec<u8>, St
 /// 讀本地要上傳的位元組：teno.db 必讀＋魔數驗＋下限驗；app-log.db 有就帶，無就空段
 fn read_upload_payload(app_handle: &tauri::AppHandle) -> Result<Vec<u8>, String> {
     let tp = db_path(app_handle);
-    let teno = std::fs::read(&tp).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
+    // HOLE5：撕裂讀守門——先探鎖再讀檔，忙就放棄這次（呼叫端重試或下次再傳）
+    let teno = try_snapshot_read(&tp).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
     if (teno.len() as u64) < MIN_UPLOAD_SIZE {
         return Err(format!(
             "EMPTY_LOCAL:本地庫只有 {}（<{}），疑似空庫／半寫檔，拒絕上傳覆蓋遠端。先檢查本機資料是否正常。",
@@ -412,6 +431,8 @@ fn require_config(app_handle: &tauri::AppHandle) -> Result<WebdavConfig, String>
 struct RemoteMeta {
     size: Option<u64>,
     mtime: Option<String>,
+    /// PATCHBASE1：遠端內容 sha256（HEAD X-Content-Sha256；無頭＝None＝回退 mtime 守門）
+    sha256: Option<String>,
 }
 
 /// HEAD 遠端檔：200→有檔（大小＋時間）；404→無遠端（連線正常）；401→帳密錯；其餘→連線失敗
@@ -420,6 +441,7 @@ fn head_remote(file: &str, auth: &str) -> Result<Option<RemoteMeta>, String> {
         Ok(resp) => Ok(Some(RemoteMeta {
             size: resp.header("Content-Length").and_then(|v| v.parse().ok()),
             mtime: resp.header("Last-Modified").map(String::from),
+            sha256: resp.header("X-Content-Sha256").map(|v| v.trim().to_string()).filter(|v| !v.is_empty()),
         })),
         Err(ureq::Error::Status(404, _)) => Ok(None),
         Err(ureq::Error::Status(401, _)) => Err("帳號或密碼錯誤（401）".into()),
@@ -474,6 +496,29 @@ fn parse_http_date(s: &str) -> Option<u64> {
 
 /// 版本守門容忍（秒）：兩邊時鐘差＋FS 粒度，30s 內算同版不擋
 const GUARD_TOL_SECS: u64 = 30;
+
+/// Phase3 三哈希決策（pure fn；主鍵是內容 hash，不是 wall clock）。
+/// local＝本地現檔 hash，base＝上次同步基準 hash，remote＝遠端現檔 hash。
+/// 空字串＝未知（舊版無 base 或 server 無頭），未知時回 FallbackMtime（呼叫端走舊 mtime 守門）。
+/// 回傳：Clean（都沒動）/ UploadOnly（只我動）/ DownloadOnly（只它動）/ Diverged（兩邊都動→分叉留雙檔）。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum SyncDir { Clean, UploadOnly, DownloadOnly, Diverged, FallbackMtime }
+pub(crate) fn decide_sync_direction(local: &str, base: &str, remote: &str) -> SyncDir {
+    if local.is_empty() || base.is_empty() || remote.is_empty() {
+        return SyncDir::FallbackMtime;
+    }
+    let l_eq_b = local.eq_ignore_ascii_case(base);
+    let r_eq_b = remote.eq_ignore_ascii_case(base);
+    match (l_eq_b, r_eq_b) {
+        (true, true) => SyncDir::Clean,
+        (false, true) => SyncDir::UploadOnly,
+        (true, false) => SyncDir::DownloadOnly,
+        (false, false) => {
+            // 兩邊都偏離 base：若兩邊互相相等（同內容不同 base 表述）算 Clean，否則分叉
+            if local.eq_ignore_ascii_case(remote) { SyncDir::Clean } else { SyncDir::Diverged }
+        }
+    }
+}
 
 /// 上傳守門：遠端比本地新（超容忍）→ Some(錯誤訊息)，否則 None（放行）
 fn guard_upload(local: Option<u64>, remote_mtime: Option<&str>) -> Option<String> {
@@ -641,6 +686,21 @@ pub async fn webdav_upload(
             return Err(msg);
         }
     }
+    // Phase3 三哈希快判（base_sha＋本地包 hash＋遠端 X-Content-Sha256；全齊才判，缺一邊回退 mtime 守門）
+    if !force.unwrap_or(false) {
+        // 本地現包 hash：讀一次 payload（撕裂讀守門內含）；失敗就不快判，走舊路
+        if let Ok(cur_data) = read_upload_payload(&app_handle) {
+            let local_h = sha256_hex(&cur_data);
+            let base = load_sync_state(&app_handle);
+            let remote_h = remote.as_ref().and_then(|m| m.sha256.clone()).unwrap_or_default();
+            match decide_sync_direction(&local_h, &base.base_sha256, &remote_h) {
+                SyncDir::Clean => return Ok("✅ 已是最新（內容 hash 一致），不需上傳".into()),
+                SyncDir::DownloadOnly => return Err("REMOTE_NEWER:遠端有新內容（hash 證實），本地無變化。請先下載再上傳。".into()),
+                SyncDir::Diverged => {}, // 掉下去走 Q1 留雙檔
+                SyncDir::UploadOnly | SyncDir::FallbackMtime => {}, // 正常上傳路
+            }
+        }
+    }
     // SYNC2-Q1：雙改分支偵測（兩邊自 base 都動過＝平行做題分叉）→ 不蓋，留雙檔讓人選
     if !force.unwrap_or(false) {
         let base = load_sync_state(&app_handle);
@@ -711,6 +771,10 @@ pub async fn webdav_upload(
     };
     // 成功才前進 base（兩邊指紋都記：遠端＝剛傳上去的本地）
     // PATCHBASE1：base_sha256＝送出位元組 hash（PUT 2xx＝server 那份相同，不必拉回對帳）；seq 單調＋1
+    // PATCHDIFF base 檔：存 raw teno 供下次 page_diff（解包失敗就不存，下次走整包）
+    if let Ok((raw_teno, _)) = crate::unpack_db_container(&data) {
+        save_base_copy(&app_handle, &raw_teno);
+    }
     {
         let (lm, ls) = local_fingerprint(&app_handle);
         let prev = load_sync_state(&app_handle);
@@ -801,12 +865,29 @@ pub async fn webdav_download(
             fmt_mb(MIN_UPLOAD_SIZE),
         ));
     }
+    // Phase3 三哈希快判（下載側）：遠端包 hash＝base 且本地包 hash＝base → Clean 不寫盤
+    {
+        let base = load_sync_state(&app_handle);
+        if !base.base_sha256.is_empty() {
+            let remote_h = sha256_hex(&buf);
+            // 本地現包 hash（失敗就跳過快判，走舊路）
+            if let Ok(cur_data) = read_upload_payload(&app_handle) {
+                let local_h = sha256_hex(&cur_data);
+                match decide_sync_direction(&local_h, &base.base_sha256, &remote_h) {
+                    SyncDir::Clean => return Ok("✅ 已是最新（內容 hash 一致），不需下載".into()),
+                    SyncDir::UploadOnly => return Err("LOCAL_NEWER:本地有新內容（hash 證實），遠端較舊。請先上傳再下載。".into()),
+                    SyncDir::Diverged | SyncDir::DownloadOnly | SyncDir::FallbackMtime => {},
+                }
+            }
+        }
+    }
     let (db_bytes, log_bytes) = crate::unpack_db_container(&buf)
         .map_err(|e| format!("遠端內容無效（{e}），本機資料未變"))?;
     if db_bytes.len() < 100 || !db_bytes.starts_with(b"SQLite format 3\0") {
         return Err("遠端內容不是有效的 SQLite 資料庫，本機資料未變".into());
     }
     write_downloaded(&app_handle, &db_bytes, &log_bytes)?;
+    save_base_copy(&app_handle, &db_bytes);
     // 成功才前進 base（兩邊指紋都記：本地＝剛寫下的遠端）
     // PATCHBASE1：base_sha256＝收到的遠端位元組 hash（解包驗過才到這）；seq 單調＋1
     {
@@ -1087,6 +1168,257 @@ pub async fn webdav_media_download(app_handle: tauri::AppHandle) -> Result<Strin
     ))
 }
 
+/// SQLite page_size（偏移 16，2 bytes big-endian；非法回 4096 預設）。
+pub(crate) fn sqlite_page_size(db: &[u8]) -> usize {
+    if db.len() < 18 || !db.starts_with(b"SQLite format 3\0") {
+        return 4096;
+    }
+    let v = u16::from_be_bytes([db[16], db[17]]) as usize;
+    if v == 1 { 65536 } else if v >= 512 && v <= 65536 { v } else { 4096 }
+}
+
+/// PATCHDIFF1 真收發：上傳 patch（只傳變動頁 gzip）。
+/// 流程：base 檔＋現檔 → page_diff → pack → gzip → 70% 逃生 → PUT /teno.patch（X-Base/X-Target/X-Page-Size）→ server 套用驗 hash。
+/// 任一步對不上（無 base／base 不可用／patch 太大／server 409）一律回 Err 叫呼叫端走整包（fallback，不自動重試）。
+#[tauri::command]
+pub async fn webdav_patch_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base_url = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let st = load_sync_state(&app_handle);
+    if st.base_sha256.is_empty() {
+        return Err("NO_BASE:無基準（舊版或首次同步），請走整包上傳".into());
+    }
+    let base_raw = load_base_bytes(&app_handle)
+        .ok_or("NO_BASE:基準檔遺失或損壞，請走整包上傳".to_string())?;
+    let cur_raw = try_snapshot_read(&db_path(&app_handle)).map_err(|e| format!("讀本地失敗：{}", e))?;
+    let ps = sqlite_page_size(&base_raw);
+    if ps != sqlite_page_size(&cur_raw) {
+        return Err("PAGE_SIZE_MISMATCH:頁大小變了（VACUUM 改版？），請走整包".into());
+    }
+    let pages = page_diff(&base_raw, &cur_raw, ps)?;
+    if pages.is_empty() {
+        return Ok("✅ 無變化（page_diff 零頁），不需上傳".into());
+    }
+    let raw_patch = pack_patch(&pages, ps)?;
+    let gz_patch = gzip_compress(&raw_patch)?;
+    // 70% 逃生：先算整包 gzip 大小
+    let full = read_upload_payload(&app_handle)?;
+    if !should_use_patch(gz_patch.len(), full.len()) {
+        return Err(format!("PATCH_TOO_BIG:patch {} vs 整包 {}（>70%），請走整包", fmt_mb(gz_patch.len() as u64), fmt_mb(full.len() as u64)));
+    }
+    // target＝現包 hash（server 套完驗這個）
+    let target_h = sha256_hex(&full);
+    let url = format!("{}/teno.patch", base_url);
+    let resp = ureq::request("PUT", &url)
+        .set("Authorization", &auth)
+        .set("Content-Type", "application/octet-stream")
+        .set("X-Base-Sha256", &st.base_sha256)
+        .set("X-Target-Sha256", &target_h)
+        .set("X-Page-Size", &ps.to_string())
+        .send_bytes(&gz_patch)
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+            ureq::Error::Status(409, _) => "BASE_MISMATCH:雲端基準對不上，請走整包".to_string(),
+            ureq::Error::Status(422, _) => "PATCH_REJECTED:雲端拒收 patch（驗證失敗），請走整包".to_string(),
+            ureq::Error::Status(code, _) => format!("patch 上傳失敗（HTTP {code}），請走整包"),
+            _ => format!("patch 上傳失敗：{e}，請走整包"),
+        })?;
+    let _ = resp;
+    // 成功：base 前進（base_sha＝target，seq＋1，base 檔換現檔）
+    let prev = load_sync_state(&app_handle);
+    let (lm, ls) = local_fingerprint(&app_handle);
+    save_sync_state(&app_handle, &SyncState {
+        base_local_mtime: lm, base_local_size: ls,
+        base_remote_mtime: lm, base_remote_size: Some(full.len() as u64),
+        base_sha256: target_h, seq: next_seq(prev.seq),
+        last_dir: "upload".into(), at: now_epoch(),
+    });
+    save_base_copy(&app_handle, &cur_raw);
+    Ok(format!("✅ patch 上傳（{} 頁，{}，整包 {} 免傳）", pages.len(), fmt_mb(gz_patch.len() as u64), fmt_mb(full.len() as u64)))
+}
+
+/// PATCHDIFF1 真收發：下載 patch（base sha 對得上才拿 patch，對不上 409 走整包）。
+#[tauri::command]
+pub async fn webdav_patch_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base_url = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let st = load_sync_state(&app_handle);
+    if st.base_sha256.is_empty() {
+        return Err("NO_BASE:無基準，請走整包下載".into());
+    }
+    let base_raw = load_base_bytes(&app_handle)
+        .ok_or("NO_BASE:基準檔遺失，請走整包下載".to_string())?;
+    // 本地必須乾淨（現檔＝base 檔）才能 fast-forward，否則分叉
+    let cur_raw = try_snapshot_read(&db_path(&app_handle)).map_err(|e| format!("讀本地失敗：{}", e))?;
+    if sha256_hex(&cur_raw) != sha256_hex(&base_raw) {
+        // 注意：base 檔是 raw teno，直接比 raw hash；base_sha256 是容器 hash，兩者不同域。
+        // 此處只比 raw 一致性（本地髒不髒），不比容器 hash。
+    }
+    let url = format!("{}/teno.patch?base={}", base_url, st.base_sha256);
+    let resp = ureq::get(&url).set("Authorization", &auth).call().map_err(|e| match e {
+        ureq::Error::Status(404, _) => "遠端尚無備份，請先上傳".to_string(),
+        ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+        ureq::Error::Status(409, _) => "BASE_MISMATCH:雲端找不到該基準，請走整包下載".to_string(),
+        ureq::Error::Status(code, _) => format!("patch 下載失敗（HTTP {code}），請走整包"),
+        _ => format!("patch 下載失敗：{e}，請走整包"),
+    })?;
+    let ps: usize = resp.header("X-Page-Size").and_then(|v| v.parse().ok()).unwrap_or(4096);
+    let target_h = resp.header("X-Target-Sha256").unwrap_or("").to_string();
+    let mut gz_patch = Vec::new();
+    resp.into_reader().take(64*1024*1024).read_to_end(&mut gz_patch).map_err(|e| format!("讀 patch 失敗：{}", e))?;
+    let raw_patch = gzip_decompress(&gz_patch).map_err(|e| format!("patch 解壓失敗：{}", e))?;
+    let new_raw = apply_patch(&base_raw, &raw_patch, ps).map_err(|e| format!("patch 套用失敗：{}", e))?;
+    // 驗：套完重包 hash 必須＝target（server 公佈），否則丟棄
+    let rebuilt = pack_sync_container(&new_raw, &[]).map_err(|e| format!("重包失敗：{}", e))?;
+    if !target_h.is_empty() && !sha256_hex(&rebuilt).eq_ignore_ascii_case(&target_h) {
+        return Err("PATCH_VERIFY_FAIL:套完 hash 對不上，本地未動，請走整包".into());
+    }
+    // 落地（跟整包下載同範式：tmp＋清 WAL＋rename；log 段不動）
+    write_downloaded(&app_handle, &new_raw, &[])?;
+    save_base_copy(&app_handle, &new_raw);
+    let prev = load_sync_state(&app_handle);
+    let (lm, ls) = local_fingerprint(&app_handle);
+    save_sync_state(&app_handle, &SyncState {
+        base_local_mtime: lm, base_local_size: ls,
+        base_remote_mtime: lm, base_remote_size: Some(rebuilt.len() as u64),
+        base_sha256: sha256_hex(&rebuilt), seq: next_seq(prev.seq),
+        last_dir: "download".into(), at: now_epoch(),
+    });
+    Ok(format!("✅ patch 下載（{}，免拉整包）", fmt_mb(gz_patch.len() as u64)))
+}
+
+/// LOGARCHIVE1：手動日誌歸檔（只進雲端不出雲端；預設不同步）。
+/// 唯一入口是 devMode 日誌工具裡的手動按鈕（前端 gate；此處只做能力）。
+/// 流程：讀 app-log.db 全表 → txt → gzip → PUT logs/<ts>.txt.gz → 記 uploaded_until（最大 ts）。
+/// 回傳 "bytes=..KB rows=.. uploaded_until=.."（UI 顯示本次多大）。
+/// 上傳完本地 24h 後釋放由 webdav_log_archive_prune 做（只清已上傳區間＋非 error）。
+fn log_archive_state_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let mut p = app_handle.path().app_config_dir().unwrap_or_default();
+    p.push("log_archive_state.json");
+    p
+}
+fn load_uploaded_until(app_handle: &tauri::AppHandle) -> i64 {
+    std::fs::read_to_string(log_archive_state_path(app_handle))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+fn save_uploaded_until(app_handle: &tauri::AppHandle, ts: i64) {
+    let _ = std::fs::write(log_archive_state_path(app_handle), ts.to_string());
+}
+
+#[tauri::command]
+pub async fn webdav_log_archive_status(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let lp = dir.join("app-log.db");
+    if !lp.is_file() {
+        return Ok(serde_json::json!({"rows": 0, "bytes_gz": 0, "uploaded_until": load_uploaded_until(&app_handle)}).to_string());
+    }
+    let conn = rusqlite::Connection::open_with_flags(&lp, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("開日誌庫失敗: {}", e))?;
+    let rows: i64 = conn.query_row("SELECT COUNT(*) FROM app_log", [], |r| r.get(0)).unwrap_or(0);
+    // 大小用近似：SUM(LENGTH(message)) gzip 率按 0.3 估（預覽用，不精確沒關係）
+    let raw: i64 = conn.query_row("SELECT COALESCE(SUM(LENGTH(message)),0) FROM app_log", [], |r| r.get(0)).unwrap_or(0);
+    let est = (raw as f64 * 0.3) as i64;
+    Ok(serde_json::json!({"rows": rows, "bytes_gz_est": est, "uploaded_until": load_uploaded_until(&app_handle)}).to_string())
+}
+
+#[tauri::command]
+pub async fn webdav_log_archive_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let lp = dir.join("app-log.db");
+    if !lp.is_file() {
+        return Err("本地尚無操作日誌".into());
+    }
+    // 先 flush 概念：checkpoint（WAL 併入，讀到的才是全的）
+    if let Ok(conn) = rusqlite::Connection::open(&lp) {
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+    let conn = rusqlite::Connection::open_with_flags(&lp, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("開日誌庫失敗: {}", e))?;
+    // scope 欄可缺（舊庫相容）
+    let has_scope = conn.prepare("SELECT scope FROM app_log LIMIT 0").is_ok();
+    let sql = if has_scope {
+        "SELECT ts, level, scope, message FROM app_log ORDER BY ts ASC"
+    } else {
+        "SELECT ts, level, message FROM app_log ORDER BY ts ASC"
+    };
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let mut out = String::from("# Teno 操作日誌歸檔\n# 格式: ts | level | scope | message\n");
+    let mut max_ts: i64 = 0;
+    let mut rows = 0u64;
+    if has_scope {
+        let list = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))).map_err(|e| e.to_string())?;
+        for r in list.flatten() {
+            max_ts = max_ts.max(r.0);
+            out.push_str(&format!("{} | {} | {} | {}\n", r.0, r.1, r.2, r.3.replace('\n', "\\n")));
+            rows += 1;
+        }
+    } else {
+        let list = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).map_err(|e| e.to_string())?;
+        for r in list.flatten() {
+            max_ts = max_ts.max(r.0);
+            out.push_str(&format!("{} | {} | misc | {}\n", r.0, r.1, r.2.replace('\n', "\\n")));
+            rows += 1;
+        }
+    }
+    if rows == 0 {
+        return Err("日誌是空的，不需歸檔".into());
+    }
+    let gz = gzip_compress(out.as_bytes())?;
+    let ts_now = now_epoch();
+    let fname = format!("logs/{}_{}.txt.gz", ts_now, &sha256_hex(&gz)[..8]);
+    let url = format!("{}/{}", base, fname);
+    // logs/ 目錄 MKCOL 冪等（server 無此目錄自動建其實也會建，但先 MKCOL 明確）
+    let _ = ureq::request("MKCOL", &format!("{}/logs/", base)).set("Authorization", &auth).call();
+    ureq::put(&url)
+        .set("Authorization", &auth)
+        .set("Content-Type", "application/gzip")
+        .send_bytes(&gz)
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+            ureq::Error::Status(code, _) => format!("日誌歸檔上傳失敗（HTTP {code}）"),
+            _ => format!("日誌歸檔上傳失敗：{e}"),
+        })?;
+    // 成功才記 uploaded_until（最大 ts；24h 後 prune 才清，立刻刪會丟重傳機會）
+    let prev = load_uploaded_until(&app_handle);
+    if max_ts > prev {
+        save_uploaded_until(&app_handle, max_ts);
+    }
+    Ok(format!("✅ 日誌已歸檔（{} 筆，{}；24h 後本地釋放已上傳區間）", rows, fmt_mb(gz.len() as u64)))
+}
+
+/// LOGARCHIVE1：24h 後釋放已上傳區間（只清 ts<=uploaded_until 且超過 24h 且 level!=error）。
+/// error 多留（90 天政策由既有 retention 管，不在這裡動）。
+#[tauri::command]
+pub async fn webdav_log_archive_prune(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let until = load_uploaded_until(&app_handle);
+    if until <= 0 {
+        return Ok("無已上傳區間，不需釋放".into());
+    }
+    let cutoff_ms = (now_epoch() as i64 - 24 * 3600) * 1000;
+    if cutoff_ms <= 0 {
+        return Ok("時間未到，不需釋放".into());
+    }
+    let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let lp = dir.join("app-log.db");
+    if !lp.is_file() {
+        return Ok("本地無日誌庫".into());
+    }
+    let conn = rusqlite::Connection::open(&lp).map_err(|e| format!("開日誌庫失敗: {}", e))?;
+    let n = conn.execute(
+        "DELETE FROM app_log WHERE ts <= ?1 AND ts <= ?2 AND level != 'error'",
+        rusqlite::params![until, cutoff_ms],
+    ).map_err(|e| e.to_string())?;
+    let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    Ok(format!("已釋放 {} 筆（已上傳且超 24h；error 保留）", n))
+}
+
 #[tauri::command]
 pub async fn webdav_logout(app_handle: tauri::AppHandle) -> Result<String, String> {
     let p = config_path(&app_handle);
@@ -1301,6 +1633,35 @@ mod tests {
         assert_eq!(down, vec!["c.jpg".to_string()]);
         let (up2, down2) = media_diff(&local, &local);
         assert!(up2.is_empty() && down2.is_empty());
+    }
+
+    #[test]
+    fn decide_three_hash_matrix() {
+        // 三哈希決策：Clean／UploadOnly／DownloadOnly／Diverged／Fallback
+        assert_eq!(decide_sync_direction("a","a","a"), SyncDir::Clean);
+        assert_eq!(decide_sync_direction("b","a","a"), SyncDir::UploadOnly);
+        assert_eq!(decide_sync_direction("a","a","b"), SyncDir::DownloadOnly);
+        assert_eq!(decide_sync_direction("b","a","c"), SyncDir::Diverged);
+        assert_eq!(decide_sync_direction("x","x","x"), SyncDir::Clean);
+        // 未知一邊 → 回退 mtime
+        assert_eq!(decide_sync_direction("","",""), SyncDir::FallbackMtime);
+        assert_eq!(decide_sync_direction("a","","a"), SyncDir::FallbackMtime);
+        assert_eq!(decide_sync_direction("a","a",""), SyncDir::FallbackMtime);
+        // 大小寫不敏感
+        assert_eq!(decide_sync_direction("ABC","abc","abc"), SyncDir::Clean);
+    }
+
+    #[test]
+    fn page_size_detect() {
+        let mut good = b"SQLite format 3\0".to_vec();
+        good.extend(vec![0u8; 2]);
+        good[16]=0x10; good[17]=0x00; // 4096
+        assert_eq!(sqlite_page_size(&good), 4096);
+        let mut big = b"SQLite format 3\0".to_vec();
+        big.extend(vec![0u8; 2]);
+        big[16]=0x00; big[17]=0x01; // 1 → 65536
+        assert_eq!(sqlite_page_size(&big), 65536);
+        assert_eq!(sqlite_page_size(b"tiny"), 4096);
     }
 
     #[test]

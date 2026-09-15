@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -360,6 +360,17 @@ function renderSettingsContent(s) {
           </div>
           <button class="switch-btn ${s.state.logMirror !== false ? 'on' : ''}" id="logMirrorToggle" style="flex-shrink:0" aria-pressed="${s.state.logMirror !== false}">${s.state.logMirror !== false ? '開' : '關'}</button>
         </div>
+        ${s.state.devMode ? `
+        <div class="config-field" style="margin-top:var(--s2);border-top:1px dashed var(--border-subtle);padding-top:var(--s2)">
+          <div class="config-field-info">
+            <div class="config-field-label">${icon('archive')} 日誌歸檔（只進雲端不出雲端）</div>
+            <div class="config-field-hint">唯一入口在這裡；預設不同步。傳完 24h 後本地釋放已上傳區間（error 保留）。<span id="logArchiveStatus">讀取中…</span></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
+            <button class="btn btn-sm" id="logArchiveUploadBtn">${icon('upload')} 上傳歸檔</button>
+            <button class="btn btn-sm" id="logArchivePruneBtn">${icon('trash')} 釋放已上傳</button>
+          </div>
+        </div>` : ''}
       </div>
     </div>
 
@@ -495,8 +506,17 @@ function renderSettingsContent(s) {
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
               <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳同步</button>
+              <button class="btn btn-sm" id="webdavPatchUploadBtn" title="只傳變動頁（幾 KB）；對不上自動掉回整包">${icon('zap')} 差量上傳</button>
               <button class="btn btn-sm btn-secondary" id="webdavDownloadBtn">${icon('download')} 下載</button>
+              <button class="btn btn-sm" id="webdavPatchDownloadBtn" title="只拉變動頁；對不上自動掉回整包">${icon('zap')} 差量下載</button>
               <button class="btn btn-sm btn-secondary" id="webdavClearBtn">${icon('x')} 清除設定</button>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-top:var(--s2)">
+              <button class="btn btn-sm" id="webdavMediaFlushBtn">${icon('image')} 媒體佇列上傳 (<span id="mediaQueueCount">…</span>)</button>
+              <button class="btn btn-sm" id="webdavMediaFlushCancelBtn" style="display:none">${icon('x')} 取消</button>
+              <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-tertiary)">
+                <input type="checkbox" id="mediaWifiOnly"> 僅 WiFi 傳圖
+              </label>
             </div>
           </div>
           <div style="font-size:12px;color:var(--text-tertiary)" id="webdavStatusText">檢查中…</div>
@@ -1571,6 +1591,111 @@ export function onMount(s) {
     await webdavLogout();
     toast('已清除 WebDAV 設定', 'toast-success');
     updateWebdavUI();
+  });
+
+  // ── PATCHDIFF1 差量收發（對不上／太大自動掉回整包；失敗一次不自動重試 patch）──
+  document.getElementById('webdavPatchUploadBtn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const r = await webdavPatchUpload();
+      toast(r, 'toast-success');
+    } catch (err) {
+      const m = String(err || '');
+      if (/NO_BASE|PATCH_TOO_BIG|BASE_MISMATCH|PATCH_REJECTED|請走整包/.test(m)) {
+        toast('差量不可用，走整包：' + m, 'toast-warn');
+        document.getElementById('webdavUploadBtn')?.click();
+      } else toast(m, 'toast-error');
+    } finally { btn.disabled = false; updateWebdavUI(); }
+  });
+  document.getElementById('webdavPatchDownloadBtn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      if (!confirm('差量下載只在本地乾淨時可 fast-forward；確定繼續？')) return;
+      const r = await webdavPatchDownload();
+      toast(r, 'toast-success');
+      setTimeout(() => location.reload(), 500);
+    } catch (err) {
+      const m = String(err || '');
+      if (/NO_BASE|BASE_MISMATCH|請走整包/.test(m)) {
+        toast('差量不可用，走整包：' + m, 'toast-warn');
+        document.getElementById('webdavDownloadBtn')?.click();
+      } else toast(m, 'toast-error');
+    } finally { btn.disabled = false; }
+  });
+
+  // ── MEDIAPEEL1 媒體佇列（有時間慢慢傳；取消＋僅 WiFi）──
+  import('../lib/media-queue.js').then(mq => {
+    const cnt = document.getElementById('mediaQueueCount');
+    if (cnt) cnt.textContent = mq.pendingCount();
+    const wf = document.getElementById('mediaWifiOnly');
+    if (wf) {
+      wf.checked = mq.wifiOnly();
+      wf.addEventListener('change', () => mq.setWifiOnly(wf.checked));
+    }
+  }).catch(() => {});
+  document.getElementById('webdavMediaFlushBtn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    const cancelBtn = document.getElementById('webdavMediaFlushCancelBtn');
+    if (cancelBtn) cancelBtn.style.display = '';
+    try {
+      const mq = await import('../lib/media-queue.js');
+      const api = await import('../lib/api.js');
+      const r = await mq.flushMediaQueue(api, ({ done, total }) => {
+        btn.textContent = `傳圖中 ${done}/${total}…`;
+      });
+      toast(`媒體佇列：${r.ok} 個完成${r.note && r.note !== 'empty' ? `（${r.note}）` : ''}`, 'toast-success');
+      try { const { invalidateWordImages } = await import('../lib/word-image.js'); invalidateWordImages(); } catch (_) {}
+    } catch (err) {
+      toast('媒體上傳失敗（佇列已落地，下次重試）: ' + err, 'toast-error');
+    } finally {
+      btn.disabled = false; btn.textContent = '媒體佇列上傳';
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      try {
+        const mq2 = await import('../lib/media-queue.js');
+        const cnt2 = document.getElementById('mediaQueueCount');
+        if (cnt2) cnt2.textContent = mq2.pendingCount();
+      } catch (_) {}
+      updateWebdavUI();
+    }
+  });
+  document.getElementById('webdavMediaFlushCancelBtn')?.addEventListener('click', async () => {
+    try { const mq = await import('../lib/media-queue.js'); mq.cancelFlush(); toast('已取消（剩餘下次再傳）', ''); } catch (_) {}
+  });
+
+  // ── LOGARCHIVE1 日誌歸檔（devMode 唯一入口；顯示本次多大；傳完 24h 後釋放）──
+  (function refreshLogArchiveStatus() {
+    const el = document.getElementById('logArchiveStatus');
+    if (!el) return;
+    webdavLogArchiveStatus().then(r => {
+      const o = typeof r === 'string' ? JSON.parse(r) : r;
+      el.textContent = `本地 ${o.rows} 筆（約 ${(o.bytes_gz_est / 1024).toFixed(1)} KB），已歸檔至 ${o.uploaded_until ? new Date(o.uploaded_until).toLocaleString('zh-TW') : '無'}`;
+    }).catch(() => { el.textContent = '讀取失敗'; });
+  })();
+  document.getElementById('logArchiveUploadBtn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget; btn.disabled = true;
+    try {
+      const r = await webdavLogArchiveUpload();
+      toast(r, 'toast-success');
+      try {
+        const st2 = await webdavLogArchiveStatus();
+        const o2 = typeof st2 === 'string' ? JSON.parse(st2) : st2;
+        const el2 = document.getElementById('logArchiveStatus');
+        if (el2) el2.textContent = `本地 ${o2.rows} 筆，已歸檔至 ${o2.uploaded_until ? new Date(o2.uploaded_until).toLocaleString('zh-TW') : '無'}`;
+      } catch (_) {}
+    } catch (err) { toast(String(err), 'toast-error'); }
+    finally { btn.disabled = false; }
+  });
+  document.getElementById('logArchivePruneBtn')?.addEventListener('click', async () => {
+    try {
+      const r = await webdavLogArchivePrune();
+      toast(r, 'toast-success');
+      try {
+        const st3 = await webdavLogArchiveStatus();
+        const o3 = typeof st3 === 'string' ? JSON.parse(st3) : st3;
+        const el3 = document.getElementById('logArchiveStatus');
+        if (el3) el3.textContent = `本地 ${o3.rows} 筆，已歸檔至 ${o3.uploaded_until ? new Date(o3.uploaded_until).toLocaleString('zh-TW') : '無'}`;
+      } catch (_) {}
+    } catch (err) { toast(String(err), 'toast-error'); }
   });
 
   // ── 內嵌本地雲 WEBDAV-EMBED1（桌機限定；手機走 Termux 獨立版）──

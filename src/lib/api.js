@@ -54,6 +54,16 @@ export const webdavMediaUpload = () =>
   invoke('webdav_media_upload')
 export const webdavMediaDownload = () =>
   invoke('webdav_media_download')
+export const webdavPatchUpload = () =>
+  invoke('webdav_patch_upload')
+export const webdavPatchDownload = () =>
+  invoke('webdav_patch_download')
+export const webdavLogArchiveStatus = () =>
+  invoke('webdav_log_archive_status')
+export const webdavLogArchiveUpload = () =>
+  invoke('webdav_log_archive_upload')
+export const webdavLogArchivePrune = () =>
+  invoke('webdav_log_archive_prune')
 
 // ─── TTS ───────────────────────────────────────────────
 export const speakText = (text, opts = {}) => {

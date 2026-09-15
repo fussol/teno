@@ -1,0 +1,7 @@
+[Unit]
+Description=Teno WebDAV 每日異地 tar（HOLE6 單點解）
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/teno-webdav-app/daily-tar.sh
