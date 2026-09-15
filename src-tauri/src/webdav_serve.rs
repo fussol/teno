@@ -98,6 +98,39 @@ fn rotate_history_file(fp: &std::path::Path) {
     }
 }
 
+/// PATCHBASE1 parity（跟獨立版 file_sha256 同規）：檔內容 sha256 hex，讀不到回空字串。
+fn file_sha256_hex(fp: &std::path::Path) -> String {
+    use sha2::{Digest, Sha256};
+    let bytes = match std::fs::read(fp) {
+        Ok(b) => b,
+        Err(_) => return String::new(),
+    };
+    let mut h = Sha256::new();
+    h.update(&bytes);
+    let out = h.finalize();
+    let mut s = String::with_capacity(64);
+    for b in out { s.push_str(&format!("{:02x}", b)); }
+    s
+}
+
+/// HOLE6 quota parity（跟獨立版 quota_ok 同規）：雲總量 2GB 上限。
+fn dir_total_size(root: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let entries = match std::fs::read_dir(&d) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() { stack.push(p); continue; }
+            if let Ok(m) = e.metadata() { total = total.saturating_add(m.len()); }
+        }
+    }
+    total
+}
+
 /// SYNC2-Q3：port 誰在聽（內嵌／外掛獨立版／都沒跑）
 fn port_occupied(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
@@ -621,6 +654,8 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             if head_only {
+                // PATCHBASE1：真內容 hash（client base 對帳用；HEAD 讀一次檔，60MB 約 200ms）
+                let sha = file_sha256_hex(&fp);
                 send(
                     &mut stream,
                     "200 OK",
@@ -629,22 +664,32 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
                         ("Content-Length", meta.len().to_string()),
                         ("Last-Modified", http_date_now()),
                         ("ETag", format!("\"{mtime}-{}\"", meta.len())),
+                        ("X-Content-Sha256", sha),
                     ],
                     b"",
                 );
                 return;
             }
             match std::fs::read(&fp) {
-                Ok(data) => send(
-                    &mut stream,
-                    "200 OK",
-                    &[
-                        ("Content-Type", ctype.into()),
-                        ("Last-Modified", http_date_now()),
-                        ("ETag", format!("\"{mtime}-{}\"", data.len())),
-                    ],
-                    &data,
-                ),
+                Ok(data) => {
+                    use sha2::{Digest, Sha256};
+                    let mut h = Sha256::new();
+                    h.update(&data);
+                    let out = h.finalize();
+                    let mut sha = String::with_capacity(64);
+                    for b in out { sha.push_str(&format!("{:02x}", b)); }
+                    send(
+                        &mut stream,
+                        "200 OK",
+                        &[
+                            ("Content-Type", ctype.into()),
+                            ("Last-Modified", http_date_now()),
+                            ("ETag", format!("\"{mtime}-{}\"", data.len())),
+                            ("X-Content-Sha256", sha),
+                        ],
+                        &data,
+                    )
+                }
                 Err(e) => send(&mut stream, "500 Internal Server Error", &[], e.to_string().as_bytes()),
             }
         }
@@ -663,6 +708,14 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
             if body.len() > 512 * 1024 * 1024 {
                 send(&mut stream, "413 Payload Too Large", &[], b"too large");
                 return;
+            }
+            // HOLE6 quota parity：加總超 2GB 拒收（防壞 client 灌爆碟；.history 也算在內）
+            {
+                const QUOTA: u64 = 2 * 1024 * 1024 * 1024;
+                if dir_total_size(&root).saturating_add(body.len() as u64) > QUOTA {
+                    send(&mut stream, "413 Payload Too Large", &[], b"quota exceeded (2GB)");
+                    return;
+                }
             }
             let existed = fp.exists();
             if let Some(parent) = fp.parent() {

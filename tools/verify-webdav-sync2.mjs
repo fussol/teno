@@ -25,6 +25,17 @@ ok('sync:download dual-write', rs.includes('write_downloaded(&app_handle, &db_by
 ok('sync:base advances on upload', rs.includes('last_dir: "upload"'));
 ok('sync:base advances on download', rs.includes('last_dir: "download"'));
 ok('sync:MIN_UPLOAD_SIZE', rs.includes('MIN_UPLOAD_SIZE'));
+ok('sync:base sha256 field', rs.includes('base_sha256'));
+ok('sync:base seq field', /seq:\s*u64/.test(rs));
+ok('sync:sha256_hex fn', rs.includes('fn sha256_hex('));
+ok('sync:page_diff fn', rs.includes('fn page_diff('));
+ok('sync:apply_patch fn', rs.includes('fn apply_patch('));
+ok('sync:should_use_patch 70pct', rs.includes('fn should_use_patch('));
+ok('sync:base_usable gate', rs.includes('fn base_usable('));
+ok('sync:next_seq monotonic', rs.includes('fn next_seq('));
+ok('sync:try_snapshot_read torn-guard', rs.includes('fn try_snapshot_read('));
+ok('sync:upload base records hash', rs.includes('sha256_hex(&data)'));
+ok('sync:download base records hash', rs.includes('sha256_hex(&buf)'));
 
 console.log('== SYNC2 static: embedded (webdav_serve.rs) ==');
 const sv = readFileSync(`${R}/src-tauri/src/webdav_serve.rs`, 'utf8');
@@ -36,6 +47,8 @@ ok('embed:history keep 5', sv.includes('saturating_sub(5)'));
 ok('embed:autostart yields to standalone', sv.includes('獨立版頂著'));
 ok('embed:status three-way', sv.includes('獨立版頂著') && sv.includes('都沒跑'));
 ok('embed:blank pass keeps old', sv.includes('沿用已存'));
+ok('embed:X-Content-Sha256 HEAD+GET', sv.includes('X-Content-Sha256'));
+ok('embed:quota 2GB guard', sv.includes('quota exceeded (2GB)'));
 
 console.log('== SYNC2 static: standalone (server.py) ==');
 const py = readFileSync(APP, 'utf8');
@@ -48,6 +61,12 @@ ok('py:422 bad payload', py.includes('bad payload: not TENOC/SQLite'));
 ok('py:history keep', py.includes('HISTORY_KEEP'));
 ok('py:auth-file flag', py.includes('--auth-file'));
 ok('py:mirror in repo', existsSync(`${R}/scripts/webdav-server.py`));
+ok('py:X-Content-Sha256 header', py.includes('X-Content-Sha256'));
+ok('py:quota 2GB guard', py.includes('quota exceeded (2GB)'));
+ok('py:file_sha256 cached', py.includes('def file_sha256('));
+ok('py:tombstone add+hit', py.includes('def tombstone_add(') && py.includes('def tombstone_hit('));
+ok('py:gc two-phase helpers', py.includes('def gc_is_orphan(') && py.includes('def gc_second_pass_due('));
+ok('py:manifest parent gate', py.includes('def manifest_parent_ok('));
 
 console.log('== SYNC2 static: frontend ==');
 const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');

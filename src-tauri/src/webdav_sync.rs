@@ -75,6 +75,12 @@ struct SyncState {
     /// 上次成功同步時遠端 mtime（epoch）／size
     base_remote_mtime: Option<u64>,
     base_remote_size: Option<u64>,
+    /// PATCHBASE1：base 整檔 sha256 hex（解壓後 teno.db 段；驗過才寫）
+    #[serde(default)]
+    base_sha256: String,
+    /// PATCHBASE1：單調 seq（主鍵是 seq 不是 wall clock）
+    #[serde(default)]
+    seq: u64,
     /// 上次成功方向＋時間（"upload"|"download"，epoch）
     last_dir: String,
     at: u64,
@@ -197,6 +203,138 @@ pub(crate) fn gzip_decompress(data: &[u8]) -> Result<Vec<u8>, String> {
         return Err("解壓後超過 512MB，拒收".into());
     }
     Ok(out)
+}
+
+/// PATCHBASE1：整檔 sha256 hex（pure fn；base 驗證＋對帳用）
+pub(crate) fn sha256_hex(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(data);
+    let out = h.finalize();
+    let mut s = String::with_capacity(64);
+    for b in out { s.push_str(&format!("{:02x}", b)); }
+    s
+}
+
+/// PATCHDIFF1：page diff（pure fn；SQLite 4KB 頁邊界現成拿來用）
+/// 回傳變動頁清單 [(頁號, 頁資料)]；長度不一時多出頁全算髒（截斷／增長）。
+/// page_size<=0 或 >65536 直接拒（防錯配）。
+pub(crate) fn page_diff(base: &[u8], cur: &[u8], page_size: usize) -> Result<Vec<(u32, Vec<u8>)>, String> {
+    if page_size == 0 || page_size > 65536 {
+        return Err(format!("page_size 非法: {}", page_size));
+    }
+    let ps = page_size;
+    let n_base = base.len().div_ceil(ps);
+    let n_cur = cur.len().div_ceil(ps);
+    let n = n_base.max(n_cur);
+    if n > u32::MAX as usize {
+        return Err("檔案過大，頁號溢位".into());
+    }
+    let mut out = Vec::new();
+    for i in 0..n {
+        let a0 = i * ps;
+        let b0 = a0;
+        let a1 = (a0 + ps).min(base.len());
+        let b1 = (b0 + ps).min(cur.len());
+        let a = if a0 < base.len() { &base[a0..a1] } else { &[][..] };
+        let b = if b0 < cur.len() { &cur[b0..b1] } else { &[][..] };
+        if a != b {
+            // 頁資料按整頁給（尾頁補零到 ps，套用端按偏移寫回即可）
+            let mut page = vec![0u8; ps];
+            page[..b.len()].copy_from_slice(b);
+            // 尾頁若兩邊都短且內容同（上已比）不會到這；短頁補零後若 base 側本就是零則仍算髒一次，無害
+            out.push((i as u32, page));
+        }
+    }
+    Ok(out)
+}
+
+/// PATCHDIFF1：patch 打包 [(頁號,頁)] -> bytes（u32le 頁號＋頁資料連接；再整體 gzip 由呼叫端做）
+pub(crate) fn pack_patch(pages: &[(u32, Vec<u8>)], page_size: usize) -> Result<Vec<u8>, String> {
+    let mut out = Vec::new();
+    for (no, data) in pages {
+        if data.len() != page_size {
+            return Err(format!("頁 {} 長度錯位: {} != {}", no, data.len(), page_size));
+        }
+        out.extend_from_slice(&no.to_le_bytes());
+        out.extend_from_slice(data);
+    }
+    Ok(out)
+}
+
+/// PATCHDIFF1：patch 套用（pure fn；base＋patch bytes -> 新檔）
+/// 格式：[u32le 頁號][page_size bytes] 反覆；頁號超界／尾截斷直接拒（不靜默丟）。
+pub(crate) fn apply_patch(base: &[u8], patch: &[u8], page_size: usize) -> Result<Vec<u8>, String> {
+    if page_size == 0 || page_size > 65536 {
+        return Err(format!("page_size 非法: {}", page_size));
+    }
+    let stride = 4 + page_size;
+    if patch.len() % stride != 0 {
+        return Err(format!("patch 長度錯位: {} 不是 {} 的倍數（截斷？）", patch.len(), stride));
+    }
+    let mut out = base.to_vec();
+    let n_pages = out.len().div_ceil(page_size);
+    let mut pos = 0;
+    while pos < patch.len() {
+        let no = u32::from_le_bytes([patch[pos], patch[pos+1], patch[pos+2], patch[pos+3]]) as usize;
+        let data = &patch[pos+4..pos+stride];
+        let need = (no + 1) * page_size;
+        if need > 512 * 1024 * 1024 {
+            return Err(format!("頁號 {} 超出 512MB 上限，拒套", no));
+        }
+        if need > out.len() {
+            out.resize(need, 0);
+        }
+        let off = no * page_size;
+        out[off..off+page_size].copy_from_slice(data);
+        // 尾頁補零區若超出原檔邏輯長度，呼叫端按原長截回；此處保留整頁（呼叫端截）
+        let _ = n_pages;
+        pos += stride;
+    }
+    Ok(out)
+}
+
+/// HOLE1 VACUUM 爆炸逃生：patch 太大就傳整包（pure fn；閾值 70%）。
+/// patch_gz_len / full_gz_len 任一為 0 直接回整包（除零防呆）。
+pub(crate) fn should_use_patch(patch_gz_len: usize, full_gz_len: usize) -> bool {
+    if patch_gz_len == 0 || full_gz_len == 0 { return false; }
+    (patch_gz_len as u64 * 100) < (full_gz_len as u64 * 70)
+}
+
+/// HOLE4 壞 base：只有驗過的 base 才能當基準（pure fn）。
+/// base_sha256 空＝舊版無 base，不可走 patch，只能整包。
+/// expected 為空也一律 false（呼叫端傳空＝邏輯錯，直接拒）。
+pub(crate) fn base_usable(stored_sha: &str, expected_sha: &str) -> bool {
+    if stored_sha.is_empty() || expected_sha.is_empty() { return false; }
+    stored_sha.eq_ignore_ascii_case(expected_sha)
+}
+
+/// HOLE7 單調 seq：只增不減（pure fn；wall clock 只當備份）。
+pub(crate) fn next_seq(cur: u64) -> u64 {
+    cur.saturating_add(1)
+}
+
+/// HOLE5 撕裂讀守門：SQLite 忙碌時硬讀會抓到半截狀態（pure 判定＋IO  helper 分開）。
+/// try_snapshot_read：先 BEGIN IMMEDIATE 探鎖（忙就直接錯，不硬讀），再讀檔。
+/// 讀到檔後做魔數驗（SQLite 頭），不過即錯。呼叫端重試幾次不行就放棄這次同步。
+pub(crate) fn try_snapshot_read(db_path: &std::path::Path) -> Result<Vec<u8>, String> {
+    // 探鎖：能開庫且能拿 IMMEDIATE 鎖才讀；拿不到＝有人在寫，直接回錯等下次
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ).map_err(|e| format!("開庫失敗: {}", e))?;
+    conn.execute_batch("PRAGMA busy_timeout=0;")
+        .map_err(|e| format!("busy_timeout 設失敗: {}", e))?;
+    // BEGIN IMMEDIATE 拿不到即 DatabaseBusy／Locked，不硬等
+    let busy = conn.execute_batch("BEGIN IMMEDIATE; ROLLBACK;").is_err();
+    if busy {
+        return Err("DB 忙碌中（有人在寫），這次不同步，下次再傳".into());
+    }
+    let bytes = std::fs::read(db_path).map_err(|e| format!("讀檔失敗: {}", e))?;
+    if bytes.len() < 100 || !bytes.starts_with(b"SQLite format 3\0") {
+        return Err("讀到的不是有效 SQLite（撕裂／半寫？），拒用".into());
+    }
+    Ok(bytes)
 }
 
 /// 讀本地要上傳的位元組：teno.db 必讀＋魔數驗＋下限驗；app-log.db 有就帶，無就空段
@@ -577,8 +715,10 @@ pub async fn webdav_upload(
         None => "（遠端原無檔）".into(),
     };
     // 成功才前進 base（兩邊指紋都記：遠端＝剛傳上去的本地）
+    // PATCHBASE1：base_sha256＝送出位元組 hash（PUT 2xx＝server 那份相同，不必拉回對帳）；seq 單調＋1
     {
         let (lm, ls) = local_fingerprint(&app_handle);
+        let prev = load_sync_state(&app_handle);
         save_sync_state(
             &app_handle,
             &SyncState {
@@ -586,6 +726,8 @@ pub async fn webdav_upload(
                 base_local_size: ls,
                 base_remote_mtime: lm,
                 base_remote_size: Some(data.len() as u64),
+                base_sha256: sha256_hex(&data),
+                seq: next_seq(prev.seq),
                 last_dir: "upload".into(),
                 at: now_epoch(),
             },
@@ -671,10 +813,12 @@ pub async fn webdav_download(
     }
     write_downloaded(&app_handle, &db_bytes, &log_bytes)?;
     // 成功才前進 base（兩邊指紋都記：本地＝剛寫下的遠端）
+    // PATCHBASE1：base_sha256＝收到的遠端位元組 hash（解包驗過才到這）；seq 單調＋1
     {
         let (lm, ls) = local_fingerprint(&app_handle);
         let rmt = None::<u64>;
         let _ = rmt;
+        let prev = load_sync_state(&app_handle);
         save_sync_state(
             &app_handle,
             &SyncState {
@@ -682,6 +826,8 @@ pub async fn webdav_download(
                 base_local_size: ls,
                 base_remote_mtime: lm,
                 base_remote_size: Some(buf.len() as u64),
+                base_sha256: sha256_hex(&buf),
+                seq: next_seq(prev.seq),
                 last_dir: "download".into(),
                 at: now_epoch(),
             },
@@ -817,6 +963,73 @@ mod tests {
         let good = gzip_compress(b"hello teno world").unwrap();
         assert_eq!(gzip_decompress(&good).unwrap(), b"hello teno world");
         assert!(gzip_decompress(&good[..good.len() / 2]).is_err());
+    }
+
+    #[test]
+    fn hole_sha256_vectors() {
+        // 空字串標準向量
+        assert_eq!(sha256_hex(b""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(sha256_hex(b"abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assert_eq!(sha256_hex(b"hello").len(), 64);
+    }
+
+    #[test]
+    fn hole_page_diff_basic() {
+        let ps = 4096;
+        let mut base = vec![0u8; ps*3];
+        base[0]=1; base[ps+5]=2;
+        let mut cur = base.clone();
+        // 沒變＝零髒頁
+        assert!(page_diff(&base,&base,ps).unwrap().is_empty());
+        // 改 1 byte 髒 1 頁
+        cur[10]=9;
+        let d = page_diff(&base,&cur,ps).unwrap();
+        assert_eq!(d.len(),1); assert_eq!(d[0].0,0);
+        // 跨兩頁髒 2 頁
+        cur[ps+1]=7; cur[2*ps+3]=8;
+        let d2 = page_diff(&base,&cur,ps).unwrap();
+        assert_eq!(d2.len(),3);
+        // pack＋apply 閉環
+        let raw = pack_patch(&d2,ps).unwrap();
+        let back = apply_patch(&base,&raw,ps).unwrap();
+        // 尾頁補零區截回原長再比
+        assert_eq!(&back[..cur.len()], &cur[..]);
+        // 長度錯位拒
+        assert!(apply_patch(&base,&raw[..raw.len()-1],ps).is_err());
+        assert!(page_diff(&base,&cur,0).is_err());
+    }
+
+    #[test]
+    fn hole_vacuum_fallback_70pct() {
+        assert!(!should_use_patch(0,100));
+        assert!(!should_use_patch(100,0));
+        assert!(should_use_patch(69,100));
+        assert!(!should_use_patch(70,100));
+        assert!(!should_use_patch(40_000_000,46_000_000));
+        assert!(should_use_patch(8_000,32_000_000));
+    }
+
+    #[test]
+    fn hole_base_usable_and_seq() {
+        assert!(!base_usable("", "abc"));
+        assert!(!base_usable("abc", ""));
+        assert!(!base_usable("AAA", "aab"));
+        assert!(base_usable("AbC", "abc"));
+        assert_eq!(next_seq(0),1);
+        assert_eq!(next_seq(41),42);
+        assert_eq!(next_seq(u64::MAX),u64::MAX);
+    }
+
+    #[test]
+    fn hole_snapshot_rejects_garbage() {
+        let dir = std::env::temp_dir().join("teno-hole5-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fp = dir.join("t.db");
+        std::fs::write(&fp, b"not a db").unwrap();
+        // 非 SQLite 拒（撕裂／半寫路徑同）
+        assert!(try_snapshot_read(&fp).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

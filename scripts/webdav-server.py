@@ -127,6 +127,12 @@ def fs_path(url_path: str, root: str = "") -> str:
 # SYNC2-Q6：伺服器端備用（上傳一個留幾個，不是一蓋就沒）＋空檔拒收
 HISTORY_KEEP = 5
 MIN_PUT_SIZE = 20 * 1024  # 遠小於正常容器（22MB 級）；擋空 PUT／半截傳輸
+# HOLE6 單點＋quota：雲總量上限（2GB；超了拒 PUT，防壞 client 灌爆碟）
+QUOTA_BYTES = 2 * 1024 * 1024 * 1024
+# HOLE2 GC 兩階段：候選先記，24h 後再確認還沒人指才真刪
+GC_GRACE_SECS = 24 * 3600
+# HOLE7 時鐘不可靠：GC 主鍵是 manifest seq，不是 wall clock（wall 只當備份）
+# HOLE3 tombstone：徹底刪除發墓碑，GC 見碑不復活
 
 
 def payload_ok(path: str) -> bool:
@@ -138,6 +144,94 @@ def payload_ok(path: str) -> bool:
             head = f.read(16)
         return head.startswith(b"TENOC") or head.startswith(b"SQLite format 3")
     except OSError:
+        return False
+
+
+# --- HOLE2/3/6/7：CAS＋GC＋tombstone＋quota 純 helpers（可單測，不碰網路） ---
+
+_sha_cache = {}  # fp -> (mtime,size,sha256)：HEAD 免重算（mtime＋size 變才重算）
+
+def file_sha256(fp: str) -> str:
+    """檔 sha256 hex；讀不到回空字串（呼叫端當未知處理，不炸）。"""
+    try:
+        st = os.stat(fp)
+        key = (st.st_mtime, st.st_size)
+        hit = _sha_cache.get(fp)
+        if hit and hit[0] == key:
+            return hit[1]
+        h = hashlib.sha256()
+        with open(fp, 'rb') as f:
+            while True:
+                c = f.read(65536)
+                if not c: break
+                h.update(c)
+        d = h.hexdigest()
+        _sha_cache[fp] = (key, d)
+        # 快取別無限長：超過 64 項清一半舊的
+        if len(_sha_cache) > 64:
+            for k in list(_sha_cache)[:32]:
+                _sha_cache.pop(k, None)
+        return d
+    except OSError:
+        return ""
+
+def dir_size(root: str) -> int:
+    total = 0
+    try:
+        for dp, _, fns in os.walk(root):
+            # .history 算進 quota（它也是碟成本）；.tombstones 極小忽略不計也行，一起算最保守
+            for n in fns:
+                try:
+                    total += os.path.getsize(os.path.join(dp, n))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+def quota_ok(root: str, incoming: int) -> bool:
+    """incoming 加上去不爆 QUOTA 才收。"""
+    try:
+        return dir_size(root) + int(incoming) <= QUOTA_BYTES
+    except (ValueError, TypeError):
+        return False
+
+def manifest_parent_ok(manifest_parent, latest_seq) -> bool:
+    """HOLE6 manifest 更新只接受 parent 對得上的（防壞 client 蓋掉好版）。
+    parent 必須 == latest_seq；第一版 parent 為 0 且 latest 為 0 才放。"""
+    try:
+        return int(manifest_parent) == int(latest_seq)
+    except (ValueError, TypeError):
+        return False
+
+def tombstone_path(root: str, sha: str) -> str:
+    return os.path.join(root, ".tombstones", sha)
+
+def tombstone_add(root: str, sha: str) -> None:
+    """HOLE3：徹底刪除發墓碑（空檔佔位，mtime 即發碑時間）。"""
+    try:
+        d = os.path.join(root, ".tombstones")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, sha), "wb") as f:
+            f.write(b"tombstone\n")
+    except OSError:
+        pass
+
+def tombstone_hit(root: str, sha: str) -> bool:
+    return os.path.isfile(os.path.join(root, ".tombstones", sha))
+
+def gc_is_orphan(sha: str, live_shas: set, tomb_hit: bool) -> bool:
+    """HOLE2 GC 判定（pure）：活集合沒它＝候選；但有墓碑＝徹底刪除過，直接可刪（不復活）。
+    回 True＝可進候選（還要過 24h 兩階段才真刪，見 gc_second_pass_due）。"""
+    if tomb_hit:
+        return True
+    return sha not in live_shas
+
+def gc_second_pass_due(first_seen_ts: float, now_ts: float) -> bool:
+    """HOLE2 兩階段：候選先記 first_seen，24h 後再確認還沒人指才真刪。"""
+    try:
+        return (float(now_ts) - float(first_seen_ts)) >= GC_GRACE_SECS
+    except (ValueError, TypeError):
         return False
 
 
@@ -438,6 +532,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(st.st_size))
         self.send_header("Last-Modified", http_date(st.st_mtime))
         self.send_header("ETag", f'"{int(st.st_mtime)}-{st.st_size}"')
+        # PATCHBASE1：真內容 hash（client base 對帳用；60MB 約 200ms，mtime＋size 快取命中免重算）
+        try:
+            self.send_header("X-Content-Sha256", file_sha256(fp))
+        except Exception:
+            pass
         self.end_headers()
         if not head_only:
             with open(fp, "rb") as f:
@@ -469,6 +568,13 @@ class Handler(BaseHTTPRequestHandler):
         if length > 512 * 1024 * 1024:
             self.send_error(413, "too large")
             return
+        # HOLE6 quota：加總超 2GB 拒收（防壞 client 灌爆碟；.history 也算在內）
+        try:
+            if not quota_ok(user_root(self), length):
+                self.send_error(413, "quota exceeded (2GB)")
+                return
+        except Exception:
+            pass
         if length < MIN_PUT_SIZE:
             # 空／半截 PUT 直接拒收，連 .part 都不寫（Q6：空的上傳不到，蓋不掉好檔）
             try:
