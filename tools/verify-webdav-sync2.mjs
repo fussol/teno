@@ -72,7 +72,7 @@ const curl = (args) => {
 };
 // --- 單人：floors＋rotation（先清殘留，保持冪等）---
 {
-  execSync('rm -rf /tmp/sync2-one /tmp/sync2-multi /tmp/s2tiny /tmp/s2bad.bin /tmp/s2g1.bin /tmp/s2g2.bin /tmp/s2down.bin /tmp/s2auth.json /tmp/s2a.bin /tmp/s2b.bin /tmp/s2ga.bin');
+  execSync(`rm -rf /tmp/sync2-one /tmp/sync2-multi /tmp/s2tiny /tmp/s2bad.bin /tmp/s2g1.bin /tmp/s2g2.bin /tmp/s2down.bin /tmp/s2auth.json /tmp/s2a.bin /tmp/s2b.bin /tmp/s2ga.bin /tmp/s2v2.bin /tmp/s2v2down.bin`);
   const PORT = 18091;
   const srv = spawn('python3', [APP, '--dir', '/tmp/sync2-one', '--port', String(PORT), '--user', 'teno', '--password', 'p1'],
     { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -92,6 +92,27 @@ const curl = (args) => {
     ok('live:.history 留檔', hist === '1', `got ${hist}`);
     execSync(`curl -s ${B}/teno.db -u teno:p1 -o /tmp/s2down.bin`);
     ok('live:GET 回來一致', readFileSync('/tmp/s2down.bin').equals(readFileSync('/tmp/s2g2.bin')) || execSync('cmp /tmp/s2g2.bin /tmp/s2down.bin && echo SAME').toString().trim() === 'SAME');
+    // SYNC-GZ1: v2 容器（段級 gzip）伺服器零改動穿透：PUT 收、GET 原位元組回、段可解壓
+    // （段內容用固定種子隨機數：不可壓縮，線長 >20KB 才過得了伺服器下限守門）
+    execSync(`python3 -c "
+import gzip,struct,random
+rb=random.Random(42).randbytes(25000)
+tg=gzip.compress(b'SQLite format 3\\x00'+rb)
+lg=gzip.compress(b'')
+open('/tmp/s2v2.bin','wb').write(b'TENOC\\x02'+struct.pack('<I',len(tg))+tg+struct.pack('<I',len(lg))+lg)
+"`);
+    ok('live:v2 gzip PUT→204', curl(`-T /tmp/s2v2.bin ${B}/teno.db ${A}`) === '204');
+    execSync(`curl -s ${B}/teno.db -u teno:p1 -o /tmp/s2v2down.bin`);
+    ok('live:v2 GET 原位元組回', execSync('cmp /tmp/s2v2.bin /tmp/s2v2down.bin && echo SAME').toString().trim() === 'SAME');
+    ok('live:v2 段可解壓回原文', execSync(`python3 -c "
+import gzip,struct,random
+rb=random.Random(42).randbytes(25000)
+d=open('/tmp/s2v2down.bin','rb').read()
+assert d[:6]==b'TENOC\\x02', d[:6]
+ln=struct.unpack_from('<I',d,6)[0]
+assert gzip.decompress(d[10:10+ln])==b'SQLite format 3\\x00'+rb
+print('V2SEG-OK')
+"`).toString().trim() === 'V2SEG-OK');
   } finally { srv.kill(); }
 }
 // --- 多人：隔離 ---

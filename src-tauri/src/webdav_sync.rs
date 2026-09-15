@@ -151,20 +151,51 @@ fn remote_fingerprint(m: &RemoteMeta) -> (Option<u64>, Option<u64>) {
 /// 空檔守門下限：本地 teno.db 小於此直接拒傳（22MB 級正常庫；空庫／半寫檔幾十 KB）
 const MIN_UPLOAD_SIZE: u64 = 100 * 1024;
 
-/// 上傳 payload：TENOC 容器（teno.db＋app-log.db；跟 pack_db_container 同佈局，檔名沿用 teno.db）
-/// 佈局：b"TENOC"＋0x01＋u32le(teno_len)＋teno＋u32le(log_len)＋log
+/// 上傳 payload：TENOC v2 容器（段級 gzip；跟 lib.rs unpack_db_container 同佈局）
+/// 佈局：b"TENOC"＋0x02＋u32le(teno_gz_len)＋teno_gz＋u32le(log_gz_len)＋log_gz
+/// （v1＝同佈局未壓縮，解包兩版皆收；兩邊伺服器只驗 TENOC 前綴，v2 零改動穿透。
+/// 段級而非整包壓：截斷段在 gunzip 即炸，不會靜默吐半包；且空 log 段壓完僅 ~20B。）
 fn pack_sync_container(teno: &[u8], log: &[u8]) -> Result<Vec<u8>, String> {
-    let tl = u32::try_from(teno.len())
-        .map_err(|_| format!("teno.db 超過 4GB（{} bytes），拒絕打包", teno.len()))?;
-    let ll = u32::try_from(log.len())
-        .map_err(|_| format!("app-log.db 超過 4GB（{} bytes），拒絕打包", log.len()))?;
-    let mut out = Vec::with_capacity(5 + 1 + 4 + teno.len() + 4 + log.len());
+    let tg = gzip_compress(teno)?;
+    let lg = gzip_compress(log)?;
+    let tl = u32::try_from(tg.len())
+        .map_err(|_| format!("teno.db 壓縮後超過 4GB（{} bytes），拒絕打包", tg.len()))?;
+    let ll = u32::try_from(lg.len())
+        .map_err(|_| format!("app-log.db 壓縮後超過 4GB（{} bytes），拒絕打包", lg.len()))?;
+    let mut out = Vec::with_capacity(5 + 1 + 4 + tg.len() + 4 + lg.len());
     out.extend_from_slice(b"TENOC");
-    out.push(1u8);
+    out.push(2u8);
     out.extend_from_slice(&tl.to_le_bytes());
-    out.extend_from_slice(teno);
+    out.extend_from_slice(&tg);
     out.extend_from_slice(&ll.to_le_bytes());
-    out.extend_from_slice(log);
+    out.extend_from_slice(&lg);
+    Ok(out)
+}
+
+/// gzip 壓縮（pure fn；SYNC-GZ1 同步容器 v2 段壓縮用）
+pub(crate) fn gzip_compress(data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Write as _;
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(data)
+        .map_err(|e| format!("gzip 壓縮失敗: {e}"))?;
+    enc.finish().map_err(|e| format!("gzip 收尾失敗: {e}"))
+}
+
+/// gzip 解壓（pure fn；take 封頂防炸彈，超限未爆記憶體先拒）
+pub(crate) fn gzip_decompress(data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    if data.len() < 2 || data[..2] != [0x1f, 0x8b] {
+        return Err("不是 gzip 資料（魔數不對，多半是段截斷或版本錯位）".into());
+    }
+    const LIMIT: u64 = 512 * 1024 * 1024;
+    let mut out = Vec::new();
+    flate2::read::GzDecoder::new(data)
+        .take(LIMIT + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| format!("gzip 解壓失敗（段截斷？）: {e}"))?;
+    if out.len() as u64 > LIMIT {
+        return Err("解壓後超過 512MB，拒收".into());
+    }
     Ok(out)
 }
 
@@ -757,22 +788,35 @@ mod tests {
 
     #[test]
     fn sync2_pack_roundtrip() {
-        let teno = [b'S', b'Q', b'L', b'i'];
+        // SYNC-GZ1: 同步容器現為 v2（段級 gzip）；手動拆段驗佈局＋版本位
         let mut teno_big = b"SQLite format 3\0".to_vec();
         teno_big.extend(vec![0u8; 200]);
         let log = b"LOG".to_vec();
         let packed = pack_sync_container(&teno_big, &log).unwrap();
         assert!(packed.starts_with(b"TENOC"));
-        assert_eq!(packed[5], 1u8);
-        // 手動拆段驗佈局
+        assert_eq!(packed[5], 2u8);
+        // 段是 gzip（魔數 1f8b），不是原文
         let tl = u32::from_le_bytes([packed[6], packed[7], packed[8], packed[9]]) as usize;
-        assert_eq!(tl, teno_big.len());
-        assert_eq!(&packed[10..10 + tl], &teno_big[..]);
+        assert_eq!(&packed[10..12], b"\x1f\x8b");
         let p = 10 + tl;
         let ll = u32::from_le_bytes([packed[p], packed[p + 1], packed[p + 2], packed[p + 3]]) as usize;
-        assert_eq!(ll, log.len());
-        assert_eq!(&packed[p + 4..p + 4 + ll], &log[..]);
-        let _ = teno;
+        assert_eq!(&packed[p + 4..p + 6], b"\x1f\x8b");
+        assert_eq!(p + 4 + ll, packed.len(), "段段相接無 trailing");
+        // 跨模組閉環：解包回來必須位元組一致
+        let (teno2, log2) = crate::unpack_db_container(&packed).unwrap();
+        assert_eq!(teno2, teno_big);
+        assert_eq!(log2, log);
+    }
+
+    #[test]
+    fn sync2_gzip_helpers_reject_garbage() {
+        // 非 gzip 魔數拒收（段截斷／錯位不靜默吐半包）
+        assert!(gzip_decompress(b"SQLite format 3\0raw").is_err());
+        assert!(gzip_decompress(b"\x1f").is_err());
+        // 截斷的 gzip 流拒收
+        let good = gzip_compress(b"hello teno world").unwrap();
+        assert_eq!(gzip_decompress(&good).unwrap(), b"hello teno world");
+        assert!(gzip_decompress(&good[..good.len() / 2]).is_err());
     }
 
     #[test]

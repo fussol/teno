@@ -680,10 +680,12 @@ fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
         return Ok((data.to_vec(), Vec::new()));
     }
     if data.len() < 6 { return Err("容器格式損壞 (magic 不完整)".to_string()); }
-    // D16: version byte 讀而必斷——pack 端恆寫 1，v0/v2/翻轉位皆非本代語意，
-    // 硬解析＝半壞資料以健康姿態覆寫好 DB（資料覆寫入口拒比收安分，同 D19/F12 族譜）。
-    if data[5] != 1 {
-        return Err(format!("容器版本不支援: v{}（本版 Teno 僅支援 v1，請升級後再匯入）", data[5]));
+    // D16: version byte 讀而必斷——合法只有 v1（段原文）／v2（SYNC-GZ1 段 gzip）。
+    // pack 端現寫 v2；v0/v3+/翻轉位皆非本代語意，硬解析＝半壞資料以健康姿態
+    // 覆寫好 DB（資料覆寫入口拒比收安分，同 D19/F12 族譜）。
+    let ver = data[5];
+    if ver != 1 && ver != 2 {
+        return Err(format!("容器版本不支援: v{ver}（本版 Teno 僅支援 v1/v2，請升級後再匯入）"));
     }
     let mut pos = 6usize;
     let read_u32 = |p: usize| -> Option<u32> {
@@ -694,7 +696,7 @@ fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let Some(teno_len) = read_u32(pos) else { return Err("容器損壞: 缺少長度欄位".to_string()); };
     pos += 4;
     if data.len() < pos + teno_len as usize { return Err("容器損壞: teno.db 段截斷".to_string()); }
-    let teno = data[pos..pos + teno_len as usize].to_vec();
+    let teno_seg = data[pos..pos + teno_len as usize].to_vec();
     pos += teno_len as usize;
     // D16: log 長度欄缺位＝截斷（pack 端恆寫 log 欄含 len=0，缺欄必為損壞），
     // 舊碼 if-let 靜默降級為無 log＝同族第三病灶（半截容器健康過關）。
@@ -710,7 +712,15 @@ fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     if pos != data.len() {
         return Err(format!("容器損壞: 尾部有多餘資料（{} bytes，可能為手動修復殘留；可用 CLI import-db 救回後重新匯出）", data.len() - pos));
     }
-    Ok((teno, log))
+    // SYNC-GZ1: v2 段為 gzip，v1 為原文；解壓失敗＝段截斷／錯位，拒收不落盤。
+    if ver == 2 {
+        let teno = crate::webdav_sync::gzip_decompress(&teno_seg)
+            .map_err(|e| format!("容器損壞: teno.db 段解壓失敗（{e}）"))?;
+        let log = crate::webdav_sync::gzip_decompress(&log)
+            .map_err(|e| format!("容器損壞: app-log.db 段解壓失敗（{e}）"))?;
+        return Ok((teno, log));
+    }
+    Ok((teno_seg, log))
 }
 
 fn write_db_container(app_dir: &std::path::Path, teno: &[u8], log: &[u8]) -> Result<(), String> {
@@ -2808,8 +2818,8 @@ mod container_tests {
         assert_eq!(unpack_db_container(&good).unwrap(),
                    (b"DBAA".to_vec(), Vec::new()));
 
-        // 守門 1：version byte 必斷（v0/v2/0xFF 全拒——舊碼讀而不斷全收）
-        for v in [0u8, 2, 0xFF] {
+        // 守門 1：version byte 必斷（v0/v3/0xFF 全拒；SYNC-GZ1 起 v2 合法，不在拒收名單）
+        for v in [0u8, 3, 0xFF] {
             let mut bad = good.clone();
             bad[5] = v;
             let e = unpack_db_container(&bad);
@@ -2836,6 +2846,42 @@ mod container_tests {
         assert!(unpack_db_container(b"SQLite format 3\0tail-any").is_ok());
         // 非 SQLite 非容器仍拒
         assert!(unpack_db_container(b"TENOX garbage").is_err());
+    }
+
+    /// SYNC-GZ1: v2 容器（段 gzip）手組包→解包位元組一致；截斷段拒收。
+    #[test]
+    fn sync_gz1_v2_unpack_roundtrip() {
+        let teno = b"SQLite format 3\0TENOTENOTENO".to_vec();
+        let log = b"LOGLOG".to_vec();
+        let tg = crate::webdav_sync::gzip_compress(&teno).unwrap();
+        let lg = crate::webdav_sync::gzip_compress(&log).unwrap();
+        let mut v2 = b"TENOC\x02".to_vec();
+        v2.extend_from_slice(&(tg.len() as u32).to_le_bytes());
+        v2.extend_from_slice(&tg);
+        v2.extend_from_slice(&(lg.len() as u32).to_le_bytes());
+        v2.extend_from_slice(&lg);
+        assert_eq!(unpack_db_container(&v2).unwrap(), (teno, log));
+        // 空 log 段（gzip 空字串 ~20B）照收
+        let eg = crate::webdav_sync::gzip_compress(b"").unwrap();
+        let mut v2e = b"TENOC\x02".to_vec();
+        v2e.extend_from_slice(&(tg.len() as u32).to_le_bytes());
+        v2e.extend_from_slice(&tg);
+        v2e.extend_from_slice(&(eg.len() as u32).to_le_bytes());
+        v2e.extend_from_slice(&eg);
+        assert_eq!(unpack_db_container(&v2e).unwrap().1, Vec::<u8>::new());
+        // 段截斷：長度欄說有 100B 實際只給一半→截斷拒（非 gunzip 拒，是段截斷拒）
+        let mut trunc = b"TENOC\x02".to_vec();
+        trunc.extend_from_slice(&100u32.to_le_bytes());
+        trunc.extend_from_slice(&tg[..tg.len() / 2]);
+        assert!(unpack_db_container(&trunc).is_err());
+        // 段內被調包成非 gzip（長度對但內容錯）→解壓拒，訊息含「解壓」
+        let mut swapped = b"TENOC\x02".to_vec();
+        swapped.extend_from_slice(&(tg.len() as u32).to_le_bytes());
+        swapped.extend_from_slice(&vec![b'X'; tg.len()]);
+        swapped.extend_from_slice(&(lg.len() as u32).to_le_bytes());
+        swapped.extend_from_slice(&lg);
+        let e = unpack_db_container(&swapped);
+        assert!(e.as_ref().is_err_and(|m| m.contains("解壓")), "調包段拒訊息應含『解壓』，實際 {:?}", e);
     }
 
     #[test]

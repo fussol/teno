@@ -5737,11 +5737,12 @@ dependencies = [
 
 [[package]]
 name = "teno"
-version = "5.17.44"
+version = "5.17.45"
 dependencies = [
  "cambridge_scraper",
  "chrono",
  "cpal",
+ "flate2",
  "fsrs",
  "log",
  "quizlet_scraper",
