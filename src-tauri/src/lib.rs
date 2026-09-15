@@ -11,6 +11,7 @@ mod webdav_sync;
 mod webdav_serve;
 mod apkg;
 mod share_pack;
+mod media_store;
 
 struct PiperAudio {
     handle: rodio::OutputStreamHandle,
@@ -669,6 +670,25 @@ fn container_len_prefix(len: usize, what: &str) -> Result<[u8; 4], String> {
     u32::try_from(len)
         .map(|v| v.to_le_bytes())
         .map_err(|_| format!("{what} 超過 4GB（{len} bytes），容器 v1 長度欄裝不下，拒絕打包以防損壞備份"))
+}
+
+/// MEDIAPEEL1：無 AppHandle 版 config dir（pure core 用；取不到回 None，呼叫端回退 DB 欄）。
+pub(crate) fn app_config_dir_opt() -> Option<std::path::PathBuf> {
+    dirs_config_dir()
+}
+
+/// MEDIAPEEL1：config dir 解析（Linux ~/.config/<identifier>/；與 plugin-sql 同目錄）。
+fn dirs_config_dir() -> Option<std::path::PathBuf> {
+    if let Ok(env) = std::env::var("XDG_CONFIG_HOME") {
+        if !env.is_empty() {
+            return Some(std::path::PathBuf::from(env).join("com.teno.app"));
+        }
+    }
+    std::env::var("HOME").ok().map(|h| {
+        std::path::PathBuf::from(h)
+            .join(".config")
+            .join("com.teno.app")
+    })
 }
 
 fn unpack_db_container(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
@@ -2597,6 +2617,15 @@ pub fn run() {
             // 單 URL 走此 SQL；多 URL 由 JS migrate 拆分補（SQLite 無 split）。
             // NOT EXISTS 守門＝冪等；舊欄保留，渲染一律走 word_images。
             // 註：v14 從未在任何地方執行過（本 commit 前無含 v14 的版本被 build／push），故直接修 SQL 而非另開 v15。
+            version: 15,
+            description: "media peel: sha1 column on word_images (MEDIAPEEL1)",
+            sql: "
+                ALTER TABLE word_images ADD COLUMN sha1 TEXT NOT NULL DEFAULT '';
+                CREATE INDEX IF NOT EXISTS idx_word_images_sha1 ON word_images(sha1);
+            ",
+            kind: MigrationKind::Up,
+        },
+        Migration {
             version: 14,
             description: "backfill word_images from legacy words.image (IMG1 legacy orphan images)",
             sql: "
@@ -2681,7 +2710,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {

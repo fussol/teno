@@ -115,6 +115,9 @@ async function migrate(d) {
     )`);
     await d.execute('CREATE INDEX IF NOT EXISTS idx_word_images_word ON word_images(word_id)');
   } catch (_) {}
+  // MEDIAPEEL1 v15（與 lib.rs migration v15 對應；冪等，開機每次跑無妨）
+  try { await d.execute("ALTER TABLE word_images ADD COLUMN sha1 TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+  try { await d.execute('CREATE INDEX IF NOT EXISTS idx_word_images_sha1 ON word_images(sha1)'); } catch (_) {}
   // IMG1-LEGACY（2026-09-08）：舊 words.image 欄孤兒圖一次性搬遷。
   // v5.11.0 前圖存 words.image（Google Drive URL，逗號分隔可多張）；
   // IMG1 切新表後無搬遷＋無渲染路徑讀舊欄 → 436 張圖全隱身。
@@ -290,10 +293,30 @@ export async function saveWordsInTx(words) {
 
 // ─── Word images (IMG1 — lazy-loaded, base64 data URL in DB) ─────
 
-/** 取單字圖片（渲染點懶載入用；ORDER BY id = 新增序） */
+/** 取單字圖片（渲染點懶載入用；ORDER BY id = 新增序）
+ * MEDIAPEEL1：sha1 優先走 media_get，缺檔回退 data 欄（搬遷中間態不斷圖）。 */
 export async function getImagesForWord(wordId) {
-  const rows = await requireDB().select('SELECT filename, data FROM word_images WHERE word_id = $1 ORDER BY id', [wordId]);
-  return rows.map(r => ({ filename: r.filename || '', data: r.data || '' }));
+  let rows;
+  try {
+    rows = await requireDB().select('SELECT filename, data, sha1 FROM word_images WHERE word_id = $1 ORDER BY id', [wordId]);
+  } catch (_) {
+    rows = await requireDB().select('SELECT filename, data FROM word_images WHERE word_id = $1 ORDER BY id', [wordId]);
+  }
+  const out = [];
+  for (const r of rows) {
+    const sha = (r.sha1 || '').trim();
+    if (sha) {
+      try {
+        const { mediaGet } = await import('./api.js');
+        const ext = String(r.filename || '').split('.').pop() || '';
+        const data = await mediaGet(sha, ext);
+        out.push({ filename: r.filename || '', data });
+        continue;
+      } catch (_) { /* 缺檔回退 data 欄 */ }
+    }
+    if ((r.data || '').trim() !== '') out.push({ filename: r.filename || '', data: r.data || '' });
+  }
+  return out;
 }
 
 /** 批量取圖（渲染層一次 IN query；wordId → images[]） */
@@ -301,18 +324,70 @@ export async function getImagesForWords(wordIds) {
   if (!wordIds || !wordIds.length) return new Map();
   const ids = [...new Set(wordIds)];
   const ph = ids.map((_, i) => `$${i + 1}`).join(', ');
-  const rows = await requireDB().select(`SELECT word_id, filename, data FROM word_images WHERE word_id IN (${ph}) ORDER BY word_id, id`, ids);
+  let rows;
+  try {
+    rows = await requireDB().select(`SELECT word_id, filename, data, sha1 FROM word_images WHERE word_id IN (${ph}) ORDER BY word_id, id`, ids);
+  } catch (_) {
+    rows = await requireDB().select(`SELECT word_id, filename, data FROM word_images WHERE word_id IN (${ph}) ORDER BY word_id, id`, ids);
+  }
+  // MEDIAPEEL1：有 sha 的列走 media_get 批量解（併發 5，失敗回退 data 欄）
+  const needSha = rows.filter(r => (r.sha1 || '').trim() !== '');
+  const shaData = new Map();
+  if (needSha.length) {
+    try {
+      const { mediaGet } = await import('./api.js');
+      const CON = 5;
+      for (let i = 0; i < needSha.length; i += CON) {
+        const slice = needSha.slice(i, i + CON);
+        const rs = await Promise.all(slice.map(async (r) => {
+          try {
+            const ext = String(r.filename || '').split('.').pop() || '';
+            return await mediaGet((r.sha1 || '').trim(), ext);
+          } catch (_) { return null; }
+        }));
+        slice.forEach((r, k) => { if (rs[k]) shaData.set(r, rs[k]); });
+      }
+    } catch (_) {}
+  }
   const m = new Map();
   for (const r of rows) {
     if (!m.has(r.word_id)) m.set(r.word_id, []);
-    m.get(r.word_id).push({ filename: r.filename || '', data: r.data || '' });
+    const hit = shaData.get(r);
+    if (hit) m.get(r.word_id).push({ filename: r.filename || '', data: hit });
+    else if ((r.data || '').trim() !== '') m.get(r.word_id).push({ filename: r.filename || '', data: r.data || '' });
   }
   return m;
 }
 
-/** 新增一張圖（data = data: URL base64 字串） */
+/** 新增一張圖（data = data: URL base64 字串）
+ * MEDIAPEEL1：data: URL 先走 media_put 落地，只存 sha1（data 欄清空，不再產生巨圖）；
+ * http 直連維持原樣存 data；media_put 失敗回退舊行為（存 inline，不擋加圖）。 */
 export async function addWordImage(wordId, filename, data) {
-  await requireDB().execute('INSERT INTO word_images (word_id, filename, data) VALUES ($1, $2, $3)', [wordId, filename || '', data]);
+  const t = String(data || '').trim();
+  if (t.startsWith('data:')) {
+    try {
+      const { mediaPut } = await import('./api.js');
+      const r = await mediaPut(t, filename || '');
+      const o = typeof r === 'string' ? JSON.parse(r) : r;
+      const sha = o && o.sha ? String(o.sha) : '';
+      if (sha) {
+        let hasSha = true;
+        try { await requireDB().select('SELECT sha1 FROM word_images LIMIT 1'); }
+        catch (_) { hasSha = false; }
+        if (hasSha) {
+          const ext = o.ext ? `.${o.ext}` : '';
+          const fn2 = filename && filename.includes('.') ? filename : `${(filename || 'img')}${ext}`;
+          await requireDB().execute('INSERT INTO word_images (word_id, filename, data, sha1) VALUES ($1, $2, $3, $4)', [wordId, fn2, '', sha]);
+          return;
+        }
+      }
+    } catch (_) { /* 回退舊行為 */ }
+  }
+  try {
+    await requireDB().execute('INSERT INTO word_images (word_id, filename, data) VALUES ($1, $2, $3)', [wordId, filename || '', data]);
+  } catch (_) {
+    // 極舊庫連基本表都沒有時靜默（開機 migrate 會補）
+  }
 }
 
 /** 刪一張圖（by row id） */

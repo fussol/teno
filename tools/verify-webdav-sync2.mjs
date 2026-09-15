@@ -134,6 +134,50 @@ print('V2SEG-OK')
 "`).toString().trim() === 'V2SEG-OK');
   } finally { srv.kill(); }
 }
+// --- MEDIAPEEL1 live：媒體通道（MKCOL＋PUT＋PROPFIND＋GET＋422＋免 history）---
+{
+  const PORT = 18093;
+  execSync('rm -rf /tmp/sync2-media /tmp/mt-live.bin /tmp/mt-live-back.bin');
+  execSync('mkdir -p /tmp/sync2-media');
+  const srv = spawn('python3', [APP, '--dir', '/tmp/sync2-media', '--port', String(PORT), '--user', 'teno', '--password', 'p1'],
+    { stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise(r => setTimeout(r, 1200));
+  const B = `http://127.0.0.1:${PORT}`, A = `-u teno:p1`;
+  try {
+    ok('live:media MKCOL→201', curl(`-X MKCOL ${B}/media/ ${A}`) === '201');
+    ok('live:media MKCOL 重複→405', curl(`-X MKCOL ${B}/media/ ${A}`) === '405');
+    // 固定種子隨機 25KB 當圖（不可壓，過 1B 下限）
+    execSync(`python3 -c "import random; open('/tmp/mt-live.bin','wb').write(random.Random(7).randbytes(25000))"`);
+    const SHA = 'a9993e364706816aba3e25717850c26c9cd0d89d';
+    ok('live:media 非白名單 ext→422', curl(`-T /tmp/mt-live.bin ${B}/media/${SHA}.bin ${A}`) === '422');
+  } finally { srv.kill(); }
+}
+// --- MEDIAPEEL1 live（白名單副檔名 roundtrip）---
+{
+  const PORT = 18094;
+  execSync('rm -rf /tmp/sync2-media2');
+  execSync('mkdir -p /tmp/sync2-media2');
+  const srv = spawn('python3', [APP, '--dir', '/tmp/sync2-media2', '--port', String(PORT), '--user', 'teno', '--password', 'p1'],
+    { stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise(r => setTimeout(r, 1200));
+  const B = `http://127.0.0.1:${PORT}`, A = `-u teno:p1`;
+  try {
+    execSync(`python3 -c "import random; open('/tmp/mt-live.bin','wb').write(random.Random(7).randbytes(25000))"`);
+    const SHA = 'a9993e364706816aba3e25717850c26c9cd0d89d';
+    ok('live:media png PUT→201', curl(`-T /tmp/mt-live.bin ${B}/media/${SHA}.png ${A}`) === '201');
+    ok('live:media 非法名→422', curl(`-T /tmp/mt-live.bin ${B}/media/evil.exe ${A}`) === '422');
+    ok('live:media 短 sha→422', curl(`-T /tmp/mt-live.bin ${B}/media/abc.png ${A}`) === '422');
+    const pf = execSync(`curl -s -X PROPFIND -H "Depth: 1" ${B}/media/ ${A}`).toString();
+    ok('live:media PROPFIND 列出', pf.includes(`${SHA}.png`));
+    execSync(`curl -s ${B}/media/${SHA}.png ${A} -o /tmp/mt-live-back.bin`);
+    ok('live:media GET 位元組一致', execSync('cmp /tmp/mt-live.bin /tmp/mt-live-back.bin && echo SAME').toString().trim() === 'SAME');
+    ok('live:media 覆寫→204', curl(`-T /tmp/mt-live.bin ${B}/media/${SHA}.png ${A}`) === '204');
+    const hist = execSync(`ls /tmp/sync2-media2/.history/ 2>/dev/null | wc -l`).toString().trim();
+    ok('live:media 覆寫不留 history', hist === '0', `got ${hist}`);
+    const hd = execSync(`curl -sI ${B}/media/${SHA}.png ${A} | grep -i X-Content-Sha256`).toString().trim();
+    ok('live:media HEAD 帶 sha 頭', hd.toLowerCase().includes('x-content-sha256'));
+  } finally { srv.kill(); }
+}
 // --- 多人：隔離 ---
 {
   const PORT = 18092;

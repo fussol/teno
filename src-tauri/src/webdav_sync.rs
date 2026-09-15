@@ -843,6 +843,255 @@ pub async fn webdav_download(
     ))
 }
 
+/// MEDIAPEEL1 媒體同步 pure fns（PROPFIND 解析＋差集；可單測不碰網）
+
+/// 從 PROPFIND XML 抽 href 檔名（只取 /media/ 下的 <40hex>.<ext>；目錄項／點檔／非法名全丟）。
+pub(crate) fn parse_media_hrefs(xml: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    while let Some(a) = xml[pos..].find("<D:href>") {
+        let s = pos + a + 8;
+        let Some(e) = xml[s..].find("</D:href>") else { break; };
+        let href = &xml[s..s + e];
+        pos = s + e + 9;
+        // 取尾段檔名（percent-decode 簡版：只還原 %XX 常見字元，不全按 URL 規格）
+        let seg = href.rsplit('/').next().unwrap_or("");
+        if seg.is_empty() || seg.starts_with('.') {
+            continue;
+        }
+        let name = pct_decode(seg);
+        let dot = match name.rfind('.') {
+            Some(i) => i,
+            None => continue,
+        };
+        let (sha, ext) = (&name[..dot], &name[dot + 1..]);
+        if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            continue;
+        }
+        if !matches!(
+            ext.to_ascii_lowercase().as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif"
+        ) {
+            continue;
+        }
+        out.push(format!("{}.{}", sha.to_ascii_lowercase(), ext.to_ascii_lowercase()));
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn pct_decode(s: &str) -> String {
+    let mut out = Vec::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(h), Some(l)) = (hexv(b[i + 1]), hexv(b[i + 2])) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hexv(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// 本地缺／遠端缺差集（檔名即內容 hash，同名＝同內容，直接比名）。
+/// 回 (待上傳, 待下載)：待上傳＝本地有遠端無；待下載＝遠端有本地無。
+pub(crate) fn media_diff(local: &[String], remote: &[String]) -> (Vec<String>, Vec<String>) {
+    use std::collections::HashSet;
+    let l: HashSet<&str> = local.iter().map(|s| s.as_str()).collect();
+    let r: HashSet<&str> = remote.iter().map(|s| s.as_str()).collect();
+    let mut up: Vec<String> = local.iter().filter(|s| !r.contains(s.as_str())).cloned().collect();
+    let mut down: Vec<String> = remote.iter().filter(|s| !l.contains(s.as_str())).cloned().collect();
+    up.sort();
+    down.sort();
+    (up, down)
+}
+
+fn media_base_url(cfg: &WebdavConfig) -> Result<String, String> {
+    Ok(format!("{}/media/", normalize_base(&cfg.url)?))
+}
+
+fn media_local_dir(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
+    let mut p = app_handle.path().app_config_dir().unwrap_or_default();
+    p.push("media");
+    p
+}
+
+fn local_media_names(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let n = e.file_name().to_string_lossy().to_string();
+            if n.starts_with('.') {
+                continue;
+            }
+            if let Some(dot) = n.rfind('.') {
+                let (sha, ext) = (&n[..dot], &n[dot + 1..]);
+                if sha.len() == 40
+                    && sha.chars().all(|c| c.is_ascii_hexdigit())
+                    && matches!(
+                        ext.to_ascii_lowercase().as_str(),
+                        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif"
+                    )
+                {
+                    out.push(format!("{}.{}", sha, ext.to_ascii_lowercase()));
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// MEDIAPEEL1：媒體上傳（只傳遠端缺的；MKCOL 冪等；單檔 10MB 守門；失敗記 skipped 不整批掛）。
+#[tauri::command]
+pub async fn webdav_media_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base = media_base_url(&cfg)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let dir = media_local_dir(&app_handle);
+    // MKCOL 冪等（405＝已存在，照走）
+    match ureq::request("MKCOL", &base).set("Authorization", &auth).call() {
+        Ok(_) => {}
+        Err(ureq::Error::Status(405, _)) => {}
+        Err(ureq::Error::Status(401, _)) => return Err("帳號或密碼錯誤（401）".into()),
+        Err(e) => return Err(format!("建 media 目錄失敗：{}", e)),
+    }
+    // PROPFIND 遠端清單（404＝空雲，全傳）
+    let remote = match ureq::request("PROPFIND", &base)
+        .set("Authorization", &auth)
+        .set("Depth", "1")
+        .send_string("")
+    {
+        Ok(resp) => {
+            let mut xml = String::new();
+            resp.into_reader()
+                .take(4 * 1024 * 1024)
+                .read_to_string(&mut xml)
+                .map_err(|e| format!("讀媒體清單失敗：{}", e))?;
+            parse_media_hrefs(&xml)
+        }
+        Err(ureq::Error::Status(404, _)) => Vec::new(),
+        Err(ureq::Error::Status(401, _)) => return Err("帳號或密碼錯誤（401）".into()),
+        Err(e) => return Err(format!("讀遠端媒體清單失敗：{}", e)),
+    };
+    let local = local_media_names(&dir);
+    let (up, _) = media_diff(&local, &remote);
+    let mut ok_n = 0u32;
+    let mut skip_n = 0u32;
+    for name in &up {
+        let bytes = match std::fs::read(dir.join(name)) {
+            Ok(b) if !b.is_empty() && b.len() <= 10 * 1024 * 1024 => b,
+            _ => {
+                skip_n += 1;
+                continue;
+            }
+        };
+        match ureq::put(&format!("{}{}", base, name))
+            .set("Authorization", &auth)
+            .set("Content-Type", "application/octet-stream")
+            .send_bytes(&bytes)
+        {
+            Ok(_) => ok_n += 1,
+            Err(_) => skip_n += 1,
+        }
+    }
+    Ok(format!(
+        "媒體上傳：{} 個新檔{}（跳過 {}）",
+        ok_n,
+        if up.is_empty() { "（已齊，無需上傳）" } else { "" },
+        skip_n
+    ))
+}
+
+/// MEDIAPEEL1：媒體下載（只拉本地缺的；單檔 10MB 守門；失敗記 skipped）。
+#[tauri::command]
+pub async fn webdav_media_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base = media_base_url(&cfg)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let dir = media_local_dir(&app_handle);
+    let _ = std::fs::create_dir_all(&dir);
+    let remote = match ureq::request("PROPFIND", &base)
+        .set("Authorization", &auth)
+        .set("Depth", "1")
+        .send_string("")
+    {
+        Ok(resp) => {
+            let mut xml = String::new();
+            resp.into_reader()
+                .take(4 * 1024 * 1024)
+                .read_to_string(&mut xml)
+                .map_err(|e| format!("讀媒體清單失敗：{}", e))?;
+            parse_media_hrefs(&xml)
+        }
+        Err(ureq::Error::Status(404, _)) => return Ok("遠端尚無媒體目錄，無需下載".into()),
+        Err(ureq::Error::Status(401, _)) => return Err("帳號或密碼錯誤（401）".into()),
+        Err(e) => return Err(format!("讀遠端媒體清單失敗：{}", e)),
+    };
+    let local = local_media_names(&dir);
+    let (_, down) = media_diff(&local, &remote);
+    let mut ok_n = 0u32;
+    let mut skip_n = 0u32;
+    for name in &down {
+        let mut buf = Vec::new();
+        let got = ureq::get(&format!("{}{}", base, name))
+            .set("Authorization", &auth)
+            .call()
+            .map_err(|_| ())
+            .and_then(|resp| {
+                resp.into_reader()
+                    .take(10 * 1024 * 1024 + 1)
+                    .read_to_end(&mut buf)
+                    .map_err(|_| ())
+            });
+        if got.is_err() || buf.is_empty() || buf.len() > 10 * 1024 * 1024 {
+            skip_n += 1;
+            continue;
+        }
+        // 落地前驗檔名 hash＝內容 hash（防半截／調包；不對直接丟）
+        {
+            use sha1::{Digest, Sha1};
+            let mut h = Sha1::new();
+            h.update(&buf);
+            let out = h.finalize();
+            let mut sha = String::with_capacity(40);
+            for b in out {
+                sha.push_str(&format!("{:02x}", b));
+            }
+            let want = name.rsplit('.').nth(1).unwrap_or("");
+            if !sha.eq_ignore_ascii_case(want) {
+                skip_n += 1;
+                continue;
+            }
+        }
+        match std::fs::write(dir.join(name), &buf) {
+            Ok(_) => ok_n += 1,
+            Err(_) => skip_n += 1,
+        }
+    }
+    Ok(format!(
+        "媒體下載：{} 個新檔{}（跳過 {}）",
+        ok_n,
+        if down.is_empty() { "（已齊，無需下載）" } else { "" },
+        skip_n
+    ))
+}
+
 #[tauri::command]
 pub async fn webdav_logout(app_handle: tauri::AppHandle) -> Result<String, String> {
     let p = config_path(&app_handle);
@@ -1030,6 +1279,33 @@ mod tests {
         // 非 SQLite 拒（撕裂／半寫路徑同）
         assert!(try_snapshot_read(&fp).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn peel_media_hrefs_and_diff() {
+        // PROPFIND 解析：只收 /media/ 下合法名；目錄項／點檔／壞名全丟
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+<D:response><D:href>/media/</D:href><D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response>
+<D:response><D:href>/media/a9993e364706816aba3e25717850c26c9cd0d89d.png</D:href><D:propstat><D:prop><D:getcontentlength>100</D:getcontentlength></D:prop></D:propstat></D:response>
+<D:response><D:href>/media/9E65001EDFAA0000000000000000000000000000.GIF</D:href><D:propstat><D:prop><D:getcontentlength>200</D:getcontentlength></D:prop></D:propstat></D:response>
+<D:response><D:href>/media/teno.db</D:href><D:propstat><D:prop></D:prop></D:propstat></D:response>
+<D:response><D:href>/media/.tombstones</D:href><D:propstat><D:prop></D:prop></D:propstat></D:response>
+<D:response><D:href>/media/short.png</D:href><D:propstat><D:prop></D:prop></D:propstat></D:response>
+<D:response><D:href>/media/a9993e364706816aba3e25717850c26c9cd0d89d.exe</D:href><D:propstat><D:prop></D:prop></D:propstat></D:response>
+</D:multistatus>"#;
+        let got = parse_media_hrefs(xml);
+        assert_eq!(got.len(), 2, "只收兩合法圖，實際 {:?}", got);
+        assert!(got.contains(&"a9993e364706816aba3e25717850c26c9cd0d89d.png".to_string()));
+        assert!(got.contains(&"9e65001edfaa0000000000000000000000000000.gif".to_string()));
+        // 差集：檔名即 hash，同名＝同內容
+        let local = vec!["a.png".to_string(), "b.gif".to_string()];
+        let remote = vec!["b.gif".to_string(), "c.jpg".to_string()];
+        let (up, down) = media_diff(&local, &remote);
+        assert_eq!(up, vec!["a.png".to_string()]);
+        assert_eq!(down, vec!["c.jpg".to_string()]);
+        let (up2, down2) = media_diff(&local, &local);
+        assert!(up2.is_empty() && down2.is_empty());
     }
 
     #[test]

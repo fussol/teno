@@ -131,6 +131,33 @@ fn dir_total_size(root: &std::path::Path) -> u64 {
     total
 }
 
+/// MEDIAPEEL1 parity（跟獨立版 is_media_put 同規）：PUT 到 /media/<40hex>.<ext> 走媒體通道。
+fn is_media_put(url_path: &str, fp: &std::path::Path) -> bool {
+    let segs: Vec<&str> = url_path.split('/').collect();
+    if segs.len() < 3 || segs[segs.len() - 2] != "media" {
+        return false;
+    }
+    let name = segs[segs.len() - 1];
+    let dot = match name.rfind('.') {
+        Some(i) => i,
+        None => return false,
+    };
+    let (sha, ext) = (&name[..dot], &name[dot + 1..]);
+    if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return false;
+    }
+    if !matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "svg" | "avif"
+    ) {
+        return false;
+    }
+    fp.parent()
+        .and_then(|d| d.file_name())
+        .map(|d| d == "media")
+        .unwrap_or(false)
+}
+
 /// SYNC2-Q3：port 誰在聽（內嵌／外掛獨立版／都沒跑）
 fn port_occupied(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
@@ -721,18 +748,27 @@ fn handle_conn(mut stream: TcpStream, root: std::path::PathBuf, user: String, pa
             if let Some(parent) = fp.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
-            // SYNC2-Q6 parity（跟獨立版 server.py 同規）：空檔拒收＋魔數驗＋覆蓋前留 .history
-            if body.len() < 20 * 1024 {
-                send(&mut stream, "422 Unprocessable Entity", &[], b"too small: refuse empty/truncated upload");
-                return;
-            }
-            let good_head = body.starts_with(b"TENOC") || body.starts_with(b"SQLite format 3\0");
-            if !good_head {
-                send(&mut stream, "422 Unprocessable Entity", &[], b"bad payload: not TENOC/SQLite");
-                return;
-            }
-            if existed {
-                rotate_history_file(&fp);
+            // MEDIAPEEL1：media 通道只驗檔名＋非空（內容 hash 即檔名；覆蓋不留 .history）；
+            // 主通道維持 SYNC2-Q6 parity：空檔拒收＋魔數驗＋覆蓋前留 .history
+            let is_media = is_media_put(&url_path, &fp);
+            if is_media {
+                if body.is_empty() {
+                    send(&mut stream, "422 Unprocessable Entity", &[], b"bad media: empty file");
+                    return;
+                }
+            } else {
+                if body.len() < 20 * 1024 {
+                    send(&mut stream, "422 Unprocessable Entity", &[], b"too small: refuse empty/truncated upload");
+                    return;
+                }
+                let good_head = body.starts_with(b"TENOC") || body.starts_with(b"SQLite format 3\0");
+                if !good_head {
+                    send(&mut stream, "422 Unprocessable Entity", &[], b"bad payload: not TENOC/SQLite");
+                    return;
+                }
+                if existed {
+                    rotate_history_file(&fp);
+                }
             }
             let tmp = fp.with_extension("part");
             match std::fs::write(&tmp, &body) {

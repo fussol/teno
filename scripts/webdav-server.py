@@ -135,6 +135,28 @@ GC_GRACE_SECS = 24 * 3600
 # HOLE3 tombstone：徹底刪除發墓碑，GC 見碑不復活
 
 
+def is_media_put(url_path: str, fp: str) -> bool:
+    """MEDIAPEEL1：PUT 到 /media/<40hex>.<ext> 走媒體通道（免 TENOC 魔數驗）。
+    檔名嚴格：sha 40 hex＋ext 白名單；路徑必須落在 <root>/media/ 下。"""
+    try:
+        parts = urllib.parse.unquote(url_path).split("/")
+        # 支援多人模式（/<user>/media/… 在 fs 層已隔離，此處只看尾兩段）
+        if len(parts) < 3 or parts[-2] != "media":
+            return False
+        name = parts[-1]
+        if "." not in name:
+            return False
+        sha, ext = name.rsplit(".", 1)
+        if len(sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in sha):
+            return False
+        if ext.lower() not in ("png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif"):
+            return False
+        # fp 必須真是 media 目錄下的檔（防穿越誤判）
+        return os.path.basename(os.path.dirname(fp)) == "media"
+    except Exception:
+        return False
+
+
 def payload_ok(path: str) -> bool:
     """PUT 檔魔數＋下限驗：TENOC 容器或 SQLite 才收."""
     try:
@@ -599,16 +621,27 @@ class Handler(BaseHTTPRequestHandler):
                         break
                     f.write(chunk)
                     remaining -= len(chunk)
-            # 魔數驗不過＝壞檔：刪 .part，原檔一字不動（Q6）
-            if not payload_ok(fp + ".part"):
+            # MEDIAPEEL1：media 通道只驗檔名＋大小（內容 hash 即檔名，不驗魔數）；
+            # 主通道維持魔數驗（壞檔刪 .part，原檔一字不動，Q6）
+            _is_media = is_media_put(urllib.parse.urlparse(self.path).path or "/", fp)
+            if _is_media:
+                try:
+                    if os.path.getsize(fp + ".part") < 1:
+                        raise OSError("empty media")
+                except OSError:
+                    try: os.unlink(fp + ".part")
+                    except OSError: pass
+                    self.send_error(422, "bad media: empty file")
+                    return
+            elif not payload_ok(fp + ".part"):
                 try:
                     os.unlink(fp + ".part")
                 except OSError:
                     pass
                 self.send_error(422, "bad payload: not TENOC/SQLite")
                 return
-            # 先留備用再覆蓋（Q6：上傳一個留幾個）
-            if existed:
+            # 先留備用再覆蓋（Q6：上傳一個留幾個；media 內容尋址不可變，跳過留檔）
+            if existed and not _is_media:
                 rotate_history(fp)
             os.replace(fp + ".part", fp)
             self.send_response(204 if existed else 201)

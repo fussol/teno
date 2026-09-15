@@ -3,7 +3,7 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.17.47"
+version = "5.17.48"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"
@@ -39,6 +39,7 @@ rand = "0.9"
 chrono = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sha2 = "0.10"
+sha1 = "0.10" # MEDIAPEEL1: 媒體 CAS 檔名 SHA-1（lock 本就有，零新增下載）
 zip = "2"
 flate2 = "1" # SYNC-GZ1: 同步容器 v2 段級 gzip（pure-Rust 後端，Android 可用；lock 檔本就有，零新增下載）
 [target.'cfg(not(target_os = "android"))'.dependencies]

@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -1490,6 +1490,12 @@ export function onMount(s) {
       }
       const _d = await import('../lib/db.js');
       await _d.addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
+      // MEDIAPEEL1：DB 上傳成功後順帶媒體（只傳缺塊；失敗不擋主流程）
+      try {
+        const mr = await webdavMediaUpload();
+        toast(mr, '');
+        await _d.addAudit('webdav-media-upload', String(mr)).catch(() => {});
+      } catch (me) { toast('媒體順帶上傳失敗（DB 已同步，圖下次再傳）: ' + me, 'toast-warn'); }
       updateWebdavUI();
     } catch (e) {
       toast(String(e), 'toast-error');
@@ -1510,9 +1516,11 @@ export function onMount(s) {
       await backupDb();
       await closeDB();
       await closeAppLog();
+      let _dlOk = false;
       try {
         const result = await webdavDownload();
         toast(result, 'toast-success');
+        _dlOk = true;
       } catch (e) {
         // WEBDAV-GUARD1：本地比較新→擋下，問過才硬蓋（舊蓋新防呆）
         const msg = String(e);
@@ -1521,6 +1529,7 @@ export function onMount(s) {
           if (confirm(msg.replace('CONFLICT:', '') + '\n\n確定要用遠端版強制覆蓋本地？（本地有新進度，會被吃掉）')) {
             const result = await webdavDownload(true);
             toast(result + '（已強制覆蓋）', 'toast-success');
+            _dlOk = true;
           } else {
             toast('已取消下載（兩邊都在，本地未動）', '');
             try { await initDB(2); } catch (_) {}
@@ -1533,6 +1542,7 @@ export function onMount(s) {
         } else if (msg.includes('LOCAL_NEWER:') && confirm(msg.replace('LOCAL_NEWER:', '') + '\n\n確定要用遠端舊版覆蓋本地新版？')) {
           const result = await webdavDownload(true);
           toast(result + '（已強制覆蓋）', 'toast-success');
+          _dlOk = true;
         } else if (!msg.includes('LOCAL_NEWER:')) {
           throw e;
         } else {
@@ -1540,6 +1550,13 @@ export function onMount(s) {
           try { await initDB(2); } catch (_) {}
           return;
         }
+      }
+      // MEDIAPEEL1：DB 下載成功後順帶媒體下載（best-effort；reload 前做）
+      if (_dlOk) {
+        try {
+          const mr = await webdavMediaDownload();
+          toast(mr, '');
+        } catch (me) { toast('媒體順帶下載失敗（DB 已同步，圖下次再拉）: ' + me, 'toast-warn'); }
       }
       setTimeout(() => location.reload(), 500);
     } catch (e) {

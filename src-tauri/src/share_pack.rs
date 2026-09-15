@@ -116,6 +116,27 @@ fn base64_encode(data: &[u8]) -> String {
     out
 }
 
+/// MEDIAPEEL1：按 sha 讀 media 檔（ext 未知時掃同 sha 前綴；找不到回 None，呼叫端回退）。
+fn read_media_by_sha(root: Option<&std::path::Path>, sha: &str) -> Option<Vec<u8>> {
+    let root = root?;
+    if sha.len() != 40 || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let entries = std::fs::read_dir(root).ok()?;
+    for e in entries.flatten() {
+        let n = e.file_name().to_string_lossy().to_string();
+        if n.starts_with(sha) {
+            if let Ok(b) = std::fs::read(e.path()) {
+                if !b.is_empty() && b.len() <= MAX_MEDIA_BYTES {
+                    return Some(b);
+                }
+                return None;
+            }
+        }
+    }
+    None
+}
+
 fn mime_from_ext(ext: Option<&str>) -> String {
     let lower = ext.unwrap_or("").to_ascii_lowercase();
     match lower.as_str() {
@@ -309,25 +330,54 @@ pub(crate) fn pack_from_db(
             id_meta.insert(r.0, (r.1, r.2));
         }
     }
-    let mut imgs: Vec<(String, String, String)> = Vec::new();
+    // MEDIAPEEL1：sha1 欄可缺（舊庫無 v15 時回退無 sha 查詢；舊測試表亦無此欄）
+    let has_sha_col: bool = conn
+        .prepare("SELECT sha1 FROM word_images LIMIT 0")
+        .is_ok();
+    let mut imgs: Vec<(String, String, String, String)> = Vec::new();
     {
-        let sql = format!(
-            "SELECT word_id, filename, data FROM word_images WHERE word_id IN ({ph}) ORDER BY word_id, id"
-        );
+        let sql = if has_sha_col {
+            format!(
+                "SELECT word_id, filename, data, sha1 FROM word_images WHERE word_id IN ({ph}) ORDER BY word_id, id"
+            )
+        } else {
+            format!(
+                "SELECT word_id, filename, data FROM word_images WHERE word_id IN ({ph}) ORDER BY word_id, id"
+            )
+        };
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map(rusqlite::params_from_iter(word_ids.iter()), |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1).unwrap_or_default(),
-                    r.get::<_, String>(2).unwrap_or_default(),
-                ))
-            })
-            .map_err(|e| e.to_string())?;
-        for r in rows.flatten() {
-            imgs.push(r);
+        if has_sha_col {
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(word_ids.iter()), |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1).unwrap_or_default(),
+                        r.get::<_, String>(2).unwrap_or_default(),
+                        r.get::<_, String>(3).unwrap_or_default(),
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for r in rows.flatten() {
+                imgs.push(r);
+            }
+        } else {
+            let rows = stmt
+                .query_map(rusqlite::params_from_iter(word_ids.iter()), |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1).unwrap_or_default(),
+                        r.get::<_, String>(2).unwrap_or_default(),
+                    ))
+                })
+                .map_err(|e| e.to_string())?;
+            for r in rows.flatten() {
+                imgs.push((r.0, r.1, r.2, String::new()));
+            }
         }
     }
+    // MEDIAPEEL1：media 目錄（app_config_dir/media；單測無 AppHandle 時跳過，只用 DB data 欄）
+    let media_root: Option<std::path::PathBuf> = crate::app_config_dir_opt()
+        .map(|d| d.join("media"));
     drop(conn);
 
     let mut manifest = PackManifest {
@@ -337,15 +387,45 @@ pub(crate) fn pack_from_db(
     let mut media: Vec<(String, Vec<u8>)> = Vec::new();
     let mut skipped = 0u32;
     let mut per_word_idx: HashMap<String, usize> = HashMap::new();
-    for (wid, orig_name, data) in &imgs {
+    for (wid, orig_name, data, sha) in &imgs {
         let Some((word, deck)) = id_meta.get(wid) else {
             skipped += 1;
             continue;
         };
         let idx = per_word_idx.entry(wid.clone()).or_insert(0);
         *idx += 1;
+        // MEDIAPEEL1：sha 優先讀 media 檔（剝離後 data 欄已清空）；缺檔回退 data 欄
         let t = data.trim();
-        let (mime, bytes): (String, Vec<u8>) = if let Some((m, b)) = decode_data_url(t) {
+        let sha_t = sha.trim();
+        let (mime, bytes): (String, Vec<u8>) = if !sha_t.is_empty() {
+            if let Some(media_bytes) = read_media_by_sha(media_root.as_deref(), sha_t) {
+                let ext = std::path::Path::new(orig_name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                (mime_from_ext(Some(ext)), media_bytes)
+            } else if let Some((m, b)) = decode_data_url(t) {
+                (m, b)
+            } else if is_http_url(t) {
+                match download_bytes(t) {
+                    Ok(b) => {
+                        let ext = std::path::Path::new(orig_name)
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("");
+                        (mime_from_ext(Some(ext)), b)
+                    }
+                    Err(e) => {
+                        log::warn!("share-pack 下載圖跳過 {}: {}", orig_name, e);
+                        skipped += 1;
+                        continue;
+                    }
+                }
+            } else {
+                skipped += 1;
+                continue;
+            }
+        } else if let Some((m, b)) = decode_data_url(t) {
             (m, b)
         } else if is_http_url(t) {
             match download_bytes(t) {

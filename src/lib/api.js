@@ -43,6 +43,18 @@ export const importSharePackDialog = () =>
 export const getShareMedia = (filename, token) =>
   invoke('get_share_media', token ? { filename, token } : { filename })
 
+// ─── MEDIAPEEL1: 媒體庫（content-addressed；sha1 優先，缺檔回退 DB）───
+export const mediaPut = (data, filename) =>
+  invoke('media_put', { data, filename: filename || '' })
+export const mediaGet = (sha, ext) =>
+  invoke('media_get', { sha, ext: ext || '' })
+export const mediaList = () =>
+  invoke('media_list')
+export const webdavMediaUpload = () =>
+  invoke('webdav_media_upload')
+export const webdavMediaDownload = () =>
+  invoke('webdav_media_download')
+
 // ─── TTS ───────────────────────────────────────────────
 export const speakText = (text, opts = {}) => {
   const { speed = 1, voice = 'en_US-ryan-high', pitch } = opts
