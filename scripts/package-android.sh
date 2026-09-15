@@ -65,6 +65,7 @@ npx tauri android build $FLAGS
 OUTDIR=src-tauri/gen/android/app/build/outputs
 VER="$(node -p "require('./package.json').version")"
 echo "== 驗收 =="
+DIST="$HOME/teno-dist"; mkdir -p "$DIST"
 if [ "$TARGET" = "apk" ] || [ "$TARGET" = "all" ]; then
   APK="$OUTDIR/apk/universal/release/app-universal-release.apk"
   ls -la "$APK"
@@ -72,9 +73,11 @@ if [ "$TARGET" = "apk" ] || [ "$TARGET" = "all" ]; then
   "$BT/apksigner" verify --print-certs "$APK" 2>/dev/null | grep -E "DN:|CN=" | head -3
   unzip -o "$APK" "classes*.dex" -d /tmp/dexx >/dev/null
   echo -n "getPluginManager: "; strings /tmp/dexx/classes*.dex | grep -c getPluginManager
-  cp "$APK" "$HOME/teno-v${VER}.apk"
-  (cd "$HOME" && sha256sum "teno-v${VER}.apk" | tee "teno-v${VER}.apk.sha256")
-  ls -la "$HOME/teno-v${VER}.apk" "$HOME/teno-v${VER}.apk.sha256"
+  # 統一產物夾：只留最新版（清掉 dist 內其他版本）
+  find "$DIST" -maxdepth 1 \( -name 'teno-v*.apk' -o -name 'teno-v*.apk.sha256' \) ! -name "*${VER}*" -delete 2>/dev/null || true
+  cp "$APK" "$DIST/teno-v${VER}.apk"
+  (cd "$DIST" && sha256sum "teno-v${VER}.apk" | tee "teno-v${VER}.apk.sha256")
+  ls -la "$DIST/teno-v${VER}.apk" "$DIST/teno-v${VER}.apk.sha256"
 fi
 if [ "$TARGET" = "aab" ] || [ "$TARGET" = "all" ]; then
   find "$OUTDIR" -name "*.aab" | head -5

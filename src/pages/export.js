@@ -5,7 +5,7 @@
 import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
 import { buildCSV, buildShareCSV } from '../core/import.js';
-import { exportCsvDialog } from '../lib/api.js';
+import { exportCsvDialog, exportSharePack } from '../lib/api.js';
 import { isAndroid, downloadBlob } from '../lib/platform.js';
 
 let _deckFilter = null;
@@ -96,12 +96,28 @@ export function onMount(s, renderFn) {
   const shareBtn = document.getElementById('shareRunBtn');
   if (shareBtn) shareBtn.addEventListener('click', () => runShareExport(s));
 
+  // SHAREPACK1: 含圖打包接線
+  const sharePackBtn = document.getElementById('sharePackRunBtn');
+  if (sharePackBtn) sharePackBtn.addEventListener('click', async () => {
+    const filtered = filterWords(s.state.words);
+    if (filtered.length === 0) { toast('沒有資料可分享', 'toast-error'); return; }
+    await runSharePackDeck(s, null, sharePackBtn);
+  });
+
   document.querySelectorAll('[data-share-deck]').forEach(btn => {
     btn.addEventListener('click', () => runShareDeck(s, btn.dataset.shareDeck || null, btn));
   });
 
+  document.querySelectorAll('[data-share-pack-deck]').forEach(btn => {
+    btn.addEventListener('click', () => runSharePackDeck(s, btn.dataset.sharePackDeck || null, btn));
+  });
+
   document.querySelectorAll('[data-shelf-dl]').forEach(btn => {
     btn.addEventListener('click', () => runShareShelf(s, btn.dataset.shelfDl, btn));
+  });
+
+  document.querySelectorAll('[data-shelf-pack]').forEach(btn => {
+    btn.addEventListener('click', () => runSharePackShelf(s, btn.dataset.shelfPack, btn));
   });
   document.querySelectorAll('[data-shelf-edit]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -184,6 +200,7 @@ export function renderShelfBlock(s) {
         <span style="flex:1;font-size:13px;font-weight:700">${escapeHtml(name)}</span>
         <span class="muted" style="font-size:11px;width:64px">${n} 詞</span>
         <button class="btn btn-xs" data-shelf-dl="${escapeAttr(name)}" style="font-size:11px" ${n === 0 ? 'disabled' : ''}>${icon('upload')} 整櫃下載</button>
+        <button class="btn btn-xs" data-shelf-pack="${escapeAttr(name)}" style="font-size:11px" ${n === 0 ? 'disabled' : ''} title="含圖打包（words.csv＋media/＋manifest.json）">含圖打包</button>
         <button class="btn btn-xs" data-shelf-edit="${escapeAttr(name)}" style="font-size:11px">${editing ? '完成' : '編輯'}</button>
         <button class="btn btn-xs" data-shelf-del="${escapeAttr(name)}" style="font-size:11px;color:var(--red)">${icon('x')}</button>
       </div>
@@ -215,6 +232,19 @@ async function runShareShelf(s, shelfName, btn) {
   }
 }
 
+// SHAREPACK1: 整櫃含圖打包（words.csv＋media/＋manifest.json；圖走 word_images 表，CSV 的 image 欄不帶）
+async function runSharePackShelf(s, shelfName, btn) {
+  const members = getShelves(s)[shelfName] || [];
+  const list = shelfWords(s.state.words, members);
+  if (list.length === 0) { toast('這櫃沒有單字', 'toast-warn'); return; }
+  if (btn) btn.disabled = true;
+  try {
+    await saveSharePack(list, '書櫃-' + shelfName);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 export function renderShareContent(s) {
   const words = s.state.words || [];
   const counts = new Map();
@@ -225,6 +255,7 @@ export function renderShareContent(s) {
       <span style="flex:1;font-size:13px;color:var(--text-primary)">${escapeHtml(name)}</span>
       <span class="muted" style="font-size:11px;width:60px">${n} 詞</span>
       <button class="btn btn-xs" data-share-deck="${escapeAttr(name)}" style="font-size:11px">${icon('upload')} 下載</button>
+      <button class="btn btn-xs" data-share-pack-deck="${escapeAttr(name)}" style="font-size:11px" title="含圖打包（words.csv＋media/＋manifest.json）">打包</button>
     </div>`).join('');
   return `
     <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:var(--s2)">
@@ -243,6 +274,9 @@ export function renderShareContent(s) {
       <button class="btn-primary" id="shareRunBtn" ${filterWords(words).length === 0 ? 'disabled' : ''}>
         ${icon('upload')} 分享下載
       </button>
+      <button class="btn" id="sharePackRunBtn" ${filterWords(words).length === 0 ? 'disabled' : ''} title="含圖打包（words.csv＋media/＋manifest.json）">
+        含圖打包
+      </button>
     </div>
   `;
 }
@@ -256,6 +290,48 @@ async function runShareDeck(s, deckName, btn) {
     await saveShareCSV(list, deckName || '全部字本');
   } finally {
     if (btn) btn.disabled = false;
+  }
+}
+
+// SHAREPACK1: 單本／全部含圖打包（與 runShareDeck 同名單，改走 zip）
+async function runSharePackDeck(s, deckName, btn) {
+  const list = (deckName ? s.state.words.filter(w => (w.deck || 'Default') === deckName) : [...s.state.words])
+    .sort((a, b) => (a.word || '').localeCompare(b.word || ''));
+  if (list.length === 0) { toast('這本沒有單字', 'toast-warn'); return; }
+  if (btn) btn.disabled = true;
+  try {
+    await saveSharePack(list, deckName || '全部字本');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// SHAREPACK1: 打包存檔（CSV image 欄留空避開舊欄遷移副作用；圖以 manifest 為準）
+// 回傳 Rust JSON {path, images, skipped}；Android 回檔名（MediaStore 直寫）。
+async function saveSharePack(list, packLabel) {
+  const csv = buildShareCSV(list.map(w => ({
+    word: w.word, definition: w.definition, pos: w.pos, pron: w.pron,
+    example: w.example, deck: w.deck, image: '',
+    description: w.description, related: w.related, forms: w.forms,
+    synonym: w.synonym, antonym: w.antonym, derivative: w.derivative, examples: w.examples,
+    etymology: w.etymology, syllables: w.syllables, phrases: w.phrases,
+  })));
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const packTag = '-' + String(packLabel).replace(/[^\w\u4e00-\u9fff]/g, '_').slice(0, 24);
+  const fname = `teno-pack${packTag}-${stamp}.zip`;
+  const wordIds = list.map(w => w.id).filter(Boolean);
+
+  try {
+    const raw = await exportSharePack(csv, fname, wordIds);
+    let info = null;
+    try { info = JSON.parse(raw); } catch (_) {}
+    const detail = info
+      ? `${list.length} 詞${info.images ? `＋${info.images} 圖` : '（無圖）'}${info.skipped ? `（${info.skipped} 張跳過）` : ''} → ${info.path}`
+      : `${list.length} 詞 → ${raw}`;
+    toast(`已打包 ${detail}`, 'toast-success');
+  } catch (e) {
+    if (e !== '使用者取消') toast('打包失敗: ' + e, 'toast-error');
   }
 }
 

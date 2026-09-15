@@ -33,6 +33,16 @@ export const inspectApkgDialog = () =>
 export const getApkgMedia = (filename, token) =>
   invoke('get_apkg_media', token ? { filename, token } : { filename }) // F-RACE1: 帶 token 精確取圖；舊相容省略即退回掃描
 
+// ─── SHAREPACK1: 單字套含圖打包（words.csv＋media/＋manifest.json）───
+export const exportSharePack = (csv, filename, wordIds) =>
+  invoke('export_share_pack', { csv, filename, wordIds })
+
+export const importSharePackDialog = () =>
+  invoke('import_share_pack_dialog')
+
+export const getShareMedia = (filename, token) =>
+  invoke('get_share_media', token ? { filename, token } : { filename })
+
 // ─── TTS ───────────────────────────────────────────────
 export const speakText = (text, opts = {}) => {
   const { speed = 1, voice = 'en_US-ryan-high', pitch } = opts

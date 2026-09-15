@@ -1,6 +1,6 @@
 import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
-import { scrapeQuizlet, inspectApkgDialog, getApkgMedia } from '../lib/api.js';
+import { scrapeQuizlet, inspectApkgDialog, getApkgMedia, importSharePackDialog, getShareMedia } from '../lib/api.js';
 import { isMobile } from '../lib/platform.js';
 import {
   parseCSVTable, parseAnkiTSV, mapWords, hasHeaderRow,
@@ -24,6 +24,10 @@ let _importImages = true;
 let _apkgInfo = null;
 let _cellImages = [];
 let _apkgToken = null; // F-RACE1: inspect 回的 media_token；取圖帶上綁定牌組
+// SHAREPACK1: 分享包 state（words.csv＋media/＋manifest.json；_table/_fields 沿用 CSV 形狀）
+let _packManifest = [];
+let _packFiles = [];
+let _packToken = null;
 // Shared state
 let _phase = 'idle';
 let _progress = { done: 0, total: 0, added: 0, skipped: 0 };
@@ -36,7 +40,7 @@ export function renderContent(s) {
   if (_phase === 'done') return renderDone(s);
   return `
     ${renderTabs()}
-    ${_importMode === 'csv' ? renderCsvSection(s) : _importMode === 'apkg' ? renderApkgSection(s) : renderQuizletSection(s)}
+    ${_importMode === 'csv' ? renderCsvSection(s) : _importMode === 'apkg' ? renderApkgSection(s) : _importMode === 'pack' ? renderPackSection(s) : renderQuizletSection(s)}
   `;
 }
 
@@ -45,7 +49,7 @@ export function render(s) {
   if (_phase === 'done') return renderDone(s);
   return `
     <div class="page-title">${icon('upload')} 匯入</div>
-    <div class="page-subtitle">從 CSV/TSV、Anki .apkg 或 Quizlet URL 匯入單字</div>
+    <div class="page-subtitle">從 CSV/TSV、Anki .apkg、分享包或 Quizlet URL 匯入單字</div>
     ${renderContent(s)}
   `;
 }
@@ -55,6 +59,7 @@ function renderTabs() {
     <div class="sub-tabs" id="importTabs">
       <button class="sub-tab ${_importMode === 'csv' ? 'active' : ''}" data-mode="csv">${icon('file')} CSV / TSV</button>
       <button class="sub-tab ${_importMode === 'apkg' ? 'active' : ''}" data-mode="apkg">${icon('layers')} Anki .apkg</button>
+      <button class="sub-tab ${_importMode === 'pack' ? 'active' : ''}" data-mode="pack">${icon('box')} 分享包</button>
       <button class="sub-tab ${_importMode === 'quizlet' ? 'active' : ''}" data-mode="quizlet">${icon('globe')} Quizlet URL</button>
     </div>
   `;
@@ -589,6 +594,7 @@ export function onMount(s, renderFn) {
 
   if (_importMode === 'csv') mountCsv(s);
   else if (_importMode === 'apkg') mountApkg(s);
+  else if (_importMode === 'pack') mountPack(s);
   else mountQuizlet(s);
 
   // Done navigation
@@ -716,6 +722,227 @@ function mountApkg(s) {
 
   const runBtn = document.getElementById('importRunBtn');
   if (runBtn) runBtn.addEventListener('click', () => runApkgImport(s));
+}
+
+// ─── 分享包 .zip（SHAREPACK1）─────────────────────────────────
+// words.csv＋media/＋manifest.json；_table/_fields 沿用 CSV 形狀，映射 UI 全重用。
+function renderPackSection(s) {
+  const mediaCount = _packManifest.length || _packFiles.length;
+  return `
+    <div class="section">
+      <div class="section-title">${icon('box')} 選擇分享包</div>
+      <div class="config-section">
+        <div class="drop-zone" id="packDropZone">
+          <div class="drop-zone-inner">
+            <div class="drop-zone-ic">${icon('box')}</div>
+            <div class="drop-zone-title">${_fileName ? escapeHtml(_fileName) : '點擊選擇分享包'}</div>
+            <div class="drop-zone-sub">${_table ? `${_table.rows.length} 詞 · ${mediaCount} 張圖` : '別人分享的 .zip（words.csv＋media/＋manifest.json）'}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--s2);margin-top:var(--s3);justify-content:center;flex-wrap:wrap">
+          <button class="btn" id="packPickBtn">${icon('folder')} 選擇分享包</button>
+          ${_table ? `<button class="btn" id="packClearBtn">${icon('x')} 清除</button>` : ''}
+        </div>
+      </div>
+    </div>
+    ${_table ? renderMapping(s) + renderPreview(s, true) + renderPackImportBar(s) : ''}
+  `;
+}
+
+function renderPackImportBar(s) {
+  const decks = s.state.decks;
+  const deckNames = decks.map(d => d.name);
+  const allDecks = Array.from(new Set(['Default', ...deckNames, _targetDeck].filter(Boolean)));
+  const mapped = computeMappedCsv(s);
+  const newCount = mapped.length;
+  const mediaCount = _packManifest.length || _packFiles.length;
+  return `
+    <div class="section">
+      <div class="section-title">${icon('book')} 匯入設定</div>
+      <div class="config-section">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">目標字本</div>
+            <div class="config-field-hint">分享包無字本欄位時使用此字本</div>
+          </div>
+          <input type="text" id="targetDeck" list="deckList" value="${escapeAttr(_targetDeck)}" placeholder="Default" style="width:160px">
+          <datalist id="deckList">
+            ${allDecks.map(d => `<option value="${escapeAttr(d)}">`).join('')}
+          </datalist>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">強制匯入至此字本</div>
+            <div class="config-field-hint">勾選後忽略分享包中的字本欄位</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:var(--s2);cursor:pointer">
+            <input type="checkbox" id="forceDeck" ${_forceDeck ? 'checked' : ''}>
+            <span style="font-size:13px">啟用</span>
+          </label>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">匯入圖片</div>
+            <div class="config-field-hint">包內共 ${mediaCount} 張（逐張載入，大圖自動跳過）</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:var(--s2);cursor:pointer">
+            <input type="checkbox" id="packImportImages" ${_importImages ? 'checked' : ''}>
+            <span style="font-size:13px">啟用</span>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:var(--s4);flex-wrap:wrap;gap:var(--s3)">
+          <div style="font-size:13px;color:var(--text-secondary)">
+            將匯入 <span class="tnum" style="color:var(--green);font-weight:700">${newCount}</span> 詞
+            ${skipLabel(skipBreakdown(s, _fields))}
+          </div>
+          <button class="btn-primary" id="importPackRunBtn" ${newCount === 0 || _phase === 'importing' ? 'disabled' : ''}>
+            ${icon('check')} 開始匯入
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function mountPack(s) {
+  const pickBtn = document.getElementById('packPickBtn');
+  if (pickBtn) pickBtn.addEventListener('click', () => pickPack(s));
+  const zone = document.getElementById('packDropZone');
+  if (zone) zone.addEventListener('click', () => pickPack(s));
+  const clearBtn = document.getElementById('packClearBtn');
+  if (clearBtn) clearBtn.addEventListener('click', () => { resetState(); _renderInPlace(s); });
+
+  document.querySelectorAll('.map-sel[data-col]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const i = parseInt(sel.dataset.col, 10);
+      _fields[i] = sel.value || null;
+      _renderInPlace(s);
+    });
+  });
+
+  const targetDeckInput = document.getElementById('targetDeck');
+  if (targetDeckInput) {
+    targetDeckInput.addEventListener('input', () => {
+      _targetDeck = targetDeckInput.value.trim() || 'Default';
+    });
+    targetDeckInput.addEventListener('change', () => {
+      _targetDeck = targetDeckInput.value.trim() || 'Default';
+      _renderInPlace(s);
+    });
+  }
+  const forceDeckInput = document.getElementById('forceDeck');
+  if (forceDeckInput) {
+    forceDeckInput.addEventListener('change', () => {
+      _forceDeck = forceDeckInput.checked;
+      _renderInPlace(s);
+    });
+  }
+  const imgToggle = document.getElementById('packImportImages');
+  if (imgToggle) {
+    imgToggle.addEventListener('change', () => {
+      _importImages = imgToggle.checked;
+      _renderInPlace(s);
+    });
+  }
+
+  const runBtn = document.getElementById('importPackRunBtn');
+  if (runBtn) runBtn.addEventListener('click', () => runPackImport(s));
+}
+
+async function pickPack(s) {
+  if (_phase === 'importing') { toast('匯入進行中…'); return; }
+  try {
+    const r = await importSharePackDialog();
+    if (!r || !r.csv) { toast('分享包為空或格式錯誤', 'toast-error'); return; }
+    const table = parseCSVTable(r.csv);
+    if (table.headers.length === 0 || table.rows.length === 0) {
+      toast('分享包內 words.csv 為空', 'toast-error');
+      return;
+    }
+    _fileName = (r.file_name && String(r.file_name).trim() !== '')
+      ? r.file_name
+      : '分享包（' + table.rows.length + ' 詞）';
+    _table = table;
+    _fields = _table.headers.map(h => resolveField(h));
+    _packManifest = r.manifest || [];
+    _packFiles = r.files || [];
+    _packToken = (r.media_token && String(r.media_token).trim() !== '') ? r.media_token : null;
+    _phase = 'ready';
+    const mediaCount = _packManifest.length || _packFiles.length;
+    toast(`已載入 ${table.rows.length} 詞${mediaCount ? ` · ${mediaCount} 張圖` : ''}`, '');
+    _renderInPlace(s);
+  } catch (e) {
+    const msg = String(e || '');
+    if (/取消/.test(msg)) return; // 使用者取消選檔，不打擾
+    console.error('[import] pickPack error:', e);
+    toast('讀取分享包失敗: ' + (e.message || e), 'toast-error');
+  }
+}
+
+async function runPackImport(s) {
+  // G28：重入保護 — 雙擊/重複觸發不得產生重複匯入
+  if (_phase === 'importing') { toast('匯入進行中…'); return; }
+  const mapped = computeMappedCsv(s);
+  if (mapped.length === 0) { toast('沒有可匯入的單字', 'toast-error'); return; }
+  const toImport = _forceDeck
+    ? mapped.map(w => ({ ...w, deck: _targetDeck || 'Default' }))
+    : mapped;
+  _phase = 'importing';
+  _progress = { done: 0, total: toImport.length, added: 0, skipped: 0 };
+  _renderInPlace(s);
+  await doImport(s, toImport, (res) => importPackImages(s, res));
+}
+
+// SHAREPACK1: 單字進庫後按 manifest（word＋deck）對回 id 掛圖。
+// importWords 跳過的舊字也能掛到（對方缺的圖補上）；逐張失敗記 skipped 不整批掛。
+async function importPackImages(s, res) {
+  if (!_importImages || _packManifest.length === 0) return;
+  const { addWordImage } = await import('../lib/db.js');
+  // word＋deck → id（含新增與原本庫裡的舊字；forceDeck 下以目標字本為準）
+  const byKey = new Map();
+  for (const w of (s.state.words || [])) {
+    const effDeck = _forceDeck ? (_targetDeck || 'Default') : (w.deck || 'Default');
+    byKey.set(String(w.word || '').toLowerCase() + '￨' + effDeck, w.id);
+  }
+  const seen = new Set();
+  const jobs = [];
+  for (const m of _packManifest) {
+    const word = String(m.word || '').toLowerCase();
+    const deck = _forceDeck ? (_targetDeck || 'Default') : (m.deck || 'Default');
+    const id = byKey.get(word + '￨' + deck);
+    if (!id) continue;
+    const file = String(m.file || '').split('/').pop();
+    if (!file) continue;
+    const k = id + '￨' + file;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    jobs.push({ id, file });
+  }
+  if (jobs.length === 0) return;
+  if (jobs.length > 500 && !confirm(`圖片共 ${jobs.length} 張，確定一次全部匯入？`)) return;
+  const paint = (done) => {
+    const el = document.getElementById('importProgressSub');
+    if (el) el.textContent = `圖片 ${done} / ${jobs.length}`;
+  };
+  const CON = 5;
+  let ok = 0, bad = 0;
+  for (let i = 0; i < jobs.length; i += CON) {
+    const slice = jobs.slice(i, i + CON);
+    const rs = await Promise.all(slice.map(async (j) => {
+      try {
+        const dataUrl = await getShareMedia(j.file, _packToken);
+        await addWordImage(j.id, j.file, dataUrl);
+        return true;
+      } catch (e) {
+        console.warn('[import] pack image skip:', j.file, e);
+        return false;
+      }
+    }));
+    rs.forEach(r => { if (r) ok++; else bad++; });
+    paint(ok + bad);
+    _renderInPlace(s);
+  }
+  toast(`圖片完成：${ok} 張${bad ? `（跳過 ${bad}）` : ''}`, bad ? 'toast-warn' : 'toast-success');
 }
 
 function mountQuizlet(s) {
@@ -1019,6 +1246,7 @@ function resetState() {
   _apkgInfo = null;
   _cellImages = [];
   _apkgToken = null; // F-RACE1: token 隨會話清零，不跨牌組殘留
+  _packManifest = []; _packFiles = []; _packToken = null; // SHAREPACK1: 分享包會話清零
   _targetDeck = 'Default';
   _forceDeck = false;
   _phase = 'idle';

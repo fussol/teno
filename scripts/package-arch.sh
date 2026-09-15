@@ -30,5 +30,9 @@ cp "$DEB" "$ARCHDIR/Teno_${VER}_amd64.deb"
 
 echo "== 4/4 產物 =="
 ls -la "$ARCHDIR"/teno-*.pkg.tar.zst | tail -3
-echo "✅ Arch 包裝完成"
+# 統一產物夾：只留最新版（清掉 dist 內其他版本 zst）
+DIST="$HOME/teno-dist"; mkdir -p "$DIST"
+find "$DIST" -maxdepth 1 -name 'teno-*.pkg.tar.zst' ! -name "*${VER}*" -delete 2>/dev/null || true
+cp "$ARCHDIR/teno-${VER}-1-x86_64.pkg.tar.zst" "$DIST/"
+echo "✅ Arch 包裝完成 → $DIST/teno-${VER}-1-x86_64.pkg.tar.zst"
 echo "安裝（你自己跑 sudo）：sudo pacman -U $ARCHDIR/teno-${VER}-1-x86_64.pkg.tar.zst"
