@@ -269,37 +269,25 @@ fn resolve_pack_tmp(
     None
 }
 
-// ─── commands ───
+// ─── 打包核心（純函式，不碰 Tauri）───
 
-/// 匯出分享包：前端傳 CSV＋word_ids；Rust 直讀 DB 取圖、打包、存檔對話框。
-/// 回 JSON {path, images, skipped}（圖位元組零 IPC，EXPORTBIG1 同課）。
-#[tauri::command]
-pub async fn export_share_pack(
-    app_handle: tauri::AppHandle,
-    csv: String,
-    filename: String,
-    word_ids: Vec<String>,
-) -> Result<String, String> {
-    use tauri::Manager as _;
-    if word_ids.is_empty() {
-        return Err("沒有單字可打包".to_string());
-    }
-    let fname = std::path::Path::new(&filename)
-        .file_name()
-        .ok_or("非法檔名")?
-        .to_string_lossy()
-        .to_string();
-    if fname == "." || fname == ".." {
-        return Err("非法檔名".to_string());
-    }
+/// 打包核心：讀 DB → 組 zip 位元組。抽出來的理由——命令層被 AppHandle／對話框綁死，
+/// 端到端測不到；這裡可拿真 SQLite 驗（見 tests/pack_from_real_db）。
+pub(crate) struct PackedZip {
+    pub bytes: Vec<u8>,
+    pub images: usize,
+    pub skipped: u32,
+    pub words: usize,
+}
 
+pub(crate) fn pack_from_db(
+    db_path: &std::path::Path,
+    csv: &str,
+    word_ids: &[String],
+) -> Result<PackedZip, String> {
     // 直讀 teno.db（唯讀，不搶 plugin-sql 的寫鎖）
-    let app_dir = app_handle
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
     let conn = rusqlite::Connection::open_with_flags(
-        app_dir.join("teno.db"),
+        db_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .map_err(|e| format!("開啟單字庫失敗: {}", e))?;
@@ -342,7 +330,6 @@ pub async fn export_share_pack(
     }
     drop(conn);
 
-    // 組包
     let mut manifest = PackManifest {
         version: 1,
         files: Vec::new(),
@@ -412,12 +399,51 @@ pub async fn export_share_pack(
     }
     let zip_bytes = zw.finish().map_err(|e| e.to_string())?.into_inner();
     log::info!(
-        "export_share_pack words={} images={} skipped={} bytes={}",
+        "share_pack words={} images={} skipped={} bytes={}",
         id_meta.len(),
         media.len(),
         skipped,
         zip_bytes.len()
     );
+    Ok(PackedZip {
+        bytes: zip_bytes,
+        images: media.len(),
+        skipped,
+        words: id_meta.len(),
+    })
+}
+
+// ─── commands ───
+
+/// 匯出分享包：前端傳 CSV＋word_ids；Rust 直讀 DB 取圖、打包、存檔對話框。
+/// 回 JSON {path, images, skipped}（圖位元組零 IPC，EXPORTBIG1 同課）。
+#[tauri::command]
+pub async fn export_share_pack(
+    app_handle: tauri::AppHandle,
+    csv: String,
+    filename: String,
+    word_ids: Vec<String>,
+) -> Result<String, String> {
+    use tauri::Manager as _;
+    if word_ids.is_empty() {
+        return Err("沒有單字可打包".to_string());
+    }
+    let fname = std::path::Path::new(&filename)
+        .file_name()
+        .ok_or("非法檔名")?
+        .to_string_lossy()
+        .to_string();
+    if fname == "." || fname == ".." {
+        return Err("非法檔名".to_string());
+    }
+
+    let app_dir = app_handle
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    let packed = pack_from_db(&app_dir.join("teno.db"), &csv, &word_ids)?;
+    let zip_bytes = packed.bytes;
+    let (media_len, skipped) = (packed.images, packed.skipped);
 
     // 存檔：桌機對話框；Android 走 MediaStore（EXPORTBIG1 同路）
     #[cfg(target_os = "android")]
@@ -441,7 +467,7 @@ pub async fn export_share_pack(
         let _ = std::fs::remove_file(&tmp);
         r?;
         return Ok(
-            serde_json::json!({"path": fname, "images": media.len(), "skipped": skipped})
+            serde_json::json!({"path": fname, "images": media_len, "skipped": skipped})
                 .to_string(),
         );
     }
@@ -470,7 +496,7 @@ pub async fn export_share_pack(
                 log::info!("export_share_pack OK dst={:?}", dest);
                 Ok(serde_json::json!({
                     "path": dest.display().to_string(),
-                    "images": media.len(),
+                    "images": media_len,
                     "skipped": skipped,
                 })
                 .to_string())
@@ -490,7 +516,7 @@ pub async fn export_share_pack(
                     .map_err(|e| format!("寫入失敗: {}", e))?;
                 Ok(serde_json::json!({
                     "path": fallback.display().to_string(),
-                    "images": media.len(),
+                    "images": media_len,
                     "skipped": skipped,
                 })
                 .to_string())
@@ -712,5 +738,94 @@ mod tests {
         .unwrap();
         assert_eq!(m.version, 1);
         assert_eq!(m.files[0].file, "media/ant-1.png");
+    }
+
+    // 端到端：真 SQLite → pack_from_db → 解 zip 驗位元組。
+    // 這條才是「真的能跑」的證據（前面的純函式測不到 DB 讀取與 zip 佈局）。
+    #[test]
+    fn pack_from_real_db_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("sp-rt-{}", random_temp_name()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("teno.db");
+        // 真表：words(id,word,deck)＋word_images(word_id,filename,data)
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE words(id TEXT PRIMARY KEY, word TEXT, deck TEXT);
+             CREATE TABLE word_images(id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 word_id TEXT, filename TEXT, data TEXT);",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO words(id,word,deck) VALUES('w1','ant','D1'),('w2','off the hook','D2')",
+            [],
+        )
+        .unwrap();
+        let png: Vec<u8> = vec![0x89, b'P', b'N', b'G', 1, 2, 3, 0x00, 0xFF];
+        let d1 = format!("data:image/png;base64,{}", base64_encode(&png));
+        conn.execute(
+            "INSERT INTO word_images(word_id,filename,data) VALUES
+             ('w1','a.png',?1),('w1','../evil.png',?1),('w2','x.gif','data:image/gif;base64,!!bad'),
+             ('w9','ghost.png',?1),('w1','ok.png','https://example.invalid/none.png')",
+            rusqlite::params![d1],
+        )
+        .unwrap();
+        drop(conn);
+
+        // ids 帶 w9：w9 有圖但 words 無此列（懸空 FK）→ 查詢會取到，靠 id_meta miss 擋掉。
+        let ids = vec!["w1".to_string(), "w2".to_string(), "w9".to_string()];
+        let packed = pack_from_db(&db, "word,definition\nant,螞蟻", &ids).unwrap();
+        assert_eq!(packed.words, 2, "只有 w1/w2 在 words 表，w9 是懸空 FK");
+        // w1 兩張好圖（a.png＋evil.png 都解得出）；w2 的 data URL 壞掉跳過；
+        // w9 的圖有列但無對應字（懸空）跳過；w1 的 http 直連 example.invalid 下載失敗跳過。
+        assert_eq!(packed.images, 2, "只收得到那兩張");
+        assert_eq!(packed.skipped, 3, "壞 data URL＋懸空 FK＋下載失敗");
+
+        // 解包驗佈局與位元組
+        let mut za = zip::ZipArchive::new(std::io::Cursor::new(packed.bytes.clone())).unwrap();
+        let names: Vec<String> = (0..za.len())
+            .map(|i| za.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert!(names.contains(&"words.csv".to_string()));
+        assert!(names.contains(&"manifest.json".to_string()));
+        assert!(names.iter().any(|n| n.starts_with("media/")), "要有 media/ 條目");
+        assert!(names.iter().all(|n| !n.contains("..")), "不得有穿越檔名");
+
+        // words.csv 帶 BOM
+        let mut csv = String::new();
+        {
+            use std::io::Read as _;
+            za.by_name("words.csv").unwrap().read_to_string(&mut csv).unwrap();
+        }
+        assert!(csv.starts_with('\u{feff}'), "CSV 要帶 BOM");
+
+        // manifest 指向的檔案真的存在，且位元組 == 原圖
+        let mut mj = String::new();
+        {
+            use std::io::Read as _;
+            za.by_name("manifest.json").unwrap().read_to_string(&mut mj).unwrap();
+        }
+        let m: PackManifest = serde_json::from_str(&mj).unwrap();
+        assert_eq!(m.files.len(), 2);
+        assert!(m.files.iter().all(|f| f.word == "ant"), "w2 的圖壞掉不該進 manifest");
+        for f in &m.files {
+            let mut got = Vec::new();
+            {
+                use std::io::Read as _;
+                za.by_name(&f.file).unwrap().read_to_end(&mut got).unwrap();
+            }
+            assert_eq!(got, png, "包內圖位元組要跟原圖一致: {}", f.file);
+        }
+        // ── 閉環：打包輸出直接餵匯入端解析器 ──
+        drop(za);
+        let (csv2, manifest2, files2) = inspect_pack_bytes(&packed.bytes).unwrap();
+        assert!(csv2.contains("ant"), "匯入端讀到的 CSV 要有內容");
+        assert_eq!(manifest2.len(), 2, "匯入端 manifest 兩筆");
+        assert_eq!(files2.len(), 2, "匯入端媒體清單兩筆");
+        assert!(manifest2.iter().all(|f| f.word == "ant"));
+        // manifest 的 file 要在媒體清單裡（匯入端靠這對應去 get_share_media）
+        for f in &manifest2 {
+            assert!(files2.iter().any(|x| x.file == f.file), "manifest 指向的檔要在清單: {}", f.file);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

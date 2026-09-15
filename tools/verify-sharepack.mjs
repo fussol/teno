@@ -29,7 +29,11 @@ ok('zip 佈局 words.csv', /start_file\("words\.csv"/.test(rs));
 ok('zip 佈局 manifest.json', /start_file\("manifest\.json"/.test(rs));
 ok('zip 佈局 media/ 前綴', /start_file\(format!\("media\//.test(rs));
 ok('words.csv 帶 BOM（Excel 相容）', /0xEF, 0xBB, 0xBF/.test(rs));
-ok('回 JSON {path,images,skipped}', /"images": media\.len\(\),.*"skipped": skipped/s.test(rs));
+ok('回 JSON {path,images,skipped}', /"images": media_len,/.test(rs) && /"skipped": skipped,/.test(rs));
+ok('打包核心抽出成純函式（可端到端測）', /pub\(crate\) fn pack_from_db\(/.test(rs));
+ok('真 SQLite→zip 端到端測試（位元組一致）', /fn pack_from_real_db_roundtrip\(/.test(rs) && /包內圖位元組要跟原圖一致/.test(rs));
+ok('閉環：打包輸出餵匯入端解析器', /inspect_pack_bytes\(&packed\.bytes\)/.test(rs));
+ok('懸空 FK（圖有列無字）記 skipped', /assert_eq!\(packed\.skipped, 3/.test(rs));
 // ── 匯入：解包＋逐張取圖 ──
 ok('缺 words.csv 拒收', /缺少 words\.csv/.test(rs));
 ok('zip 上限 500MB', /MAX_PACK_BYTES/.test(rs));
