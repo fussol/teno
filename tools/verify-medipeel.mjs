@@ -61,5 +61,9 @@ const st = F('src/pages/settings.js');
 ok('settings piggyback upload', st.includes('webdavMediaUpload()'));
 ok('settings piggyback download', st.includes('webdavMediaDownload()'));
 
+console.log('== LOGPEEL static ==');
+ok('upload skips app-log', ws.includes('LOGPEEL1') && ws.includes('pack_sync_container(&teno, &[])'));
+ok('download keeps local log on empty seg', ws.includes('if (!log.is_empty())') || ws.includes('if !log.is_empty()'));
+
 console.log(fail === 0 ? `MEDIAPEEL: PASS (${pass} pass, 0 fail)` : `MEDIAPEEL: FAIL (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

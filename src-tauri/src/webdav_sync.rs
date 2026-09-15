@@ -351,14 +351,9 @@ fn read_upload_payload(app_handle: &tauri::AppHandle) -> Result<Vec<u8>, String>
     if teno.len() < 100 || !teno.starts_with(b"SQLite format 3\0") {
         return Err("EMPTY_LOCAL:本地檔不是有效 SQLite（魔數不對），拒絕上傳。".into());
     }
-    let mut lp = tp.clone();
-    lp.set_file_name("app-log.db");
-    let log = std::fs::read(&lp).unwrap_or_default();
-    if !log.is_empty() && (log.len() < 100 || !log.starts_with(b"SQLite format 3\0")) {
-        // 日誌壞了不擋主庫：丟掉 log 段照傳（主庫優先）
-        return pack_sync_container(&teno, &[]);
-    }
-    pack_sync_container(&teno, &log)
+    // LOGPEEL1：日誌移出同步容器（預設不同步；只進雲端不出雲端，手動歸檔走獨立物件）。
+    // 空段壓完僅 ~20B；下載端新舊容器雙收（舊含 log 段照收，落地忽略，不覆本地 app-log.db）。
+    pack_sync_container(&teno, &[])
 }
 
 /// 最小 base64（標準字母表＋= 補齊；只吃 UTF-8 bytes，Basic Auth 夠用）
