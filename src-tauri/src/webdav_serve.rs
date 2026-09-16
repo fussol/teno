@@ -1229,6 +1229,112 @@ pub async fn webdav_server_status(app_handle: tauri::AppHandle) -> Result<String
     }
 }
 
+/// CLOUDBROWSE1：本機直讀 ~/teno-webdav（零網路；桌機雲主用）。
+/// 回 JSON {source:"local", path, entries:[{name,size,mtime,isdir}]}，形狀跟遠端一致。
+#[tauri::command]
+pub async fn webdav_server_list_local(
+    app_handle: tauri::AppHandle,
+    path: Option<String>,
+) -> Result<String, String> {
+    let _ = &app_handle;
+    #[cfg(target_os = "android")]
+    {
+        return Err("手機不跑內嵌（請用雲端列表）".into());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let sub = path.unwrap_or_default();
+        let sub = sub.trim().trim_start_matches('/').to_string();
+        if sub.contains("..") || sub.contains("/.history") {
+            return Err("不合法的路徑".into());
+        }
+        let root = serve_dir();
+        let dir = if sub.is_empty() { root.clone() } else { root.join(&sub) };
+        if !dir.starts_with(&root) {
+            return Err("不合法的路徑".into());
+        }
+        if !dir.exists() {
+            return Err("本機尚無此目錄".into());
+        }
+        if dir.is_file() {
+            return Err("這是檔案不是目錄".into());
+        }
+        let mut entries: Vec<serde_json::Value> = Vec::new();
+        if let Ok(rd) = std::fs::read_dir(&dir) {
+            let mut names: Vec<std::ffi::OsString> = rd
+                .flatten()
+                .map(|e| e.file_name())
+                .filter(|n| !n.to_string_lossy().starts_with('.'))
+                .collect();
+            names.sort_by(|a, b| a.to_string_lossy().to_lowercase().cmp(&b.to_string_lossy().to_lowercase()));
+            // 目錄優先：兩遍（先目錄後檔案）
+            let mut dirs = Vec::new();
+            let mut files = Vec::new();
+            for n in names {
+                let p = dir.join(&n);
+                let meta = std::fs::metadata(&p);
+                let (size, mtime) = meta
+                    .map(|m| {
+                        (
+                            m.len(),
+                            m.modified()
+                                .ok()
+                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0),
+                        )
+                    })
+                    .unwrap_or((0, 0));
+                let e = serde_json::json!({
+                    "name": n.to_string_lossy(),
+                    "size": size,
+                    "mtime": mtime,
+                    "isdir": p.is_dir(),
+                });
+                if p.is_dir() { dirs.push(e); } else { files.push(e); }
+            }
+            entries.extend(dirs);
+            entries.extend(files);
+        }
+        Ok(serde_json::json!({"source": "local", "path": sub, "entries": entries}).to_string())
+    }
+}
+
+/// CLOUDBROWSE1：本機直刪（零網路；拒刪根／隱藏／歷史）。
+#[tauri::command]
+pub async fn webdav_server_delete_local(
+    app_handle: tauri::AppHandle,
+    path: String,
+) -> Result<String, String> {
+    let _ = &app_handle;
+    #[cfg(target_os = "android")]
+    {
+        return Err("手機不跑內嵌".into());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let sub = path.trim().trim_start_matches('/').to_string();
+        if sub.is_empty() || sub.contains("..") || sub.starts_with('.') || sub.contains("/.history") {
+            return Err("不合法的路徑（拒刪根／隱藏／歷史）".into());
+        }
+        let root = serve_dir();
+        let fp = root.join(&sub);
+        if !fp.starts_with(&root) {
+            return Err("不合法的路徑".into());
+        }
+        if !fp.exists() {
+            return Err("本機無此檔".into());
+        }
+        let r = if fp.is_dir() {
+            std::fs::remove_dir(&fp)
+        } else {
+            std::fs::remove_file(&fp)
+        };
+        r.map_err(|e| format!("刪除失敗：{e}"))?;
+        Ok(format!("已刪除本機「{sub}」"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1428,6 +1428,138 @@ pub async fn webdav_logout(app_handle: tauri::AppHandle) -> Result<String, Strin
     Ok("已清除 WebDAV 設定".into())
 }
 
+/// CLOUDBROWSE1：雲端檔案列表（免開瀏覽器）——PROPFIND depth 1 通用解析。
+/// path 缺省＝根目錄；回 JSON {source:"remote", path, entries:[{name,size,mtime,isdir}]}。
+#[derive(serde::Serialize)]
+struct CloudEntry {
+    name: String,
+    size: u64,
+    mtime: u64,
+    isdir: bool,
+}
+
+pub(crate) fn parse_cloud_entries(xml: &str, base_path: &str) -> Vec<CloudEntry> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    let base_norm = base_path.trim_end_matches('/');
+    while let Some(a) = xml[pos..].find("<D:response>") {
+        let s = pos + a + 12;
+        let Some(e) = xml[s..].find("</D:response>") else { break; };
+        let block = &xml[s..s + e];
+        pos = s + e + 13; // "</D:response>" 13 字元；多算會吃掉下一塊的 '<'（相鄰無空白時整塊消失）
+        let href = match block.find("<D:href>").and_then(|i| {
+            block[i + 8..].find("</D:href>").map(|j| block[i + 8..i + 8 + j].to_string())
+        }) {
+            Some(h) => h,
+            None => continue,
+        };
+        // href 可能是 /x/y 形式；只取尾段；self 項（== base）跳過
+        let href_trim = href.trim_end_matches('/');
+        if href_trim == base_norm || href_trim.is_empty() {
+            continue;
+        }
+        let seg = href_trim.rsplit('/').next().unwrap_or("");
+        if seg.is_empty() || seg.starts_with('.') {
+            // .history / .part 內部檔不顯示
+            continue;
+        }
+        let name = pct_decode(seg);
+        if name.is_empty() || name.starts_with('.') {
+            continue;
+        }
+        let size: u64 = block
+            .find("<D:getcontentlength>")
+            .and_then(|i| {
+                block[i + 20..].find("</D:getcontentlength>")
+                    .map(|j| block[i + 20..i + 20 + j].parse().unwrap_or(0))
+            })
+            .unwrap_or(0);
+        let mtime: u64 = block
+            .find("<D:getlastmodified>")
+            .and_then(|i| {
+                block[i + 19..].find("</D:getlastmodified>")
+                    .map(|j| block[i + 19..i + 19 + j].parse().unwrap_or(0))
+            })
+            .unwrap_or(0);
+        let isdir = block.contains("<D:collection");
+        out.push(CloudEntry { name, size, mtime, isdir });
+    }
+    out.sort_by(|a, b| match (a.isdir, b.isdir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    });
+    out
+}
+
+fn cloud_join(base: &str, sub: &str) -> Result<String, String> {
+    let sub = sub.trim().trim_start_matches('/');
+    if sub.is_empty() {
+        return Ok(base.to_string());
+    }
+    if sub.contains("..") || sub.starts_with('.') || sub.contains("/.history") {
+        return Err("不合法的路徑".into());
+    }
+    Ok(format!("{}/{}", base, sub))
+}
+
+#[tauri::command]
+pub async fn webdav_cloud_list(
+    app_handle: tauri::AppHandle,
+    path: Option<String>,
+) -> Result<String, String> {
+    let cfg = require_config(&app_handle)?;
+    let base = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let sub = path.unwrap_or_default();
+    let url = cloud_join(&base, &sub)?;
+    let url_slash = if url.ends_with('/') { url.clone() } else { format!("{}/", url) };
+    // 目錄 PROPFIND 要尾 slash（server 以此判定目錄 listing）
+    let target = if sub.trim().is_empty() { format!("{}/", base) } else { url_slash.clone() };
+    let mut resp = ureq::request("PROPFIND", &target)
+        .set("Authorization", &auth)
+        .set("Depth", "1")
+        .send_string("")
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+            ureq::Error::Status(404, _) => "雲端尚無此目錄（404）".to_string(),
+            ureq::Error::Status(code, _) => format!("列雲端檔案失敗（HTTP {code}）"),
+            _ => format!("列雲端檔案失敗：{e}"),
+        })?;
+    let mut xml = String::new();
+    resp.into_reader()
+        .take(4 * 1024 * 1024)
+        .read_to_string(&mut xml)
+        .map_err(|e| format!("讀雲端清單失敗：{e}"))?;
+    let entries = parse_cloud_entries(&xml, &target.trim_end_matches('/').to_string());
+    Ok(serde_json::json!({"source": "remote", "path": sub, "entries": entries}).to_string())
+}
+
+#[tauri::command]
+pub async fn webdav_cloud_delete(
+    app_handle: tauri::AppHandle,
+    path: String,
+) -> Result<String, String> {
+    let sub = path.trim().trim_start_matches('/').to_string();
+    if sub.is_empty() || sub.contains("..") || sub.starts_with('.') || sub.contains("/.history") {
+        return Err("不合法的路徑（拒刪根／隱藏／歷史）".into());
+    }
+    let cfg = require_config(&app_handle)?;
+    let base = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let url = cloud_join(&base, &sub)?;
+    ureq::request("DELETE", &url)
+        .set("Authorization", &auth)
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+            ureq::Error::Status(404, _) => "雲端無此檔（404）".to_string(),
+            ureq::Error::Status(code, _) => format!("刪除失敗（HTTP {code}）"),
+            _ => format!("刪除失敗：{e}"),
+        })?;
+    Ok(format!("已刪除雲端「{sub}」"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1675,5 +1807,20 @@ mod tests {
         assert!(changed_since(base_mt, base_sz, remote.0, remote.1));
         // 只有一邊動 → 非分叉
         assert!(!changed_since(base_mt, base_sz, Some(1005), Some(50)));
+    }
+
+    #[test]
+    fn cloudbrowse_parse_entries() {
+        // CLOUDBROWSE1：通用 PROPFIND 解析——self 跳過、隱藏檔跳過、目錄優先排序
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:"><D:response><D:href>/</D:href><D:propstat><D:prop><D:getcontentlength>0</D:getcontentlength><D:getlastmodified>0</D:getlastmodified><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response><D:response><D:href>/logs/</D:href><D:propstat><D:prop><D:getcontentlength>0</D:getcontentlength><D:getlastmodified>1789533522</D:getlastmodified><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response><D:response><D:href>/teno.db</D:href><D:propstat><D:prop><D:getcontentlength>32181850</D:getcontentlength><D:getlastmodified>1789533500</D:getlastmodified><D:resourcetype/></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response><D:response><D:href>/.history</D:href><D:propstat><D:prop><D:getcontentlength>0</D:getcontentlength><D:getlastmodified>1</D:getlastmodified><D:resourcetype><D:collection/></D:resourcetype></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>"#;
+        let es = parse_cloud_entries(xml, "/");
+        assert_eq!(es.len(), 2);
+        assert!(es[0].isdir && es[0].name == "logs"); // 目錄優先
+        assert!(!es[1].isdir && es[1].name == "teno.db" && es[1].size == 32181850);
+        // 非法路徑守門
+        assert!(cloud_join("http://x:8080", "../etc").is_err());
+        assert!(cloud_join("http://x:8080", ".hidden").is_err());
+        assert_eq!(cloud_join("http://x:8080", "logs/").unwrap(), "http://x:8080/logs/");
     }
 }

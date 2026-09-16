@@ -10,7 +10,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus } from '../lib/api.js';
+import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -564,6 +564,24 @@ function renderSettingsContent(s) {
           <div style="font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)" id="webdavSrvStatusText">檢查中…</div>
         </div>
         `}
+        <!-- 雲端檔案 CLOUDBROWSE1（免開瀏覽器：桌機本機直讀零網路／手機雲端列表走已存帳密） -->
+        <div id="webdavCloudSection" style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
+          <div class="config-field">
+            <div class="config-field-info">
+              <div class="config-field-label">${icon('folder')} 雲端檔案（免開瀏覽器）</div>
+              <div class="config-field-hint">點目錄進入；桌面版預設讀本機 ~/teno-webdav（免網路），手機版讀雲端列表</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s2)">
+            <span id="cloudPathLabel" style="font-size:12px;color:var(--text-secondary);font-weight:700">/</span>
+            <span id="cloudSourceLabel" style="font-size:11px;color:var(--text-tertiary)"></span>
+            <span style="flex:1"></span>
+            ${isAndroid ? '' : `<button class="btn btn-sm btn-secondary" id="cloudSrcToggleBtn" title="本機直讀／雲端列表切換">切換來源</button>`}
+            <button class="btn btn-sm btn-secondary" id="cloudUpBtn">上層</button>
+            <button class="btn btn-sm btn-primary" id="cloudRefreshBtn">${icon('refresh')} 重新整理</button>
+          </div>
+          <div id="cloudFileTable" style="font-size:13px;color:var(--text-tertiary)">載入中…</div>
+        </div>
       </div>
     </div>
 
@@ -1754,6 +1772,96 @@ export function onMount(s) {
       toast(String(e), 'toast-error');
     }
   });
+
+  // ── 雲端檔案瀏覽 CLOUDBROWSE1（免開瀏覽器）──
+  let _cloudPath = '';
+  let _cloudSource = 'local'; // local＝本機直讀（桌機預設）／remote＝雲端列表（手機預設）
+  try { if (isAndroid) _cloudSource = 'remote'; } catch (_) {}
+  const cloudFmtSize = (n) => {
+    n = Number(n) || 0;
+    if (n <= 0) return '—';
+    if (n < 1024) return n + ' B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+    return (n / 1073741824).toFixed(2) + ' GB';
+  };
+  const cloudFmtTime = (t) => {
+    t = Number(t) || 0;
+    if (!t) return '—';
+    try { return new Date(t * 1000).toLocaleString('zh-TW', { hour12: false }); }
+    catch (_) { return String(t); }
+  };
+  const cloudEsc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  async function refreshCloudBrowser() {
+    const box = document.getElementById('cloudFileTable');
+    const pathEl = document.getElementById('cloudPathLabel');
+    const srcEl = document.getElementById('cloudSourceLabel');
+    if (!box) return;
+    if (pathEl) pathEl.textContent = '/' + (_cloudPath || '');
+    box.innerHTML = '<span style="font-size:12px">讀取中…</span>';
+    try {
+      let raw;
+      if (_cloudSource === 'local' && !isAndroid) {
+        try { raw = await webdavServerListLocal(_cloudPath || null); }
+        catch (_) { raw = await webdavCloudList(_cloudPath || null); } // 本機無目錄→掉回雲端
+      } else {
+        raw = await webdavCloudList(_cloudPath || null);
+      }
+      const data = JSON.parse(raw);
+      if (srcEl) srcEl.textContent = data.source === 'local' ? '· 本機直讀（免網路）' : '· 雲端列表';
+      _cloudSource = data.source === 'local' ? 'local' : 'remote';
+      const es = Array.isArray(data.entries) ? data.entries : [];
+      if (!es.length) { box.innerHTML = '<span style="font-size:12px">空目錄</span>'; return; }
+      box.innerHTML = es.map((e, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid var(--border-subtle)">
+          <span style="font-size:15px">${e.isdir ? '📁' : '📄'}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)" title="${cloudEsc(e.name)}">${cloudEsc(e.name)}${e.isdir ? '/' : ''}</span>
+          <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap">${e.isdir ? '' : cloudFmtSize(e.size)}</span>
+          <span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap">${cloudFmtTime(e.mtime)}</span>
+          ${e.isdir ? `<button class="btn btn-sm" data-cloud-enter="${i}">進入</button>` : ''}
+          <button class="btn btn-sm btn-secondary" data-cloud-del="${i}" title="刪除">刪</button>
+        </div>`).join('');
+      box.querySelectorAll('[data-cloud-enter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const e = es[parseInt(btn.dataset.cloudEnter, 10)];
+          if (!e) return;
+          _cloudPath = (_cloudPath ? _cloudPath + '/' : '') + e.name;
+          refreshCloudBrowser();
+        });
+      });
+      box.querySelectorAll('[data-cloud-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const e = es[parseInt(btn.dataset.cloudDel, 10)];
+          if (!e) return;
+          const full = (_cloudPath ? _cloudPath + '/' : '') + e.name;
+          if (!confirm(`確定刪除雲端「${full}」？${e.isdir ? '（只刪空目錄）' : ''}`)) return;
+          try {
+            const r = (data.source === 'local')
+              ? await webdavServerDeleteLocal(full)
+              : await webdavCloudDelete(full);
+            toast(r, 'toast-success');
+            refreshCloudBrowser();
+          } catch (err) { toast(String(err), 'toast-error'); }
+        });
+      });
+    } catch (e) {
+      box.innerHTML = `<span style="font-size:12px">讀不到：${cloudEsc(e?.message || e)}（先確認同步設定已存＋雲有開）</span>`;
+      if (srcEl) srcEl.textContent = '';
+    }
+  }
+  document.getElementById('cloudRefreshBtn')?.addEventListener('click', refreshCloudBrowser);
+  document.getElementById('cloudSrcToggleBtn')?.addEventListener('click', () => {
+    _cloudSource = (_cloudSource === 'local') ? 'remote' : 'local';
+    refreshCloudBrowser();
+  });
+  document.getElementById('cloudUpBtn')?.addEventListener('click', () => {
+    if (!_cloudPath) return;
+    const parts = _cloudPath.split('/').filter(Boolean);
+    parts.pop();
+    _cloudPath = parts.join('/');
+    refreshCloudBrowser();
+  });
+  refreshCloudBrowser();
 
   // ── Anki 模式分頁 ──
   document.querySelectorAll('.study-mode-tab[data-anki-mode]').forEach(el => {

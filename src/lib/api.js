@@ -217,6 +217,16 @@ export const webdavServerStop = () =>
 
 export const webdavServerStatus = () =>
   invoke('webdav_server_status')
+
+// ─── 雲端檔案瀏覽 CLOUDBROWSE1（免開瀏覽器；本機直讀＋遠端 PROPFIND）───
+export const webdavCloudList = (path) =>
+  invoke('webdav_cloud_list', path ? { path } : {})
+export const webdavCloudDelete = (path) =>
+  invoke('webdav_cloud_delete', { path })
+export const webdavServerListLocal = (path) =>
+  invoke('webdav_server_list_local', path ? { path } : {})
+export const webdavServerDeleteLocal = (path) =>
+  invoke('webdav_server_delete_local', { path })
 export const driveSaveCreds = (clientId, clientSecret) =>
   invoke('drive_save_creds', { clientId, clientSecret })
 
