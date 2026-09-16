@@ -2492,19 +2492,21 @@ fn preensure_upgrade_columns(app_dir: &std::path::Path) {
             |r| r.get(0),
         )
         .unwrap_or(1);
-    if recorded > 0 {
-        return; // 已登記（新裝／已升級）：migrator 跳過 v13
-    }
-    let mut h = Sha384::new();
-    h.update(V13_SQL.as_bytes());
-    let sum = h.finalize();
-    if let Err(e) = conn.execute(
-        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (13, ?1, 1, ?2, -1)",
-        rusqlite::params![V13_DESC, sum.as_slice()],
-    ) {
-        log::warn!("D17 preensure record v13 fail: {}", e);
-    } else {
-        log::info!("D17 preensure: v13 columns ensured + recorded (upgrade/import path)");
+    // MIGRATE-FIX2：v13 已登記也只跳過 INSERT，不可 return——後面 v11/v15
+    // 預登記必須照跑（實錘：真庫 v13 在、v11/v15 缺，舊碼提前 return 致
+    // migration 11 `duplicate column` 熔斷，5.17.52 啟動即炸）。
+    if recorded == 0 {
+        let mut h = Sha384::new();
+        h.update(V13_SQL.as_bytes());
+        let sum = h.finalize();
+        if let Err(e) = conn.execute(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (13, ?1, 1, ?2, -1)",
+            rusqlite::params![V13_DESC, sum.as_slice()],
+        ) {
+            log::warn!("D17 preensure record v13 fail: {}", e);
+        } else {
+            log::info!("D17 preensure: v13 columns ensured + recorded (upgrade/import path)");
+        }
     }
     // MIGRATE-FIX1：JS migrate（db.js 雙保險）可能先於 Rust migrator 把欄加上
     // （語句與 V11_SQL/V15_SQL 一字相同），migrator 重放即 `duplicate column`
@@ -2741,6 +2743,9 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // log 先註冊：後面 setup（d17-preensure 等）的 log::info!/warn! 才有地方去；
+        // 否則吞掉（實錘：5.17.52 啟動毫無 D17 日誌，除錯全靠猜）。
+        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
         // D17: 缺欄預補 early plugin —— 必須註冊在 sql plugin 之前
         // （setup 順序＝註冊順序），拿正確的 app_config_dir 跑
         // preensure_upgrade_columns，全平台路徑一致。
@@ -2761,7 +2766,6 @@ pub fn run() {
                 .add_migrations("sqlite:app-log.db", log_migrations)
                 .build(),
         )
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tts_android::init())
@@ -3873,6 +3877,32 @@ mod migrate_fix1_tests {
                 .unwrap();
             assert_eq!(n, 1);
         }
+    }
+
+    #[test]
+    fn stuck_db_with_v13_still_prerecords() {
+        // MIGRATE-FIX2 迴歸：v13 已登記＋v11/v15 欄在登記缺（真庫 5.17.52 態），
+        // preensure 不可提前 return，v11/v15 照樣預登記。舊碼此測必紅。
+        let dir = std::env::temp_dir().join("teno-migrate-fix2-v13");
+        stuck_db(&dir, true, true);
+        // 補 v13 登記（checksum 照 V13_SQL 現算，與正式路徑同算法）
+        {
+            use sha2::{Digest, Sha384};
+            let mut h = Sha384::new();
+            h.update(V13_SQL.as_bytes());
+            let sum = h.finalize();
+            let conn = rusqlite::Connection::open(dir.join("teno.db")).unwrap();
+            conn.execute(
+                "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (13, ?1, 1, ?2, -1)",
+                rusqlite::params![V13_DESC, sum.as_slice()],
+            )
+            .unwrap();
+        }
+        assert!(!is_recorded(&dir, 11));
+        preensure_upgrade_columns(&dir);
+        assert!(is_recorded(&dir, 11));
+        assert!(is_recorded(&dir, 15));
+        assert_eq!(stored_checksum_hex(&dir, 11), sha384_hex(V11_SQL));
     }
 
     #[test]
