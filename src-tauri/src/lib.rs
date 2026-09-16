@@ -2344,6 +2344,16 @@ const V13_SQL: &str = "
             ";
 const V13_DESC: &str =
     "add etymology/syllables/phrases/synonym/antonym columns to words (LOG-MW)";
+// DW1/MIGRATE-FIX1 釘選：V11_SQL 與 migration v11 同一 const，兩處永遠一致
+// （sqlx 以 SHA-384(sql) 校驗已套用版本，改字即炸掉所有已升級用戶的啟動）。
+const V11_SQL: &str = "ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1;";
+const V11_DESC: &str = "add new_weight column to decks (DW1 deck new-card draw weight)";
+// MEDIAPEEL1/MIGRATE-FIX1 釘選：同上，v15 共用 const。
+const V15_SQL: &str = "
+                ALTER TABLE word_images ADD COLUMN sha1 TEXT NOT NULL DEFAULT '';
+                CREATE INDEX IF NOT EXISTS idx_word_images_sha1 ON word_images(sha1);
+            ";
+const V15_DESC: &str = "media peel: sha1 column on word_images (MEDIAPEEL1)";
 
 /// D17: migrator 跑之前，修舊庫兩處斷點（冪等；新裝／已升級庫走早退分支零動作）：
 ///  (1) v1 指紋：5.2.9 時代文字與現行不同，sqlx 會 VersionMismatch 即死。
@@ -2359,7 +2369,8 @@ const V13_DESC: &str =
 ///
 /// 呼叫點：run() 裡 sql plugin 之前的 early plugin（全平台正確路徑，
 /// setup 順序＝註冊順序），migrator 跑時已處理版本顯示為 applied 則跳過。
-/// 不碰：v11/v12（舊庫上乾淨可跑，預補反而撞 duplicate column）、v14（冪等）、
+/// v11/v15：只預登記不補欄（JS migrate 可能先加了欄；欄已在＋未登記才登記，
+/// 欄不在則不碰，交 migrator 原樣跑）。不碰：v12（IF NOT EXISTS）/v14（冪等）、
 /// v1 以外指紋不符（不敢自動重蓋，交 migrator 原樣報錯＋日誌）。
 fn preensure_upgrade_columns(app_dir: &std::path::Path) {
     use rusqlite::Connection;
@@ -2446,8 +2457,8 @@ fn preensure_upgrade_columns(app_dir: &std::path::Path) {
         }
     }
     // 只補 v13 五欄（其餘交給 migrator 原樣跑）：
-    //  - v11/v12 在舊庫上乾淨可跑（欄/表皆不存在），預補反而會讓 migrator
-    //    撞 duplicate column，絕對不碰；
+    //  - v11/v15 的欄若缺，migrator 原樣跑是乾淨路徑，絕對不由這裡補欄
+    //    （ADD COLUMN 重放必炸）；欄若已在（JS 先加），只預登記（見函末）；
     //  - derivative/examples/related/forms 對應已登記的 v9/v10（舊庫既有），不碰。
     for col in [
         "etymology",
@@ -2494,6 +2505,53 @@ fn preensure_upgrade_columns(app_dir: &std::path::Path) {
         log::warn!("D17 preensure record v13 fail: {}", e);
     } else {
         log::info!("D17 preensure: v13 columns ensured + recorded (upgrade/import path)");
+    }
+    // MIGRATE-FIX1：JS migrate（db.js 雙保險）可能先於 Rust migrator 把欄加上
+    // （語句與 V11_SQL/V15_SQL 一字相同），migrator 重放即 `duplicate column`
+    // 熔斷（實錘：5.17.51 升級，decks.new_weight 已在、v11 未登記 →
+    // `while executing migration 11`）。解法與 v13 同：欄已在＋未登記 →
+    // 只預登記（checksum＝SHA-384(SQL)，與 sqlx Migration::new 同算法），
+    // migrator 顯示 applied 即跳過；欄不在 → 不碰（乾淨路徑交 migrator 跑）。
+    // v12（CREATE 全是 IF NOT EXISTS）/v14（NOT EXISTS 守門）天生冪等，不碰。
+    let has_col = |t: &str, c: &str| -> bool {
+        let pragma = format!("PRAGMA table_info({})", t);
+        conn.prepare(&pragma)
+            .ok()
+            .and_then(|mut s| {
+                s.query_map([], |row| row.get::<_, String>(1)).ok().map(|rows| {
+                    rows.flatten().any(|name| name == c)
+                })
+            })
+            .unwrap_or(false)
+    };
+    let record_version = |v: i64, desc: &str, sql: &str| {
+        let recorded: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM _sqlx_migrations WHERE version=?1",
+                [v],
+                |r| r.get(0),
+            )
+            .unwrap_or(1);
+        if recorded > 0 {
+            return; // 已登記：migrator 跳過
+        }
+        let mut h = Sha384::new();
+        h.update(sql.as_bytes());
+        let sum = h.finalize();
+        if let Err(e) = conn.execute(
+            "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?1, ?2, 1, ?3, -1)",
+            rusqlite::params![v, desc, sum.as_slice()],
+        ) {
+            log::warn!("D17 preensure record v{} fail: {}", v, e);
+        } else {
+            log::info!("D17 preensure: v{} pre-recorded (JS-added column path)", v);
+        }
+    };
+    if table_exists("decks") && has_col("decks", "new_weight") {
+        record_version(11, V11_DESC, V11_SQL);
+    }
+    if table_exists("word_images") && has_col("word_images", "sha1") {
+        record_version(15, V15_DESC, V15_SQL);
     }
 }
 
@@ -2576,9 +2634,10 @@ pub fn run() {
         },
         Migration {
             // DW1: 字本新卡抽卡權重 — 預設 1（全字本權重 1 時 buildQueue 走原 Fisher-Yates 路徑，零回歸）
+            // MIGRATE-FIX1 釘選：SQL 與 V11_SQL 同一 const，一字不可改。
             version: 11,
-            description: "add new_weight column to decks (DW1 deck new-card draw weight)",
-            sql: "ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1;",
+            description: V11_DESC,
+            sql: V11_SQL,
             kind: MigrationKind::Up,
         },
         Migration {
@@ -2618,11 +2677,9 @@ pub fn run() {
             // NOT EXISTS 守門＝冪等；舊欄保留，渲染一律走 word_images。
             // 註：v14 從未在任何地方執行過（本 commit 前無含 v14 的版本被 build／push），故直接修 SQL 而非另開 v15。
             version: 15,
-            description: "media peel: sha1 column on word_images (MEDIAPEEL1)",
-            sql: "
-                ALTER TABLE word_images ADD COLUMN sha1 TEXT NOT NULL DEFAULT '';
-                CREATE INDEX IF NOT EXISTS idx_word_images_sha1 ON word_images(sha1);
-            ",
+            // MIGRATE-FIX1 釘選：SQL 與 V15_SQL 同一 const，一字不可改。
+            description: V15_DESC,
+            sql: V15_SQL,
             kind: MigrationKind::Up,
         },
         Migration {
@@ -3705,5 +3762,126 @@ mod import_piper_path_tests {
     fn path_variant_exposes_path() {
         let p = std::path::PathBuf::from("/storage/emulated/0/Models/voice.onnx");
         assert_eq!(FilePath::Path(p.clone()).as_path(), Some(p.as_path()));
+    }
+}
+
+#[cfg(test)]
+mod migrate_fix1_tests {
+    // MIGRATE-FIX1：卡死庫（欄已在、登記缺失）preensure 預登記測試。
+    // 實錘來源：5.17.51 升級 `while executing migration 11: duplicate column`。
+    use super::*;
+
+    fn stuck_db(dir: &std::path::Path, with_new_weight: bool, with_sha1: bool) {
+        std::fs::create_dir_all(dir).unwrap();
+        let _ = std::fs::remove_file(dir.join("teno.db"));
+        let conn = rusqlite::Connection::open(dir.join("teno.db")).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE words (id TEXT PRIMARY KEY);
+             CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT);
+             CREATE TABLE word_images (id INTEGER PRIMARY KEY AUTOINCREMENT, word_id TEXT NOT NULL, filename TEXT NOT NULL DEFAULT '', data TEXT NOT NULL);
+             CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY, description TEXT NOT NULL, success BOOLEAN NOT NULL, checksum BLOB NOT NULL, execution_time BIGINT NOT NULL);
+             INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (2, 'x', 1, x'00', -1);",
+        )
+        .unwrap();
+        if with_new_weight {
+            conn.execute_batch(
+                "ALTER TABLE decks ADD COLUMN new_weight REAL NOT NULL DEFAULT 1;",
+            )
+            .unwrap();
+        }
+        if with_sha1 {
+            conn.execute_batch(
+                "ALTER TABLE word_images ADD COLUMN sha1 TEXT NOT NULL DEFAULT '';",
+            )
+            .unwrap();
+        }
+    }
+
+    fn is_recorded(dir: &std::path::Path, v: i64) -> bool {
+        let conn = rusqlite::Connection::open(dir.join("teno.db")).unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM _sqlx_migrations WHERE version=?1",
+            [v],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+            > 0
+    }
+
+    fn stored_checksum_hex(dir: &std::path::Path, v: i64) -> String {
+        use sha2::{Digest, Sha384};
+        let conn = rusqlite::Connection::open(dir.join("teno.db")).unwrap();
+        let blob: Vec<u8> = conn
+            .query_row(
+                "SELECT checksum FROM _sqlx_migrations WHERE version=?1",
+                [v],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // 與 sqlx Migration::new 同算法：SHA-384(sql bytes)；此處只把存的值轉 hex 比對
+        let _ = Sha384::new();
+        blob.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    fn sha384_hex(s: &str) -> String {
+        use sha2::{Digest, Sha384};
+        let mut h = Sha384::new();
+        h.update(s.as_bytes());
+        format!("{:x}", h.finalize())
+    }
+
+    #[test]
+    fn v11_v15_sql_pinned() {
+        // 釘選：const 與已上線 migration SQL 一字相同（上線前以源碼字面量算出期望值）。
+        assert_eq!(
+            sha384_hex(V11_SQL),
+            "c14c6d800a5dda7a0e622a93706a8bc06208615b64d92bc182ea3ce50da4e1657fb2996f07cbb8edb5c24f93e3d6186d"
+        );
+        assert_eq!(
+            sha384_hex(V15_SQL),
+            "fa346cf3c989fd8152cfbdb963ef168fd87427f04cf0cb7c7fc6eb4e0d662060efbd52296157003216062afff2846691"
+        );
+    }
+
+    #[test]
+    fn stuck_db_gets_prerecorded() {
+        let dir = std::env::temp_dir().join("teno-migrate-fix1-stuck");
+        stuck_db(&dir, true, true);
+        assert!(!is_recorded(&dir, 11));
+        assert!(!is_recorded(&dir, 15));
+        preensure_upgrade_columns(&dir);
+        assert!(is_recorded(&dir, 11));
+        assert!(is_recorded(&dir, 15));
+        assert_eq!(
+            stored_checksum_hex(&dir, 11),
+            "c14c6d800a5dda7a0e622a93706a8bc06208615b64d92bc182ea3ce50da4e1657fb2996f07cbb8edb5c24f93e3d6186d"
+        );
+        assert_eq!(
+            stored_checksum_hex(&dir, 15),
+            "fa346cf3c989fd8152cfbdb963ef168fd87427f04cf0cb7c7fc6eb4e0d662060efbd52296157003216062afff2846691"
+        );
+        // 冪等：再跑一次不翻倍不報錯
+        preensure_upgrade_columns(&dir);
+        let conn = rusqlite::Connection::open(dir.join("teno.db")).unwrap();
+        for v in [11, 15] {
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM _sqlx_migrations WHERE version=?1",
+                    [v],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1);
+        }
+    }
+
+    #[test]
+    fn clean_db_untouched() {
+        // 乾淨舊庫（欄皆無）：不預登記，交 migrator 原樣跑
+        let dir = std::env::temp_dir().join("teno-migrate-fix1-clean");
+        stuck_db(&dir, false, false);
+        preensure_upgrade_columns(&dir);
+        assert!(!is_recorded(&dir, 11));
+        assert!(!is_recorded(&dir, 15));
     }
 }
