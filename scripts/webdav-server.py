@@ -695,7 +695,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
         except Exception:
             pass
-        if length < MIN_PUT_SIZE:
+        # LOGARCHIVE1FIX：media/log 通道先判定（檔名即語義），小檔走 1B 下限；
+        # 主通道才走 20KB 下限。否則幾 KB 的日誌歸檔／小圖永遠 422。
+        _upath_early = urllib.parse.urlparse(self.path).path or "/"
+        _is_chan = is_media_put(_upath_early, fp) or is_log_put(_upath_early, fp)
+        if not _is_chan and length < MIN_PUT_SIZE:
             # 空／半截 PUT 直接拒收，連 .part 都不寫（Q6：空的上傳不到，蓋不掉好檔）
             try:
                 remaining = length
