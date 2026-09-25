@@ -481,26 +481,30 @@ function renderSettingsContent(s) {
     <div class="section">
       <div class="section-title">${icon('upload')} WebDAV 同步</div>
       <div class="config-section">
-        <div id="webdavConfigSection">
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">伺服器 URL</div>
-              <div class="config-field-hint">填好即自動儲存並測試連線（不用按按鈕）</div>
-            </div>
-            <input type="text" id="webdavUrl" class="form-input" placeholder="http://192.168.50.69:8080" style="width:100%">
+        <!-- SIMPLIFY2：兩個子項目各自可收納（使用者指定）；「（免開瀏覽器）」字樣刪除 -->
+        <details id="webdavConfigSection" style="margin-bottom:var(--s2)">
+        <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);user-select:none">連線設定（URL／帳號／密碼）</summary>
+        <div style="margin-top:var(--s2)">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">伺服器 URL</div>
+            <div class="config-field-hint">填好即自動儲存並測試連線（不用按按鈕）</div>
           </div>
-          <div class="config-field">
-            <div class="config-field-info"><div class="config-field-label">帳號</div></div>
-            <input type="text" id="webdavUser" class="form-input" placeholder="帳號" style="width:100%">
-          </div>
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">密碼</div>
-              <div class="config-field-hint">帳密只輸這一次，存本機 0600，之後上傳下載自動帶</div>
-            </div>
-            <input type="password" id="webdavPass" class="form-input" placeholder="密碼" style="width:100%">
-          </div>
+          <input type="text" id="webdavUrl" class="form-input" placeholder="http://192.168.50.69:8080" style="width:100%">
         </div>
+        <div class="config-field">
+          <div class="config-field-info"><div class="config-field-label">帳號</div></div>
+          <input type="text" id="webdavUser" class="form-input" placeholder="帳號" style="width:100%">
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">密碼</div>
+            <div class="config-field-hint">帳密只輸這一次，存本機 0600，之後上傳下載自動帶</div>
+          </div>
+          <input type="password" id="webdavPass" class="form-input" placeholder="密碼" style="width:100%">
+        </div>
+        </div>
+        </details>
         <div id="webdavSyncSection" style="margin-top:var(--s3)">
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);margin-bottom:var(--s3)">
             <input type="checkbox" id="webdavAutoUpload">
@@ -568,14 +572,11 @@ function renderSettingsContent(s) {
           </div>
         </details>
 
-        <!-- 雲端檔案 CLOUDBROWSE1（免開瀏覽器：桌機本機直讀零網路／手機雲端列表走已存帳密） -->
-        <div id="webdavCloudSection" style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">${icon('folder')} 雲端檔案（免開瀏覽器）</div>
-              <div class="config-field-hint">點目錄進入、點「↑」回上層（清單自動重整）</div>
-            </div>
-          </div>
+        <!-- 雲端檔案 CLOUDBROWSE1（SIMPLIFY2：可收納）
+             預設展開 —— 這是手機裝 APK 的主路徑，藏起來會多一步 -->
+        <details id="webdavCloudSection" open style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s2)">
+          <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);user-select:none">雲端檔案</summary>
+          <div style="margin-top:var(--s2)">
           <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s2)">
             <button class="btn btn-sm btn-secondary" id="cloudUpBtn">↑</button>
             <span id="cloudPathLabel" style="font-size:12px;color:var(--text-secondary);font-weight:700">/</span>
@@ -584,7 +585,8 @@ function renderSettingsContent(s) {
             ${isAndroid ? '' : `<button class="btn btn-sm btn-secondary" id="cloudSrcToggleBtn" title="本機直讀／雲端列表切換">切換來源</button>`}
           </div>
           <div id="cloudFileTable" style="font-size:13px;color:var(--text-tertiary)">載入中…</div>
-        </div>
+          </div>
+        </details>
       </div>
     </div>
 

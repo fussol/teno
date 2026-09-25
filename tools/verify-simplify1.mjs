@@ -79,5 +79,25 @@ chk('設定區標題已改名為 API', /\$\{icon\('book'\)\} API<\/div>/.test(se
 chk('不再有「韋氏字典」當區塊標題', !/\$\{icon\('book'\)\} 韋氏字典/.test(settings));
 chk('提示文字說明兩種接口', /可接<b>本地<\/b>（ollama）或<b>公開<\/b>/.test(settings));
 
+console.log('\n== [F] SIMPLIFY2：WebDAV 兩個子項目可收納、刪掉無意義字樣 ==');
+chk('「連線設定」是 <details> 可收納', /<details id="webdavConfigSection"/.test(settings));
+chk('「連線設定」摘要標題正確', /<summary[^>]*>連線設定（URL／帳號／密碼）<\/summary>/.test(settings));
+chk('「雲端檔案」是 <details> 可收納', /<details id="webdavCloudSection"\s+open/.test(settings));
+chk('「雲端檔案」預設展開（手機裝 APK 主路徑）', /<details id="webdavCloudSection" open/.test(settings));
+chk('「（免開瀏覽器）」字樣已刪除（只看顯示文字，不含註解）',
+  !settings.split('\n')
+    .filter(l => { const t = l.trim(); return !t.startsWith('//') && !t.startsWith('<!--') && !t.startsWith('*'); })
+    .join('\n').includes('免開瀏覽器'));
+chk('摺疊後仍保有原本欄位 id', ['webdavUrl', 'webdavUser', 'webdavPass', 'cloudFileTable', 'cloudUpBtn']
+  .every(id => settings.includes(`id="${id}"`)));
+// 收納不能把必要資訊也收掉：主要操作（自動同步／上傳／下載／狀態）必須留在折疊外
+{
+  const syncBlock = settings.slice(settings.indexOf('id="webdavSyncSection"'), settings.indexOf('<details', settings.indexOf('id="webdavSyncSection"')));
+  chk('主要操作留在折疊外（自動同步）', syncBlock.includes('id="webdavAutoUpload"'));
+  chk('主要操作留在折疊外（上傳）', syncBlock.includes('id="webdavUploadBtn"'));
+  chk('主要操作留在折疊外（下載）', syncBlock.includes('id="webdavDownloadBtn"'));
+  chk('主要操作留在折疊外（狀態行）', syncBlock.includes('id="webdavStatusText"'));
+}
+
 console.log(`\nSIMPLIFY1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);
