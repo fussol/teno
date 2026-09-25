@@ -369,21 +369,25 @@ export async function fillWordFields({
         if (!llmOk) bump('trans', 'skip');
         else {
           // DICTREBUILD：把**英英釋義**餵進去 —— 使用者定義的用途是「保險」：
-          // 確保中文涵蓋到所有語意（key 不只「鑰匙」），並要求短且禁同義詞堆疊。
+          // 確保中文不漏掉**主要**語意（key 不能只給「鑰匙」），但冷僻義要忽略
+          //（踩過一次：寫成「有幾個語意就涵蓋幾個」→ 韋氏對 light 回 21 條 shortdef
+          //  → 模型硬要全覆蓋、開始幻覺）。故釋義上限 5 條、prompt 要求 1~3 個核心語意。
           // 取不到英英釋義時退化為舊 prompt（只看單字），不讓翻譯整體失效。
           let defs = '';
           if (camEn) {
             try {
               const enData = await camEn();
               defs = (enData.senses || [])
-                .map(s => String(s.definition || '').trim()).filter(Boolean).join('\n');
+                .map(s => String(s.definition || '').trim()).filter(Boolean).slice(0, 5).join('\n');
             } catch (_) { /* 英英來源不可用 → 走退化路徑 */ }
           }
           const prompt = defs
             ? `你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。\n\n`
-              + `規則：\n- 只輸出翻譯。不要解釋、拼音、引號、編號、句號\n`
-              + `- 英英釋義列出幾個語意，中文就要涵蓋幾個\n`
-              + `- 但不要列同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」\n`
+              + `規則：\n`
+              + `- 只輸出繁體中文翻譯。不要英文、拼音、解釋、引號、編號、句號\n`
+              + `- 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略\n`
+              + `- 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」\n`
+              + `- 禁止同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」\n`
               + `- 用「；」分隔，每個中文詞 2~4 字\n\n單字：${w}\n英英釋義：\n${defs}`
             : `Give the Traditional Chinese (繁體中文) definition of the English word "${w}". Concise, one line. Return ONLY the Chinese definition, nothing else.`;
           const text = await llmText(prompt);

@@ -551,15 +551,23 @@ fn zh_clean(t: &str) -> String {
 }
 
 /// DICTREBUILD 翻譯 prompt
-/// 使用者定義：英英釋義是「保險」→ 要求**涵蓋所有語意**，但**禁止同義詞堆疊**
+///
+/// 使用者對英英釋義的定位：**保險** —— 確保中文不漏掉主要語意
+/// （key 不能只給「鑰匙」），但**不是**要求涵蓋所有語意。
+///
+/// 這條界線踩過一次：初版寫「釋義列出幾個語意中文就涵蓋幾個」，
+/// 而韋氏對 key 回 14 條、light 回 21 條 shortdef → 模型硬要全覆蓋，
+/// 開始幻覺（light 吐出「卸下；降落；微風」）。故改為「只取最常用 1~3 個、
+/// 冷僻義忽略」，並在呼叫端把釋義上限截在 5 條（雙重保險）。
 fn zh_translate_prompt(word: &str, defs: &str) -> String {
     format!(
 "你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。
 
 規則：
-- 只輸出翻譯。不要解釋、拼音、引號、編號、句號
-- 英英釋義列出幾個語意，中文就要涵蓋幾個（key 有「鑰匙、關鍵、按鍵」三義就三個都要）
-- 但不要列同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」
+- 只輸出繁體中文翻譯。不要英文、拼音、解釋、引號、編號、句號
+- 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略
+- 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」
+- 禁止同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」
 - 用「；」分隔，每個中文詞 2~4 字
 
 單字：{}
@@ -746,6 +754,7 @@ async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: tauri:
         let en: serde_json::Value = serde_json::from_str(&en_json).map_err(|e| e.to_string())?;
         let defs: Vec<String> = en["senses"].as_array().map(|a| a.iter()
             .filter_map(|s| s["definition"].as_str().map(|x| x.to_string()))
+            .take(5)                       // 釋義上限 5 條：避免多義字爆走（見 zh_translate_prompt 註解）
             .collect()).unwrap_or_default();
         if defs.is_empty() { return Err(format!("查無「{}」的釋義，無法產生翻譯", w)); }
         let raw = llm_generate(&llm_url, &llm_model, &llm_format, &llm_key, &zh_translate_prompt(&w, &defs.join("\n")))?;
