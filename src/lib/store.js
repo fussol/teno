@@ -1556,12 +1556,13 @@ export function createStore() {
       // ponytail: single transaction for bulk insert
       if (newWords.length) {
         let txFailed = false;
-        try { await db.executeSQL('BEGIN TRANSACTION'); } catch (_) {}
         try {
-          for (const w of newWords) await db.saveWord(w);
-          await db.executeSQL('COMMIT');
+          // DB-RES1: 改用 db.saveWordsInTx —— 單一佇列交易 + BEGIN IMMEDIATE + raw 寫入。
+          // 原本自己 BEGIN + 迴圈呼叫 db.saveWord：saveWord 走 _write 佇列 →
+          // 語句被 plugin-sql 的 pool 分派到別條連線、原連線的交易懸置並握死寫鎖。
+          // 實測這是 2026-08-29「OCR 匯入後鎖死 2 小時 11 分」的直接成因。
+          await db.saveWordsInTx(newWords);
         } catch (e) {
-          await db.executeSQL('ROLLBACK');
           txFailed = true;
           console.warn('[store] importWords bulk insert error:', e);
         }

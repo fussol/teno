@@ -57,6 +57,13 @@ chk('_isBusy 不誤判一般錯誤', !isBusy(new Error('no such table: words')))
 // ── [S] 源碼：交易與佇列 ──
 console.log('[S] 源碼：交易與佇列');
 chk('無 BEGIN TRANSACTION（全改 IMMEDIATE）', !codeOnly.includes('BEGIN TRANSACTION'), `count=${(codeOnly.match(/BEGIN TRANSACTION/g) || []).length}`);
+// DB-RES1: 跨整個 src/ —— 別處也不得自己組交易（實測 store.js importWords 曾是鎖死主因）
+{
+  const { execSync } = await import('node:child_process');
+  let hits = '';
+  try { hits = execSync("grep -rn \"BEGIN TRANSACTION\" src/ --include=*.js", { encoding: 'utf8' }); } catch (_) {}
+  chk('全 src/ 無 BEGIN TRANSACTION（含 store.js importWords）', hits.trim() === '', hits.trim().slice(0, 120));
+}
 chk('BEGIN IMMEDIATE 至少 8 處', (codeOnly.match(/BEGIN IMMEDIATE/g) || []).length >= 8,
   `count=${(codeOnly.match(/BEGIN IMMEDIATE/g) || []).length}`);
 chk('_retryBusy 用指數退避（2 ** i）', /2 \*\* i/.test(codeOnly));
