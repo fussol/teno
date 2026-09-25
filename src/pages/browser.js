@@ -1002,10 +1002,9 @@ function openModal(s, word) {
           </div>
         </div>
         <div class="form-group" style="border-top:1px solid var(--border);padding-top:var(--s2);margin-top:var(--s2)">
-          <label class="form-label">自動填入順序 <span style="font-size:11px;color:var(--text-tertiary)">（點 chip 往後移）</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:var(--s2)" id="fAutoOrderChips"></div>
-          <div style="display:flex;gap:var(--s2);align-items:center">
+          <div style="display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
             <button class="btn" id="fAutoFill">${icon('search')} 自動填入</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">依「設定 → 自動補齊」的逐欄來源</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -1275,33 +1274,27 @@ function openModal(s, word) {
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const norm = s => s.trim().toLowerCase().replace(/[.。!！?？,，;；:：\s]+$/, '');
     const existing = new Set(exChips.getVal().split('\n').map(s => norm(s)).filter(Boolean));
-    const chain = getChain();
-    for (const src of chain) {
-      let raw = [];
-      try {
-        if (src === 'merriam') {
-          // ENGINE3: 韋氏片語候選走引擎（空底全取片語，raw＝同舊 f.phrases 行列；去重語意由下方 norm 維持）
-          const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
-          if (dk || tk) {
-            const r = await _engineMw(w, { phrase: 'merriam' }, { example: '', phrases: '' });
-            if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
-          }
-        } else {
-          // ENGINE3: cambridge/dict-api/tatoeba/llm 走引擎 example 單句模式（空底全取候選；去重語意由下方 norm 維持）
-          const r = await _engineMw(w, { example: src }, { example: '' });
-          if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
-        }
-      } catch (e) {}
-      const seen = new Set();
-      const deduped = raw.filter(s => { const k = norm(s); return k && !seen.has(k) && seen.add(k); });
-      const fresh = deduped.find(s => !existing.has(norm(s)));
-      if (fresh) {
-        exChips.append(fresh.trim());
-        toast(`已從 ${SOURCE_LABELS[src] || src} 新增一句`, 'toast-success');
-        return;
-      }
+    // AUTOFILL2: 吃「設定 → 自動補齊」的例句來源（單一來源；不再 iterate chip 排序鏈）
+    const { readComboConfig, DEFAULT_METHODS } = await import('../lib/autofill-engine.js');
+    const { methods } = await readComboConfig();
+    const src = methods.example || DEFAULT_METHODS.example;
+    let raw = [];
+    try {
+      // ENGINE3: 韋氏片語候選走引擎（空底全取片語）；其餘來源走引擎 example 單句模式
+      const r = src === 'merriam'
+        ? await _engineMw(w, { phrase: 'merriam' }, { example: '', phrases: '' })
+        : await _engineMw(w, { example: src }, { example: '' });
+      if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
+    } catch (e) {}
+    const seen = new Set();
+    const deduped = raw.filter(s => { const k = norm(s); return k && !seen.has(k) && seen.add(k); });
+    const fresh = deduped.find(s => !existing.has(norm(s)));
+    if (fresh) {
+      exChips.append(fresh.trim());
+      toast(`已從 ${SOURCE_LABELS[src] || src} 新增一句`, 'toast-success');
+      return;
     }
-    toast('所有來源都沒有新句子', 'toast-warn');
+    toast('該來源沒有新句子（例句來源可在「設定 → 自動補齊」調整）', 'toast-warn');
   });
 
   document.getElementById('fWord')?.addEventListener('blur', () => {
@@ -1309,40 +1302,9 @@ function openModal(s, word) {
     if (w && w !== _lastAutoFilled) autoFillAll();
   });
 
+  // AUTOFILL2: 移除「自動填入順序」chip 排序鏈（autoFillOrder/DEFAULT_CHAIN/renderChips/getChain 全退場）。
+  // 自動填入改吃「設定 → 自動補齊（組合包）」的逐欄來源，見 _comboAutoFill。
   const SOURCE_LABELS = { cambridge: 'Cambridge', merriam: '韋氏字典', 'dict-api': '字典API', tatoeba: 'Tatoeba', llm: 'LLM' };
-  const DEFAULT_CHAIN = ['cambridge', 'merriam', 'dict-api', 'tatoeba', 'llm'];
-  const KNOWN_SRC = new Set(DEFAULT_CHAIN);
-  // 舊存檔只有四步（無 merriam）：過濾未知值＋把缺的 merriam 補到 llm 之前
-  const _normalizeChain = (arr) => {
-    const kept = arr.map(s => s.trim()).filter(s => KNOWN_SRC.has(s));
-    if (!kept.includes('merriam')) {
-      const li = kept.indexOf('llm');
-      if (li === -1) kept.push('merriam'); else kept.splice(li, 0, 'merriam');
-    }
-    return kept.length ? kept : [...DEFAULT_CHAIN];
-  };
-  let autoFillChain = [...DEFAULT_CHAIN];
-  const renderChips = () => {
-    const c = document.getElementById('fAutoOrderChips');
-    if (!c) return;
-    c.innerHTML = autoFillChain.map((k, i) =>
-      `<span class="fAutoChip" data-idx="${i}" style="cursor:pointer;background:var(--bg-tertiary);padding:2px 8px;border-radius:4px;font-size:12px;display:inline-flex;align-items:center;gap:4px">${i + 1}. ${SOURCE_LABELS[k] || k} ›</span>`
-    ).join('');
-  };
-  import('../lib/db.js').then(m => m.getSetting('autoFillOrder').then(v => {
-    if (v) { autoFillChain = _normalizeChain(v.split(/[,|;]/).map(s => s.trim()).filter(Boolean)); renderChips(); }
-  }));
-  renderChips();
-  container.addEventListener('click', (e) => {
-    const chip = e.target.closest('.fAutoChip');
-    if (!chip) return;
-    const idx = parseInt(chip.dataset.idx, 10);
-    const next = (idx + 1) % autoFillChain.length;
-    [autoFillChain[idx], autoFillChain[next]] = [autoFillChain[next], autoFillChain[idx]];
-    renderChips();
-    import('../lib/db.js').then(m => m.setSetting('autoFillOrder', autoFillChain.join('|')).catch(() => {}));
-  });
-  const getChain = () => autoFillChain;
 
   const _posCN = {noun:'名詞',verb:'動詞',adjective:'形容詞',adverb:'副詞',preposition:'介係詞',conjunction:'連接詞',pronoun:'代名詞',interjection:'感嘆詞',exclamation:'感嘆詞',determiner:'限定詞',article:'冠詞',phrase:'片語',idiom:'慣用語',suffix:'後綴',prefix:'前綴',abbreviation:'縮寫','plural noun':'複數名詞'};
   const _normalizePos = (pos) => (pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
@@ -1374,118 +1336,67 @@ function openModal(s, word) {
     else if (id === 'fExampleAppend') { if (val) exChips.setVal(mergeExamplePhrases(exChips.getVal(), val)); }
     else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
   };
+  // ── AUTOFILL2：自動填入改吃「設定 → 自動補齊（組合包）」的逐欄來源 ──
+  // 舊版是 chip 排序鏈（跨來源依序嘗試）。因為每個 setter 只寫入仍為空的欄位
+  // （fSetB: `if (!e.value.trim())`），實質語意＝逐欄由鏈上第一個提供它的來源勝出，
+  // 正是逐欄 methods 的靜態展開 → 換成組合包設定為語意等價（DEFAULT_METHODS 亦註「沿用舊行為」）。
+  const CHIP_FIELDS = {
+    fDefinition: 'fDefChips', fExample: 'fExChips', fRelated: 'fRelatedChips', fForms: 'fFormsChips',
+    fSynonyms: 'fSynonymChips', fAntonyms: 'fAntonymChips', fDerivatives: 'fDerivativeChips',
+  };
+  /** 強制寫入（覆寫語意已由引擎判定：patch 有值＝該寫；fSetB 的「只填空」會吃掉 overwrite） */
+  const fSetF = (id, val) => {
+    if (!val) return;
+    const host = CHIP_FIELDS[id] ? document.getElementById(CHIP_FIELDS[id]) : null;
+    if (host && host._tagInputApi) { host._tagInputApi.setVal(val); return; }
+    const e = document.getElementById(id); if (e) e.value = val;
+  };
+  const _splitList = (v) => String(v || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  /** 表單現值 → 引擎 existing（欄位契約同 modalSave：related/forms 陣列、其餘字串） */
+  const _formExisting = () => ({
+    pos: _getPosVal(),
+    definition: _defChips.getVal(),
+    example: exChips.getVal(),
+    phrases: '',
+    pron: document.getElementById('fPron')?.value.trim() || '',
+    related: _splitList(relChips.getVal()),
+    forms: _splitList(formsChips.getVal()),
+    synonym: synChips.getVal(),
+    antonym: antChips.getVal(),
+    derivative: derivChips.getVal(),
+    etymology: document.getElementById('fEtymology')?.value.trim() || '',
+    syllables: document.getElementById('fSyllables')?.value.trim() || '',
+  });
+  /** 引擎 patch → 表單（patch.example 已含片語，見引擎註解「phrase 併入 example」） */
+  const _applyPatch = (p) => {
+    if (!p) return;
+    if (p.pos) _selectPosChips(_normalizePos(p.pos));
+    if (p.definition) fSetF('fDefinition', p.definition);
+    if (p.pron) fSetF('fPron', p.pron);
+    if (p.related?.length) fSetF('fRelated', p.related.join(', '));
+    if (p.forms?.length) fSetF('fForms', p.forms.join(', '));
+    if (p.synonym) fSetF('fSynonyms', p.synonym);
+    if (p.antonym) fSetF('fAntonyms', p.antonym);
+    if (p.derivative) fSetF('fDerivatives', p.derivative);
+    if (p.etymology) fSetF('fEtymology', p.etymology);
+    if (p.syllables) fSetF('fSyllables', p.syllables);
+    if (p.example) fSetF('fExample', p.example);
+  };
+
   const autoFillAll = async () => {
     const w = document.getElementById('fWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('fAutoFill');
     if (btn) btn.disabled = true;
-    const g = fGetB, s = fSetB;
-    const chain = getChain();
-    let cambridgeFailed = false;
-    for (const src of chain) {
-      if (src === 'cambridge') {
-        try {
-          const json = await lookupCambridge(w, 'zh');
-          const d = JSON.parse(json);
-          s('fWord', d.word);
-          s('fPron', d.uk_ipa || d.us_ipa);
-          if (d.senses?.length) {
-            const hasZh = 'translation' in d.senses[0];
-            const defs = [...new Set(d.senses.map(s => (hasZh ? s.translation : s.definition)).filter(Boolean))].map(d => d.replace(/;/g, ','));
-            const pos = [...new Set(d.senses.flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim())).filter(Boolean))];
-            s('fDefinition', defs.join(', '));
-            _selectPosChips(_normalizePos(pos.join(', ')));
-            const exs = [...new Set(d.senses.flatMap(s => (s.examples || []).map(ex => hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english))).filter(Boolean))];
-            if (exs.length && !g('fExample')) s('fExample', exs.join('\n'));
-          }
-        } catch (e) {
-          cambridgeFailed = true;
-        }
-      } else if (src === 'merriam') {
-        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
-        try { await mwFillExtra(s, g, w); } catch (_) {}
-      } else if (src === 'dict-api') {
-        try {
-          // DICTAPI-TIMEOUT1：公網已死，10s 斷尾（同引擎；catch 靜默跳過不擋鏈）
-          const ctl = new AbortController();
-          const timer = setTimeout(() => ctl.abort(), 10000);
-          try {
-            const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
-            if (r.ok) {
-              const exs = (await r.json()).flatMap(e =>
-                (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean))
-              );
-              if (exs.length && !g('fExample')) s('fExample', exs.join('\n'));
-            }
-          } finally { clearTimeout(timer); }
-        } catch (e) {}
-      } else if (src === 'tatoeba') {
-        try {
-          // TATOEBA-SORT1：必帶 sort（同引擎；無則 400）
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
-          if (r.ok) {
-            const exs = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
-            if (exs.length && !g('fExample')) s('fExample', exs.join('\n'));
-          }
-        } catch (e) {}
-      } else if (src === 'llm') {
-        if (!g('fDefinition') || !g('fPos') || !g('fPron') || !g('fExample') || !g('fRelated') || !g('fForms') || !g('fEtymology')) {
-          try {
-            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
-            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
-            const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
-            const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
-            if (models.length) {
-              const model = models[0];
-              if (!g('fDefinition')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `用繁體中文列出「${w}」的定義。多個定義用「、」分隔。只回傳定義，不要其他內容。`
-                );
-                if (t) s('fDefinition', t.trim().replace(/、/g, ', '));
-              }
-              if (!g('fPos')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `What is/are the part(s) of speech of "${w}"? Return comma-separated English labels only (e.g. noun, verb, adjective).`
-                );
-                if (t) _selectPosChips(_normalizePos(t.trim()));
-              }
-              if (!g('fExample')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `Generate a short English example sentence using "${w}". Return ONLY the sentence, nothing else.`
-                );
-                if (t) s('fExample', t.trim());
-              }
-              await Promise.all([
-                llmFillRelated('fRelated', w),
-                llmFillForms('fForms', w),
-                llmFillSynAntDeriv(w),
-                (async () => {
-                  // 字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝；音節只吃韋氏）
-                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
-                  const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
-                  if (!g('fEtymology')) {
-                    try {
-                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
-                      if (t) s('fEtymology', t.trim());
-                    } catch (_) {}
-                  }
-                  // 片語已併入例句：LLM 片語去重接續進例句（韋氏鏈步驟有 key 時走韋氏，此處不搶）
-                  try {
-                    const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                      `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
-                    if (t) s('fExampleAppend', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
-                  } catch (_) {}
-                })()
-              ]);
-            }
-          } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
-        }
-      }
+    try {
+      const r = await _comboAutoFill(w, _formExisting());
+      if (r.aborted) { toast('查詢中止（額度或來源問題）', 'toast-error'); return; }
+      _applyPatch(r.patch);
+    } catch (e) {
+      toast('自動填入失敗，請確認 Ollama 有開', 'toast-error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
-    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
-    if (!chain.includes('merriam')) { try { await mwFillExtra(s, g, w); } catch (_) {} }
     _lastAutoFilled = w;
   };
 
@@ -1567,6 +1478,39 @@ async function _engineMw(word, methods, existing = {}) {
       llmOk: true,
     },
     onStat: () => {} });
+}
+/** AUTOFILL2: 自動填入（modal 版）＝依「設定 → 自動補齊（組合包）」的逐欄來源跑共用引擎。
+ *  取代舊的 chip 排序鏈。語意等價：舊鏈每個 setter 只填空欄 → 實質＝逐欄第一個提供者勝出
+ *  ＝逐欄 methods 的靜態展開（DEFAULT_METHODS 亦註「沿用舊行為」）。
+ *  fetchers 比照 tools.js 一鍵全補（getCamEn/getCamZh/getMw/llmJson/llmText）；
+ *  threshold 1／count 1＝沿用舊鏈（只補空缺、LLM 出單句）。 */
+async function _comboAutoFill(word, existing) {
+  const { fillWordFields, readComboConfig } = await import('../lib/autofill-engine.js');
+  const { lookupMerriam, lookupCambridge } = await import('../lib/api.js');
+  const { merriamToFields } = await import('../lib/merriam.js');
+  const { methods, overwrite } = await readComboConfig();
+  let camEn = null, camZh = null, mwCache = null;
+  const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
+  const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
+  const getMw = async () => {
+    if (!mwCache) mwCache = merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word);
+    return mwCache;
+  };
+  const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
+  const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
+  const llmText = async (prompt) => fetchLLM(`${baseUrl}/api/generate`, model, prompt);
+  const llmJson = async (prompt) => {
+    const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
+    const cleaned = String(text ?? '').trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+    const arr = JSON.parse(cleaned);
+    return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+  };
+  return fillWordFields({
+    wordText: word, existing, methods, overwrite,
+    threshold: 1, count: 1,
+    fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk: true },
+    onStat: () => {},
+  });
 }
 async function mwFillExtra(s, g, word) {
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';

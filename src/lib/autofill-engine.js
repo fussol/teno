@@ -32,7 +32,7 @@ export const AUTOFILL_FIELDS = [
   { id: 'derivative', label: '衍生', fixed: true },
 ];
 
-// 組合包預設（11 欄；related 預設 llm 沿用舊行為）
+// 組合包預設（12 欄；related 預設 llm 沿用舊行為；derivative 只吃韋氏）
 export const DEFAULT_METHODS = {
   pos: 'cambridge',
   example: 'dictionary-api',
@@ -45,6 +45,7 @@ export const DEFAULT_METHODS = {
   phrase: 'merriam',
   etymology: 'merriam',
   syllables: 'merriam',
+  derivative: 'merriam',
 };
 
 // 批量新增固定（12 欄；related 走 merriam+llm 雙併，沿用舊 fillOne 語意）
@@ -63,11 +64,14 @@ export const BATCH_METHODS = {
   derivative: 'merriam',
 };
 
-// AUTOFILL1: 組合包欄位（11 欄；不含 derivative——組合包不補衍生）
-export const COMBO_FIELDS = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'];
+// AUTOFILL2: 組合包欄位（12 欄；含 derivative）
+//   補上 derivative：AUTOFILL_FIELDS 標它 fixed:true（＝只吃韋氏、無來源選單），
+//   BATCH_METHODS 亦為 derivative:'merriam' —— 組合包漏了它與既有慣例不一致，
+//   且會讓瀏覽器自動填入靜默少補衍生（舊鏈的 llmFillSynAntDeriv 有補）。
+export const COMBO_FIELDS = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables', 'derivative'];
 
 /** 只吃韋氏的欄位（only Merriam provides these；無來源選單） */
-const COMBO_FIXED_MERRIAM = ['etymology', 'syllables'];
+const COMBO_FIXED_MERRIAM = ['etymology', 'syllables', 'derivative'];
 
 /** methodSources 的 selector id：'combo' + 首字大寫欄位名（comboPos / comboEtymology / …） */
 export const comboSelectorId = (field) => 'combo' + field[0].toUpperCase() + field.slice(1);

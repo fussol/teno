@@ -29,7 +29,9 @@ console.log('[S] AUTOFILL1 源碼');
 chk('engine 匯出 COMBO_FIELDS', /export const COMBO_FIELDS = \[/.test(engine));
 chk('engine 匯出 comboConfig', /export function comboConfig\(mem, globalOverwrite = false\)/.test(engine));
 chk('engine 匯出 readComboConfig', /export async function readComboConfig\(\)/.test(engine));
-chk('只吃韋氏的兩欄寫死 merriam', /COMBO_FIXED_MERRIAM = \['etymology', 'syllables'\]/.test(engine));
+chk('只吃韋氏的欄位寫死 merriam', /COMBO_FIXED_MERRIAM = \['etymology', 'syllables', 'derivative'\]/.test(engine));
+chk('DEFAULT_METHODS 覆蓋全部 COMBO_FIELDS（含 derivative）',
+  /derivative: 'merriam',\n\};/.test(engine) && /export const DEFAULT_METHODS = \{/.test(engine));
 
 // ── 行為 ──
 const eng = await import('../src/lib/autofill-engine.js');
@@ -37,11 +39,11 @@ const { comboConfig, COMBO_FIELDS, DEFAULT_METHODS, comboSelectorId } = eng;
 
 console.log('[B] comboConfig：預設（無設定）');
 const d = comboConfig(null, false);
-chk('11 欄', d.enabled.length === 11, String(d.enabled.length));
-chk('不含 derivative', !d.enabled.includes('derivative'));
+chk('12 欄', d.enabled.length === 12, String(d.enabled.length));
+chk('含 derivative（fixed=true，只吃韋氏）', d.enabled.includes('derivative'), JSON.stringify(d.enabled));
 chk('每欄來源 = DEFAULT_METHODS', COMBO_FIELDS.every(f => d.methods[f] === DEFAULT_METHODS[f]),
   JSON.stringify(d.methods));
-chk('字源/音節 = merriam', d.methods.etymology === 'merriam' && d.methods.syllables === 'merriam');
+chk('字源/音節/衍生 = merriam', d.methods.etymology === 'merriam' && d.methods.syllables === 'merriam' && d.methods.derivative === 'merriam');
 chk('覆寫預設全關', COMBO_FIELDS.every(f => d.overwrite[f] === false));
 
 console.log('[B] comboConfig：selector 覆寫');
@@ -57,7 +59,7 @@ console.log('[B] comboConfig：欄位開關');
 const mem2 = { comboOn: { pos: false, example: false } };
 const d2 = comboConfig(mem2, false);
 chk('關掉的欄位從 methods 移除', !('pos' in d2.methods) && !('example' in d2.methods));
-chk('其餘欄位仍在（9 欄）', d2.enabled.length === 9, String(d2.enabled.length));
+chk('其餘欄位仍在（10 欄）', d2.enabled.length === 10, String(d2.enabled.length));
 chk('未列出的視為開', 'pron' in d2.methods);
 
 console.log('[B] comboConfig：覆寫（逐欄 + 全域）');
@@ -70,8 +72,8 @@ chk('全域覆寫開 → 全部 true', COMBO_FIELDS.every(f => d4.overwrite[f] =
 chk('全域開但 methods 不受影響', d4.methods.pos === DEFAULT_METHODS.pos);
 
 console.log('[B] 邊界 / 壞值');
-chk('mem=undefined 安全', comboConfig(undefined, false).enabled.length === 11);
-chk('mem 非物件（字串）安全', comboConfig('garbage', false).enabled.length === 11);
+chk('mem=undefined 安全', comboConfig(undefined, false).enabled.length === 12);
+chk('mem 非物件（字串）安全', comboConfig('garbage', false).enabled.length === 12);
 chk('selectors 非物件安全', comboConfig({ selectors: 'x' }, false).methods.pos === DEFAULT_METHODS.pos);
 chk('comboOn 全 false → 0 欄', comboConfig({ comboOn: Object.fromEntries(COMBO_FIELDS.map(f => [f, false])) }, false).enabled.length === 0);
 chk('未知 try 值照用（引擎會自報錯誤）', comboConfig({ selectors: { comboPos: 'nope' } }, false).methods.pos === 'nope');
