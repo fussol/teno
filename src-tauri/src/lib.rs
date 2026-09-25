@@ -770,6 +770,200 @@ fn atomic_write_file(dest: &std::path::Path, data: &[u8], what: &str) -> Result<
     Ok(())
 }
 
+// ═══════════════════════════════════════════════════════════════
+// DB-TX1：單連線真交易
+//
+// 為什麼需要：plugin-sql 的 execute 走 sqlx Pool（max_connections = 10），
+//   多次 execute 組出的 BEGIN…COMMIT **不保證同一條連線**：
+//   BEGIN 開在連線 A、迴圈語句被 pool 分派到 B/C、COMMIT 又另一條
+//   → A 的交易從頭到尾沒被 COMMIT，**懸置並握死寫鎖**。
+//   實測後果：264 筆寫入失敗、最長鎖死 2 小時 11 分（含 29 筆複習靜默丟失）。
+// 本指令用 rusqlite 開一條專用連線跑整批語句 → 交易必定成立。
+// BEGIN IMMEDIATE：開頭就取寫鎖 → 不會出現 517（讀快照過期無法升級讀→寫）。
+// ═══════════════════════════════════════════════════════════════
+
+#[derive(serde::Deserialize)]
+pub struct TxStmt {
+    pub sql: String,
+    #[serde(default)]
+    pub params: Vec<serde_json::Value>,
+}
+
+/// JSON 值 → rusqlite 綁定參數（null / bool / number / text）。
+/// 陣列與物件存 JSON 字串，與 JS 端 JSON.stringify 的既有語意一致
+/// （words.related / forms / tags 等欄位就是存 JSON 字串）。
+fn json_to_sql(v: &serde_json::Value) -> Box<dyn rusqlite::ToSql> {
+    use serde_json::Value;
+    match v {
+        Value::Null => Box::new(Option::<i64>::None),
+        Value::Bool(b) => Box::new(if *b { 1i64 } else { 0i64 }),
+        Value::Number(n) => match n.as_i64() {
+            Some(i) => Box::new(i),
+            None => Box::new(n.as_f64().unwrap_or(0.0)),
+        },
+        Value::String(s) => Box::new(s.clone()),
+        other => Box::new(other.to_string()),
+    }
+}
+
+/// DB-TX1: 在單一連線上執行一批語句的真交易。回傳受影響列數。
+/// 任何一句失敗 → 整批 ROLLBACK（不會留下半套資料）。
+#[tauri::command]
+async fn sql_tx(app_handle: tauri::AppHandle, statements: Vec<TxStmt>) -> Result<u64, String> {
+    let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
+    let path = dir.join("teno.db");
+    // 交易內不做 async → 丟到 blocking 執行緒；
+    // 整批在同一個 closure 內完成，連線不會中途被抽換（這正是本指令的目的）。
+    tokio::task::spawn_blocking(move || sql_tx_sync(&path, &statements))
+        .await
+        .map_err(|e| format!("sql_tx join: {e}"))?
+}
+
+/// 同步核心（獨立出來以便單元測試，不需要 AppHandle）。
+fn sql_tx_sync(path: &std::path::Path, statements: &[TxStmt]) -> Result<u64, String> {
+    let conn = rusqlite::Connection::open(path).map_err(|e| format!("開庫失敗: {e}"))?;
+    conn.execute_batch("PRAGMA busy_timeout=5000;")
+        .map_err(|e| format!("busy_timeout 設定失敗: {e}"))?;
+    conn.execute_batch("BEGIN IMMEDIATE;")
+        .map_err(|e| format!("BEGIN IMMEDIATE 失敗: {e}"))?;
+
+    let mut n = 0u64;
+    let mut exec = |stmt: &TxStmt| -> Result<u64, String> {
+        let mut st = conn.prepare(&stmt.sql).map_err(|e| format!("prepare 失敗: {e}"))?;
+        let vals: Vec<Box<dyn rusqlite::ToSql>> = stmt.params.iter().map(json_to_sql).collect();
+        let refs: Vec<&dyn rusqlite::ToSql> = vals.iter().map(|b| b.as_ref()).collect();
+        st.execute(refs.as_slice())
+            .map(|c| c as u64)
+            .map_err(|e| format!("execute 失敗: {e}"))
+    };
+    let mut failed: Option<String> = None;
+    for (i, s) in statements.iter().enumerate() {
+        match exec(s) {
+            Ok(c) => n += c as u64,
+            Err(e) => { failed = Some(format!("第 {} 句: {}", i + 1, e)); break; }
+        }
+    }
+
+    match failed {
+        None => {
+            conn.execute_batch("COMMIT;").map_err(|e| format!("COMMIT 失敗: {e}"))?;
+            Ok(n)
+        }
+        Some(e) => {
+            let _ = conn.execute_batch("ROLLBACK;");
+            Err(e)
+        }
+    }
+}
+
+#[cfg(test)]
+mod sql_tx_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tmp_db(tag: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("teno_sqltx_{}_{}.db", tag, std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        p
+    }
+    fn st(sql: &str, params: Vec<serde_json::Value>) -> TxStmt {
+        TxStmt { sql: sql.into(), params }
+    }
+
+    #[test]
+    fn commits_all_statements() {
+        let p = tmp_db("commit");
+        sql_tx_sync(&p, &[st("CREATE TABLE t (a INTEGER, b TEXT)", vec![])]).unwrap();
+        let n = sql_tx_sync(&p, &[
+            st("INSERT INTO t (a, b) VALUES (?, ?)", vec![json!(1), json!("x")]),
+            st("INSERT INTO t (a, b) VALUES (?, ?)", vec![json!(2), json!("y")]),
+        ]).unwrap();
+        assert_eq!(n, 2, "應回報 2 列受影響");
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        let c: i64 = conn.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(c, 2);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn rolls_back_whole_batch_on_failure() {
+        let p = tmp_db("rollback");
+        sql_tx_sync(&p, &[st("CREATE TABLE t (a INTEGER NOT NULL)", vec![])]).unwrap();
+        // 第 2 句違反 NOT NULL → 整批必須回滾，第 1 句不得留下（原子性）
+        let r = sql_tx_sync(&p, &[
+            st("INSERT INTO t (a) VALUES (?)", vec![json!(1)]),
+            st("INSERT INTO t (a) VALUES (?)", vec![serde_json::Value::Null]),
+        ]);
+        assert!(r.is_err(), "第 2 句應失敗");
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        let c: i64 = conn.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(c, 0, "整批須回滾（原子性）");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn binds_dollar_numbered_placeholders() {
+        // JS 端既有 SQL 全用 $1, $2…（plugin-sql 風格）。rusqlite 也吃這個語法嗎？
+        // 若不吃，Phase 2 的 sql_tx 就得改寫全部 SQL → 設計要改。此測試釘住這個前提。
+        let p = tmp_db("dollar");
+        sql_tx_sync(&p, &[st("CREATE TABLE t (a TEXT, b INTEGER)", vec![])]).unwrap();
+        sql_tx_sync(&p, &[st(
+            "INSERT INTO t (a, b) VALUES ($1, $2)",
+            vec![json!("x"), json!(5)],
+        )]).unwrap();
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        let (a, b): (String, i64) = conn.query_row("SELECT a, b FROM t", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(a, "x", "$1 必須正確綁定");
+        assert_eq!(b, 5, "$2 必須正確綁定");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn maps_json_types() {
+        let p = tmp_db("types");
+        sql_tx_sync(&p, &[st("CREATE TABLE t (a, b, c, d)", vec![])]).unwrap();
+        sql_tx_sync(&p, &[st(
+            "INSERT INTO t (a, b, c, d) VALUES (?, ?, ?, ?)",
+            vec![serde_json::Value::Null, json!(true), json!(7), json!("s")],
+        )]).unwrap();
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        let (a, b, c, d): (Option<i64>, i64, i64, String) = conn
+            .query_row("SELECT a, b, c, d FROM t", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap();
+        assert_eq!(a, None, "null 應綁成 SQL NULL");
+        assert_eq!(b, 1, "bool 應綁成 1");
+        assert_eq!(c, 7);
+        assert_eq!(d, "s");
+        let _ = std::fs::remove_file(&p);
+    }
+
+    /// 本指令存在的理由：交易必須在同一條連線上完成、不懸置、不洩漏寫鎖。
+    /// 兩條執行緒同時各下 50 筆 → 兩批都必須落地（busy_timeout 內等到）。
+    #[test]
+    fn concurrent_transactions_serialize_without_leak() {
+        let p = tmp_db("concurrent");
+        sql_tx_sync(&p, &[st("CREATE TABLE t (a INTEGER)", vec![])]).unwrap();
+        let mut handles = vec![];
+        for k in 0..2i64 {
+            let path = p.clone();
+            handles.push(std::thread::spawn(move || {
+                let stmts: Vec<TxStmt> = (0..50)
+                    .map(|i| st("INSERT INTO t (a) VALUES (?)", vec![json!(k * 100 + i)]))
+                    .collect();
+                sql_tx_sync(&path, &stmts)
+            }));
+        }
+        for h in handles {
+            assert!(h.join().unwrap().is_ok(), "並發交易不該失敗（不應有懸置交易握鎖）");
+        }
+        let conn = rusqlite::Connection::open(&p).unwrap();
+        let c: i64 = conn.query_row("SELECT COUNT(*) FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(c, 100, "兩批共 100 筆都應落地（交易無洩漏）");
+        let _ = std::fs::remove_file(&p);
+    }
+}
+
 #[tauri::command]
 fn write_db_bytes(app_handle: tauri::AppHandle, data: Vec<u8>) -> Result<(), String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -2771,7 +2965,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list, sql_tx])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {

@@ -112,6 +112,16 @@ export const installPiperModel = (url) =>
 export const deletePiperModel = (name) =>
   invoke('delete_piper_model', { name })
 
+// ─── DB-TX1: 單連線真交易 ─────────────────────────────────
+// 為什麼需要：plugin-sql 的 execute 走 sqlx Pool（max_connections=10），
+//   多次 execute 組出的 BEGIN…COMMIT **不保證同一條連線** →
+//   BEGIN 開在 A、迴圈語句落在 B、COMMIT 又另一條 → A 的交易懸置並握死寫鎖。
+//   實測後果：264 筆寫入失敗、最長鎖死 2 小時 11 分（含 29 筆複習靜默丟失）。
+// 故：JS 端一律不再自己組交易，整批交給 Rust 在單一連線上以 BEGIN IMMEDIATE 執行。
+// statements: [{ sql: string, params?: any[] }] → 回傳受影響列數
+export const sqlTx = (statements) =>
+  invoke('sql_tx', { statements })
+
 // ─── Backup ────────────────────────────────────────────
 // D5-SR1: 先 WAL checkpoint（WAL 內最新交易合併回主檔）再 backup，備份完整不漏最近複習
 // LOG-BACKUP1: 主庫＋日誌庫雙 checkpoint——patch 讀的是 app-log.db 檔，WAL 沒併入會漏行

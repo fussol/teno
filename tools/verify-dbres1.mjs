@@ -18,6 +18,13 @@ const chk = (name, ok, extra = '') => {
 };
 const src = readFileSync('src/lib/db.js', 'utf8');
 const codeOnly = src.split('\n').filter(l => { const t = l.trim(); return !t.startsWith('//') && !t.startsWith('*'); }).join('\n');
+/** 取某個函式的完整本體：從宣告行到同縮排的收尾 `\n}`（跳過字串內的括號由呼叫端自理） */
+const fnBody = (marker, src2 = codeOnly) => {
+  const i = src2.indexOf(marker);
+  if (i < 0) return '';
+  const end = src2.indexOf('\n}', i);
+  return end < 0 ? src2.slice(i) : src2.slice(i, end + 2);
+};
 
 // ── [B] 重試策略 ──
 console.log('[B] 重試策略');
@@ -64,35 +71,45 @@ chk('無 BEGIN TRANSACTION（全改 IMMEDIATE）', !codeOnly.includes('BEGIN TRA
   try { hits = execSync("grep -rn \"BEGIN TRANSACTION\" src/ --include=*.js", { encoding: 'utf8' }); } catch (_) {}
   chk('全 src/ 無 BEGIN TRANSACTION（含 store.js importWords）', hits.trim() === '', hits.trim().slice(0, 120));
 }
-chk('BEGIN IMMEDIATE 至少 8 處', (codeOnly.match(/BEGIN IMMEDIATE/g) || []).length >= 8,
+chk('JS 端無 BEGIN IMMEDIATE（交易已全數移交 Rust）', (codeOnly.match(/BEGIN IMMEDIATE/g) || []).length === 0,
   `count=${(codeOnly.match(/BEGIN IMMEDIATE/g) || []).length}`);
+// DB-TX1: 交易改由 Rust 在單一連線執行 → 護欄移到 Rust 側
+{
+  const rs = readFileSync('src-tauri/src/lib.rs', 'utf8');
+  chk('Rust 有 sql_tx 指令', /async fn sql_tx\(/.test(rs));
+  chk('Rust 用 BEGIN IMMEDIATE（避開 517 讀→寫升級）', /BEGIN IMMEDIATE/.test(rs));
+  chk('Rust 已註冊 sql_tx', /generate_handler!\[[\s\S]{0,4000}sql_tx\]/.test(rs));
+  chk('Rust 用單一連線（rusqlite Connection::open）', /rusqlite::Connection::open\(/.test(rs));
+  chk('Rust 有交易原子性單元測試', /fn rolls_back_whole_batch_on_failure\(/.test(rs));
+  chk('Rust 有 $N 佔位符相容測試', /fn binds_dollar_numbered_placeholders\(/.test(rs));
+  const api = readFileSync('src/lib/api.js', 'utf8');
+  chk('api.js 匯出 sqlTx', /export const sqlTx = \(statements\) =>/.test(api));
+}
 chk('_retryBusy 用指數退避（2 ** i）', /2 \*\* i/.test(codeOnly));
 chk('_retryBusy 有抖動（Math.random）', /Math\.random\(\)/.test(codeOnly));
 chk('_write 對失敗留痕（console.error）', /console\.error\('\[db\] 寫入失敗/.test(codeOnly));
 chk('失敗次數顯性化 window.__dbWriteFailStreak', /__dbWriteFailStreak/.test(codeOnly));
 
-// raw 版存在且不含 _write（否則交易內會自我死鎖）
-/** 取某個函式的完整本體：從宣告行到同縮排的收尾 `\n}` */
-const fnBody = (marker, src2 = codeOnly) => {
-  const i = src2.indexOf(marker);
-  if (i < 0) return '';
-  const end = src2.indexOf('\n}', i);
-  return end < 0 ? src2.slice(i) : src2.slice(i, end + 2);
-};
-for (const fn of ['_saveWordRaw', '_saveCardRaw']) {
-  const body = fnBody(`async function ${fn}(`);
-  chk(`${fn} 存在`, body.length > 0);
-  chk(`${fn} 不含 _write（避免死鎖）`, body.length > 0 && !body.includes('_write('));
+// DB-TX1: SQL 與參數抽成單一來源（單筆寫入與批次交易共用）—— 兩份 SQL 走樣是長期風險
+for (const [c, p] of [['WORD_UPSERT_SQL', 'wordUpsertParams'], ['CARD_UPSERT_SQL', 'cardUpsertParams']]) {
+  chk(`${c} 存在（SQL 單一來源）`, new RegExp(`const ${c} =`).test(codeOnly));
+  chk(`${p} 存在（參數順序單一來源）`, new RegExp(`function ${p}\\(`).test(codeOnly));
+  const uses = (codeOnly.match(new RegExp(c, 'g')) || []).length;
+  chk(`${c} 被單筆與批次共用（≥3 引用）`, uses >= 3, `uses=${uses}`);
 }
-// 交易函式不得呼叫走佇列的 saveWord/saveCard
-const TX_FNS = ['saveWordsInTx', 'bulkSaveWords', 'bulkSaveCards'];
+chk('raw 寫入 helper 已移除（改由 SQL 單一來源）', !/_saveWordRaw|_saveCardRaw/.test(codeOnly));
+// 8 個交易函式：必須在 _write 內、走 Rust _tx、不得自己組交易或呼叫走佇列的 saveWord/saveCard
+const TX_FNS = ['saveWordsInTx', 'bulkSaveWords', 'bulkSaveCards', 'deleteWordsByDeck',
+                'saveFolders', 'bulkSaveAdditions', 'clearAll', 'deleteWord'];
+chk('交易函式清單數 = 8', TX_FNS.length === 8);
 for (const fn of TX_FNS) {
-  const i = codeOnly.indexOf(`export async function ${fn}(`);
-  const body = i >= 0 ? codeOnly.slice(i, codeOnly.indexOf('\n}', i) + 2) : '';
-  const bad = /[^\w_](saveWord|saveCard)\(/.test(body.replace(/_save\w+Raw/g, ''));
-  chk(`${fn} 內層不用走佇列的 saveWord/saveCard`, i >= 0 && !bad);
+  const body = fnBody(`export async function ${fn}(`);
+  chk(`${fn} 存在`, body.length > 0);
   chk(`${fn} 納入 _write`, /return _write\(/.test(body));
-  chk(`${fn} 用 BEGIN IMMEDIATE`, /BEGIN IMMEDIATE/.test(body));
+  chk(`${fn} 走 Rust 單連線交易（_tx）`, /_tx\(/.test(body));
+  chk(`${fn} 不再自己組交易`, body.length > 0 && !/BEGIN|COMMIT|ROLLBACK/.test(body));
+  const bad = /[^\w_](saveWord|saveCard)\(/.test(body);
+  chk(`${fn} 不呼叫走佇列的 saveWord/saveCard（避免死鎖）`, body.length > 0 && !bad);
 }
 // 裸寫入掃描：逐「匯出的函式」檢查 —— 本體內若有寫入 execute，就必須有 _write（佇列）。
 // （不用縮排判斷：deleteWord 等既有函式的內縮排版不一致，縮排啟發式會誤判。）
@@ -124,13 +141,15 @@ for (const fn of TX_FNS) {
   const bodies = fnBodies(codeOnly);
   const bare = [];
   for (const [name, body] of Object.entries(bodies)) {
-    const hasWrite = /\.execute\('(INSERT|DELETE|UPDATE)/.test(body);
-    // _saveWordRaw/_saveCardRaw 為非匯出（不在 bodies 內）；匯出者若有寫入就必須走 _write
+    // DB-TX1: SQL 已抽成常數（execute(WORD_UPSERT_SQL, ...)）→ 掃描要同時認字面 SQL 與常數
+    const hasWrite = /\.execute\((?:'(INSERT|DELETE|UPDATE)|[A-Z][A-Z0-9_]*_SQL)/.test(body);
+    // 非匯出的 raw helper 已移除；匯出者若有寫入就必須走 _write
     if (hasWrite && !body.includes('_write(')) bare.push(name);
   }
   chk('匯出的寫入函式全部走 _write', bare.length === 0, bare.length ? `未包: ${bare.join(', ')}` : '');
-  chk('掃描確有覆蓋到寫入函式（防呆）', Object.values(bodies).filter(b => /\.execute\('(INSERT|DELETE|UPDATE)/.test(b)).length >= 10,
-    `覆蓋 ${Object.values(bodies).filter(b => /\.execute\('(INSERT|DELETE|UPDATE)/.test(b)).length} 個`);
+  const writeRe = /\.execute\((?:'(INSERT|DELETE|UPDATE)|[A-Z][A-Z0-9_]*_SQL)/;
+  const nWrites = Object.values(bodies).filter(b => writeRe.test(b)).length;
+  chk('掃描確有覆蓋到寫入函式（防呆）', nWrites >= 10, `覆蓋 ${nWrites} 個`);
 }
 
 // ── [NEG] 負控制：證明舊預算不足 ──

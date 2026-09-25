@@ -18,15 +18,22 @@ for (const f of ['src/engine/session-utils.js', 'src/engine/session-mc-utils.js'
 
 console.log('== BUG2 busy 排隊＋重試 ==');
 const db = src('src/lib/db.js');
-ok('helpers 到齊', db.includes('_writeChain') && db.includes('_retryBusy') && db.includes('_safeRollback') && db.includes('_isBusy'));
+ok('helpers 到齊', db.includes('_writeChain') && db.includes('_retryBusy') && db.includes('_isBusy'));
+// DB-TX1: JS 端不再自組交易 → `_safeRollback`（僅供 catch 補 ROLLBACK）已無用而移除；
+//         交易整批委由 Rust sql_tx 在單一連線上執行。
+ok('交易已移交 Rust sql_tx', db.includes('const _tx = async (statements)') && db.includes("await import('./api.js')"));
+ok('api.js 提供 sqlTx', src('src/lib/api.js').includes('export const sqlTx = (statements) =>'));
 ok('busy 正則含 code 5/517', db.includes('code:') && db.includes('517'));
 for (const fn of ['saveWord', 'saveCard', 'setSetting', 'addAudit', 'addReviewLog', 'deleteWord'])
   ok(`db:${fn} 走 _write`, new RegExp(`(export async function ${fn}[\\s\\S]{0,400})_write\\(`).test(db));
 ok('重試回退遞增', db.includes('30 * (i + 1)'));
 
 console.log('== BUG3 txn 守門 ==');
-ok('deleteWord inTxn 旗標', db.includes('let inTxn = false') && db.includes('if (inTxn) await _safeRollback(d)'));
-ok('COMMIT 後清旗標', db.includes('inTxn = false'));
+// DB-TX1: 舊的 inTxn 旗標與 _safeRollback 已隨「JS 不再自組交易」移除。
+//         它們存在的理由是「BEGIN 若因 locked 炸，catch 不可再 ROLLBACK（洗版 cannot rollback）」——
+//         現在交易在 Rust 單連線內、失敗由 sql_tx_sync 收尾，這個脆弱機制沒有存在必要。
+ok('舊 inTxn/_safeRollback 脆弱機制已移除', !db.includes('let inTxn = false') && !db.includes('_safeRollback'));
+ok('交易失敗由 Rust 端收尾（ROLLBACK in lib.rs）', src('src-tauri/src/lib.rs').includes('ROLLBACK'));
 
 console.log('== BUG4 OCR 撇號 ==');
 const st = src('src/lib/store.js');

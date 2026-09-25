@@ -220,7 +220,24 @@ let _writeFailStreak = 0;   // DB-RES1: 連續失敗次數（顯性化供診斷�
 export function getWriteFailStreak() { return _writeFailStreak; }
 /** DB-RES1: 僅供 harness 驗證重試策略（純函式，不碰 DB） */
 export const __test = { retryBusy: _retryBusy, isBusy: _isBusy, busyTries: _BUSY_TRIES };
-async function _safeRollback(d) { try { await d.execute('ROLLBACK'); } catch (_) {} }
+// ─── DB-TX1: 交易一律交給 Rust 在單一連線上執行 ────────────────
+// plugin-sql 的 execute 走 sqlx Pool（max_connections=10）→ 多次 execute 不保證同一條連線
+// → JS 側 BEGIN/COMMIT 會懸置交易、握死寫鎖（實測鎖死 2 小時 11 分）。
+// 故所有交易都改成：組好語句清單 → 一次丟給 Rust 的 sql_tx（單連線 + BEGIN IMMEDIATE）。
+/** 執行一批語句的真交易；任何一句失敗 → 整批回滾。 */
+const _tx = async (statements) => {
+  const { sqlTx } = await import('./api.js');
+  return sqlTx(statements);
+};
+/** 表存在探測：極舊庫可能缺 word_images / edits →
+ *  對不存在的表下 DELETE 會讓**整批交易**失敗，故先探測再決定要不要放那句
+ *  （保住原程式 try/catch 吞掉的容忍語意）。 */
+const _tableExists = async (name) => {
+  try {
+    const r = await requireDB().select("SELECT name FROM sqlite_master WHERE type='table' AND name = $1", [name]);
+    return r.length > 0;
+  } catch (_) { return false; }
+};
 
 // ─── Words ─────────────────────────────────────
 
@@ -257,20 +274,10 @@ export async function getWordCount() {
   return rows[0]?.count ?? 0;
 }
 
-export async function saveWord(word) {
-  // LOGFIX1: 單寫入走排隊＋重試
-  return _write(() => _saveWordRaw(requireDB(), word));
-}
-
-/** DB-RES1: 交易內用的原始寫入 —— **不走佇列**（由外層交易統管順序與連線）。
- *  為何要抽出來：交易內若呼叫走佇列的 saveWord，會
- *    (a) 被其他排隊寫入插隊（交易中間被打斷）
- *    (b) 語句被 plugin-sql 的 pool 分派到另一條連線 → 交易形同失效、原連線的交易懸置握鎖
- *    (c) 若外層也包 _write 則內層等的 chain 包含外層 → 自我死鎖
- *  SQL／參數逐字從原 saveWord 搬入，不改語意。 */
-async function _saveWordRaw(d, word) {
-  return d.execute(
-    `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
+/** DB-TX1: words 的 upsert SQL 與參數 —— **單一來源**（單筆寫入與 sql_tx 批次共用）。
+ *  佔位符維持 `$1..$20`：rusqlite 亦接受此語法
+ *  （釘在 src-tauri 的 sql_tx_tests::binds_dollar_numbered_placeholders）。 */
+const WORD_UPSERT_SQL = `INSERT INTO words (id, word, definition, part_of_speech, pronunciation, example, deck, tags, image, description, related, forms, synonym, antonym, derivative, examples, etymology, syllables, phrases, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      ON CONFLICT(id) DO UPDATE SET
       word=excluded.word, definition=excluded.definition,
@@ -280,48 +287,42 @@ async function _saveWordRaw(d, word) {
       related=excluded.related, forms=excluded.forms,
       synonym=excluded.synonym, antonym=excluded.antonym,
       derivative=excluded.derivative, examples=excluded.examples,
-      etymology=excluded.etymology, syllables=excluded.syllables, phrases=excluded.phrases`,
-    [   // E2: ON CONFLICT 不加 created_at — 編輯/改標籤不重置建立時間
-      word.id,
-      word.word || '',
-      word.definition || '',
-      word.pos || '',
-      word.pron || '',
-      word.example || '',
-      word.deck || 'Default',
-      JSON.stringify(word.tags || []),
-      word.image || '',
-      word.description || '',
-      JSON.stringify(word.related || []),
-      JSON.stringify(word.forms || []),
-      word.synonym || '',
-      word.antonym || '',
-      word.derivative || '',
-      JSON.stringify(word.examples || []),
-      word.etymology || '',
-      word.syllables || '',
-      word.phrases || '',
-      word.createdAt ?? new Date().toISOString(),   // E2: created_at ISO 帶 Z
-    ]
-  );
+      etymology=excluded.etymology, syllables=excluded.syllables, phrases=excluded.phrases`;
+/** 參數順序必須與 WORD_UPSERT_SQL 的 $1..$20 一致 */
+function wordUpsertParams(word) {
+  return [
+    word.id,
+    word.word || '',
+    word.definition || '',
+    word.pos || '',
+    word.pron || '',
+    word.example || '',
+    word.deck || 'Default',
+    JSON.stringify(word.tags || []),
+    word.image || '',
+    word.description || '',
+    JSON.stringify(word.related || []),
+    JSON.stringify(word.forms || []),
+    word.synonym || '',
+    word.antonym || '',
+    word.derivative || '',
+    JSON.stringify(word.examples || []),
+    word.etymology || '',
+    word.syllables || '',
+    word.phrases || '',
+    word.createdAt ?? new Date().toISOString(),   // E2: created_at ISO 帶 Z
+  ];
+}
+/** 單筆寫入（走佇列＋重試） */
+export async function saveWord(word) {
+  // LOGFIX1: 單寫入走排隊＋重試
+  return _write(() => requireDB().execute(WORD_UPSERT_SQL, wordUpsertParams(word)));
 }
 
-// G18: 批次存多個 words 於單一事務（tag 改動/批次編輯用 — 避免萬級詞庫逐詞 round-trip）
-// DB-RES1: (a) 納入 _write 佇列（不再與其他寫入併發）
-//          (b) BEGIN IMMEDIATE＝開頭就取寫鎖 → 從根上避開 517（讀快照過期無法升級）
-//          (c) 內層改走 _saveWordRaw → 不被佇列插隊、語句留在同一條連線
+// G18: 批次存多個 words（tag 改動/批次編輯用 — 避免萬級詞庫逐詞 round-trip）
+// DB-TX1: 整批交給 Rust 的 sql_tx（單連線 + BEGIN IMMEDIATE），JS 端不再自己組交易。
 export async function saveWordsInTx(words) {
-  return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');
-    try {
-      for (const w of words) await _saveWordRaw(d, w);
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
-    }
-  });
+  return _write(() => _tx(words.map(w => ({ sql: WORD_UPSERT_SQL, params: wordUpsertParams(w) }))));
 }
 
 // ─── Word images (IMG1 — lazy-loaded, base64 data URL in DB) ─────
@@ -438,49 +439,35 @@ export async function deleteWordImagesForWord(wordId) {
 }
 
 export async function deleteWord(id) {
-  // LOGFIX1: inTxn 旗標——BEGIN 若因 locked 炸，catch 不可再 ROLLBACK（原報 cannot rollback - no transaction is active 洗版）；整筆走排隊＋重試
+  // DB-TX1: 整批走 Rust 單連線交易。
+  // D14: 先取 word 文字（exam_history.word 存單字文字非 id，需其刪孤兒測驗紀錄）——
+  //      這個 SELECT 刻意留在交易外：交易內先讀後寫正是 517 的來源。
   return _write(async () => {
-    const d = requireDB();
-    let inTxn = false;
-    try {
-      await d.execute('BEGIN IMMEDIATE');   // DB-RES1: IMMEDIATE 取寫鎖，避開 517
-      inTxn = true;
-    // D14: 先取 word 文字（exam_history.word 存單字文字非 id，需其刪孤兒測驗紀錄）
-    const wr = await d.select('SELECT word FROM words WHERE id = $1', [id]);
+    const wr = await requireDB().select('SELECT word FROM words WHERE id = $1', [id]);
     const wordText = wr[0]?.word;
-    await d.execute('DELETE FROM cards WHERE word_id = $1', [id]);
-    await d.execute('DELETE FROM review_log WHERE word_id = $1', [id]);   // D14: 清孤兒複習紀錄
+    const stmts = [
+      { sql: 'DELETE FROM cards WHERE word_id = $1', params: [id] },
+      { sql: 'DELETE FROM review_log WHERE word_id = $1', params: [id] },   // D14: 清孤兒複習紀錄
+    ];
     // IMG1: 刪字連刪圖（FK off 實錘，CASCADE 不生效——R2 席裁決落 db 層事務）
-    try { await d.execute('DELETE FROM word_images WHERE word_id = $1', [id]); } catch (_) {}
-    await d.execute('DELETE FROM exam_history WHERE word = $1', [String(id)]);  // D20-SR1: B4 後之 word_id 世代
-    if (wordText) await d.execute('DELETE FROM exam_history WHERE word = $1', [wordText]);  // D14: B4 前 legacy 文字世代(存文字)
-    await d.execute('DELETE FROM words WHERE id = $1', [id]);
-    await d.execute('COMMIT');
-    inTxn = false;
-  } catch (e) {
-    if (inTxn) await _safeRollback(d);
-    throw e;
-  }
+    if (await _tableExists('word_images')) stmts.push({ sql: 'DELETE FROM word_images WHERE word_id = $1', params: [id] });
+    stmts.push({ sql: 'DELETE FROM exam_history WHERE word = $1', params: [String(id)] });   // D20-SR1: B4 後之 word_id 世代
+    if (wordText) stmts.push({ sql: 'DELETE FROM exam_history WHERE word = $1', params: [wordText] });   // D14: B4 前 legacy 文字世代
+    stmts.push({ sql: 'DELETE FROM words WHERE id = $1', params: [id] });
+    return _tx(stmts);
   });
 }
 
 export async function bulkSaveWords(words) {
+  // DB-TX1: 整表覆寫走 Rust 單連線交易
   return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');   // DB-RES1: 開頭取寫鎖，避開 517
-    try {
-      await d.execute('DELETE FROM words');
-      // IMG1: 整表覆寫前清圖（words 刪光 → word_images 全為孤兒；R2 席裁決落 db 層）
-      try { await d.execute('DELETE FROM word_images'); } catch (_) {}
-      for (const w of words) await _saveWordRaw(d, w);   // DB-RES1: raw → 不插隊、同連線
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
-    }
-    // DB-RES1: addAudit 移出交易。原版在 try 內、COMMIT 之後 → 它若失敗會被 catch 抓去 ROLLBACK，
-    // 但交易早已 COMMIT → 「cannot rollback - no transaction is active」，且掩蓋真正的原因。
+    const stmts = [{ sql: 'DELETE FROM words' }];
+    if (await _tableExists('word_images')) stmts.push({ sql: 'DELETE FROM word_images' });
+    for (const w of words) stmts.push({ sql: WORD_UPSERT_SQL, params: wordUpsertParams(w) });
+    const n = await _tx(stmts);
+    // addAudit 在交易外：原版放在 try 內、COMMIT 之後，失敗時會對已 COMMIT 的交易再 ROLLBACK
     try { await addAudit('import-words', `匯入 ${words.length} 詞 (整表覆寫)`); } catch (_) {}
+    return n;
   });
 }
 
@@ -539,15 +526,8 @@ export async function getCard(wordId) {
   };
 }
 
-export async function saveCard(wordId, card) {
-  // LOGFIX1: 評分寫入是 locked 重災區（舊 log rateCard saveCard 連炸），走排隊＋重試
-  return _write(() => _saveCardRaw(requireDB(), wordId, card));
-}
-
-/** DB-RES1: 交易內用的原始評分寫入 —— 不走佇列（理由同 _saveWordRaw）。SQL／參數逐字搬運。 */
-async function _saveCardRaw(d, wordId, card) {
-  return d.execute(
-    `INSERT INTO cards (word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data)
+/** DB-TX1: cards 的 upsert SQL 與參數 —— 單一來源（單筆與 sql_tx 批次共用）。 */
+const CARD_UPSERT_SQL = `INSERT INTO cards (word_id, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, step, last_review, buried, suspended, mc_data, spell_data)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT(word_id) DO UPDATE SET
        due=excluded.due, stability=excluded.stability, difficulty=excluded.difficulty,
@@ -555,39 +535,38 @@ async function _saveCardRaw(d, wordId, card) {
        reps=excluded.reps, lapses=excluded.lapses, state=excluded.state,
        step=excluded.step, last_review=excluded.last_review,
        buried=excluded.buried, suspended=excluded.suspended,
-       mc_data=excluded.mc_data, spell_data=excluded.spell_data`,
-    [
-      wordId,
-      card.due ?? new Date().toISOString(),
-      card.stability ?? 2.5,
-      card.difficulty ?? 5,
-      card.elapsedDays ?? 0,
-      card.scheduledDays ?? 0,
-      card.reps ?? 0,
-      card.lapses ?? 0,
-      card.state ?? 0,
-      card.step ?? 0,
-      card.lastReview ?? null,
-      card.buried ? 1 : 0,
-      card.suspended ? 1 : 0,
-      card.mcData ? JSON.stringify(card.mcData) : null,
-      card.spellData ? JSON.stringify(card.spellData) : null,
-    ]
-  );
+       mc_data=excluded.mc_data, spell_data=excluded.spell_data`;
+/** 參數順序必須與 CARD_UPSERT_SQL 的 $1..$15 一致 */
+function cardUpsertParams(wordId, card) {
+  return [
+    wordId,
+    card.due ?? new Date().toISOString(),
+    card.stability ?? 2.5,
+    card.difficulty ?? 5,
+    card.elapsedDays ?? 0,
+    card.scheduledDays ?? 0,
+    card.reps ?? 0,
+    card.lapses ?? 0,
+    card.state ?? 0,
+    card.step ?? 0,
+    card.lastReview ?? null,
+    card.buried ? 1 : 0,
+    card.suspended ? 1 : 0,
+    card.mcData ? JSON.stringify(card.mcData) : null,
+    card.spellData ? JSON.stringify(card.spellData) : null,
+  ];
+}
+/** 單筆評分寫入（走佇列＋重試） */
+export async function saveCard(wordId, card) {
+  // LOGFIX1: 評分寫入是 locked 重災區（舊 log rateCard saveCard 連炸），走排隊＋重試
+  return _write(() => requireDB().execute(CARD_UPSERT_SQL, cardUpsertParams(wordId, card)));
 }
 
 export async function bulkSaveCards(cards) {
-  return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');   // DB-RES1
-    try {
-      for (const [wordId, card] of cards) await _saveCardRaw(d, wordId, card);   // DB-RES1: raw
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
-    }
-  });
+  // DB-TX1: 走 Rust 單連線交易
+  return _write(() => _tx(
+    cards.map(([wordId, card]) => ({ sql: CARD_UPSERT_SQL, params: cardUpsertParams(wordId, card) }))
+  ));
 }
 
 // ─── Decks ─────────────────────────────────────
@@ -611,23 +590,22 @@ export async function deleteDeck(id) {
 }
 
 export async function deleteWordsByDeck(deckName) {
+  // DB-TX1: 走 Rust 單連線交易
   return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');   // DB-RES1
-    try {
-      // IMG1: 刪字本連刪圖（words DELETE 之前——IN 子查詢需 words 還在；R2 席裁決）
-      try { await d.execute('DELETE FROM word_images WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', [deckName]); } catch (_) {}
-      await d.execute('DELETE FROM review_log WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', [deckName]);
-      // D20-SR1: exam_history.word 雙世代（B4 後 word_id／B4 前 legacy 文字）兩族皆刪（對齊 CLI cmdDeleteDeck）
-      await d.execute('DELETE FROM exam_history WHERE word IN (SELECT id FROM words WHERE deck = $1)', [deckName]);   // B4 後 id 世代
-      await d.execute('DELETE FROM exam_history WHERE word IN (SELECT word FROM words WHERE deck = $1)', [deckName]);  // B4 前 legacy 文字世代
-      await d.execute('DELETE FROM cards WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', [deckName]);
-      await d.execute('DELETE FROM words WHERE deck = $1', [deckName]);
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
+    const stmts = [];
+    // IMG1: 刪字本連刪圖（words DELETE 之前——IN 子查詢需 words 還在；R2 席裁決）
+    if (await _tableExists('word_images')) {
+      stmts.push({ sql: 'DELETE FROM word_images WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', params: [deckName] });
     }
+    stmts.push(
+      { sql: 'DELETE FROM review_log WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', params: [deckName] },
+      // D20-SR1: exam_history.word 雙世代（B4 後 word_id／B4 前 legacy 文字）兩族皆刪（對齊 CLI cmdDeleteDeck）
+      { sql: 'DELETE FROM exam_history WHERE word IN (SELECT id FROM words WHERE deck = $1)', params: [deckName] },   // B4 後 id 世代
+      { sql: 'DELETE FROM exam_history WHERE word IN (SELECT word FROM words WHERE deck = $1)', params: [deckName] },  // B4 前 legacy 文字世代
+      { sql: 'DELETE FROM cards WHERE word_id IN (SELECT id FROM words WHERE deck = $1)', params: [deckName] },
+      { sql: 'DELETE FROM words WHERE deck = $1', params: [deckName] },
+    );
+    return _tx(stmts);
   });
 }
 
@@ -641,22 +619,16 @@ export async function getAllFolders() {
 }
 
 export async function saveFolders(folders) {
-  return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');   // DB-RES1
-    try {
-      await d.execute('DELETE FROM folders');
-      for (const [name, deckIds] of Object.entries(folders)) {
-        await d.execute(
-          'INSERT INTO folders (name, decks) VALUES ($1, $2) ON CONFLICT(name) DO UPDATE SET decks=excluded.decks',
-          [name, JSON.stringify(deckIds)]
-        );
-      }
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
+  // DB-TX1: 走 Rust 單連線交易
+  return _write(() => {
+    const stmts = [{ sql: 'DELETE FROM folders' }];
+    for (const [name, deckIds] of Object.entries(folders)) {
+      stmts.push({
+        sql: 'INSERT INTO folders (name, decks) VALUES ($1, $2) ON CONFLICT(name) DO UPDATE SET decks=excluded.decks',
+        params: [name, JSON.stringify(deckIds)],
+      });
     }
+    return _tx(stmts);
   });
 }
 
@@ -676,22 +648,16 @@ export async function getAllAdditions() {
 }
 
 export async function bulkSaveAdditions(additions) {
-  return _write(async () => {
-    const d = requireDB();
-    await d.execute('BEGIN IMMEDIATE');   // DB-RES1
-    try {
-      await d.execute('DELETE FROM additions');
-      for (const a of additions) {
-        await d.execute(
-          'INSERT INTO additions (word, definition, part_of_speech, pronunciation, examples, deck) VALUES ($1, $2, $3, $4, $5, $6)',
-          [a.word, a.definition || '', a.pos || '', a.pron || '', JSON.stringify(a.examples || []), a.deck || 'Default']
-        );
-      }
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
+  // DB-TX1: 走 Rust 單連線交易
+  return _write(() => {
+    const stmts = [{ sql: 'DELETE FROM additions' }];
+    for (const a of additions) {
+      stmts.push({
+        sql: 'INSERT INTO additions (word, definition, part_of_speech, pronunciation, examples, deck) VALUES ($1, $2, $3, $4, $5, $6)',
+        params: [a.word, a.definition || '', a.pos || '', a.pron || '', JSON.stringify(a.examples || []), a.deck || 'Default'],
+      });
     }
+    return _tx(stmts);
   });
 }
 
@@ -935,31 +901,22 @@ export async function executeSQL(sql, params = []) {
 }
 
 export async function clearAll() {
-  // DB-RES1: 破壞性操作，納入 _write；IMMEDIATE 取寫鎖；addAudit 移出交易
+  // DB-TX1: 破壞性操作，整批走 Rust 單連線交易；addAudit 留在交易外
   return _write(async () => {
-    const d = requireDB();
-    try {
-      await d.execute('BEGIN IMMEDIATE');
-      await d.execute('DELETE FROM words');
-      // IMG1: 重設清單補 word_images（R2 席抓的第 12 表——漏了會孤兒常駐）
-      try { await d.execute('DELETE FROM word_images'); } catch (_) {}
-      await d.execute('DELETE FROM cards');
-      await d.execute('DELETE FROM decks');
-      await d.execute('DELETE FROM folders');
-      await d.execute('DELETE FROM additions');
-      await d.execute('DELETE FROM review_log');
-      await d.execute('DELETE FROM exam_history');
-      await d.execute('DELETE FROM goal_streak');
-      await d.execute('DELETE FROM filtered_decks');
-      try { await d.execute('DELETE FROM edits'); } catch (_) {}
-      await d.execute('DELETE FROM settings');
-      await d.execute('COMMIT');
-    } catch (e) {
-      await _safeRollback(d);
-      throw e;
-    }
-    // 審計記錄保留 (不隨 clearAll 刪除), 讓「重設」這件事留痕（移出交易，避免 COMMIT 後被 ROLLBACK）
+    const stmts = [{ sql: 'DELETE FROM words' }];
+    // IMG1: 重設清單補 word_images（R2 席抓的第 12 表——漏了會孤兒常駐）
+    if (await _tableExists('word_images')) stmts.push({ sql: 'DELETE FROM word_images' });
+    stmts.push(
+      { sql: 'DELETE FROM cards' }, { sql: 'DELETE FROM decks' }, { sql: 'DELETE FROM folders' },
+      { sql: 'DELETE FROM additions' }, { sql: 'DELETE FROM review_log' }, { sql: 'DELETE FROM exam_history' },
+      { sql: 'DELETE FROM goal_streak' }, { sql: 'DELETE FROM filtered_decks' },
+    );
+    if (await _tableExists('edits')) stmts.push({ sql: 'DELETE FROM edits' });
+    stmts.push({ sql: 'DELETE FROM settings' });
+    const n = await _tx(stmts);
+    // 審計記錄保留 (不隨 clearAll 刪除), 讓「重設」這件事留痕（在交易外，避免 COMMIT 後被 ROLLBACK）
     try { await addAudit('reset-all', '所有資料已清除'); } catch (_) {}
+    return n;
   });
 }
 
