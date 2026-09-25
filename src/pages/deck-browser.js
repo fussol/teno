@@ -15,19 +15,8 @@ import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capLis
 // 字本瀏覽顯示上限（可調＋記憶：與 browser.js 共享 db settings.browserDisplayLimit）
 let _displayLimit = DISPLAY_LIMIT_DEFAULT;
 
-// 自動填入來源鏈（四 modal 共用；與 browser.js 同步：merriam 預設第二順位）
-// 舊存檔只有四步時 _normalizeAutoChain 把缺的 merriam 補到 llm 之前
-const AUTO_FILL_LABELS = { cambridge: 'Cambridge', merriam: '韋氏字典', 'dict-api': '字典API', tatoeba: 'Tatoeba', llm: 'LLM' };
-const AUTO_FILL_DEFAULT = ['cambridge', 'merriam', 'dict-api', 'tatoeba', 'llm'];
-const _KNOWN_AUTO_SRC = new Set(AUTO_FILL_DEFAULT);
-const _normalizeAutoChain = (arr) => {
-  const kept = (arr || []).map(s => String(s || '').trim()).filter(s => _KNOWN_AUTO_SRC.has(s));
-  if (!kept.includes('merriam')) {
-    const li = kept.indexOf('llm');
-    if (li === -1) kept.push('merriam'); else kept.splice(li, 0, 'merriam');
-  }
-  return kept.length ? kept : [...AUTO_FILL_DEFAULT];
-};
+// AUTOFILL3: 移除自動填入來源鏈（AUTO_FILL_LABELS/DEFAULT/_KNOWN_AUTO_SRC/_normalizeAutoChain）。
+// 自動填入改吃「設定 → 自動補齊（組合包）」的逐欄來源，四 modal 共用 lib/autofill-run.js。
 
 let _deckName = null;
 let _query = '';
@@ -602,10 +591,9 @@ function openAddModal(s) {
           </div>
         </div>
         <div class="form-group" style="border-top:1px solid var(--border);padding-top:var(--s2);margin-top:var(--s2)">
-          <label class="form-label">自動填入順序 <span style="font-size:11px;color:var(--text-tertiary)">（點 chip 往後移）</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:var(--s2)" id="deckAddAutoOrderChips"></div>
-          <div style="display:flex;gap:var(--s2);align-items:center">
+          <div style="display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
             <button class="btn" id="deckAddAutoFill">${icon('search')} 自動填入</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">依「設定 → 自動補齊」的逐欄來源</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -765,38 +753,7 @@ function openAddModal(s) {
     chip.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
   });
 
-  // ── Auto-fill chain ───
-  // G19/G20：db.js export 的是裸函式（無 db namespace）→ 原寫 .db.getSetting 恆拋
-  // TypeError 被 catch 吞掉＝autoFillOrder 永遠存不進/讀不到（存取路徑全啞）。
-  // G20：寫入分隔符統一 '|'（canonical，與 CLI join('|') 對齊；GUI 讀端 split(/[,|;]/) 已容忍）。
-  let autoFillChain = [...AUTO_FILL_DEFAULT];
-  (async () => {
-    try {
-      const { getSetting } = await import('../lib/db.js');
-      const saved = await getSetting('autoFillOrder');
-      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) autoFillChain = _normalizeAutoChain(arr); }
-      _renderAutoOrderChips();
-    } catch (_) {}
-  })();
-  const getChain = () => autoFillChain;
-  const _renderAutoOrderChips = () => {
-    const el = document.getElementById('deckAddAutoOrderChips');
-    if (!el) return;
-    el.innerHTML = autoFillChain.map((s, i) =>
-      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${i + 1}. ${AUTO_FILL_LABELS[s] || s} ›</span>`
-    ).join('');
-    el.querySelectorAll('.auto-order-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const idx = parseInt(chip.dataset.idx, 10);
-        if (idx < autoFillChain.length - 1) {
-          [autoFillChain[idx], autoFillChain[idx + 1]] = [autoFillChain[idx + 1], autoFillChain[idx]];
-          _renderAutoOrderChips();
-          (async () => { try { const { setSetting } = await import('../lib/db.js'); await setSetting('autoFillOrder', autoFillChain.join('|')); } catch (_) {} })();
-        }
-      });
-    });
-  };
-  _renderAutoOrderChips();
+  // AUTOFILL3: 移除自動填入順序 chip（改吃「設定 → 自動補齊」逐欄來源）
 
   // 新增器連續輸入：最後一欄 Enter 觸發的儲存，存完直接開下一筆（點新增鈕則照舊關閉）
   let _addEnterChain = false;
@@ -886,117 +843,66 @@ function openAddModal(s) {
     else if (id === 'deckAddExampleAppend') { if (val) deckExChips.setVal(mergeExamplePhrases(deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '', val)); }
     else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
   };
+  // ── AUTOFILL3：自動填入改吃「設定 → 自動補齊（組合包）」逐欄來源 ──
+  // 語意等價：舊鏈每個 setter 只寫仍為空的欄位 → 實質＝逐欄由鏈上第一個提供者勝出
+  const ADD_CHIP_FIELDS = {
+    deckAddDef: 'deckAddDefChips', deckAddExample: 'deckAddExChips', deckAddRelated: 'deckAddRelatedChips',
+    deckAddForms: 'deckAddFormsChips', deckAddSynonym: 'deckAddSynonymChips',
+    deckAddAntonym: 'deckAddAntonymChips', deckAddDerivative: 'deckAddDerivativeChips',
+  };
+  /** 強制寫入（覆寫語意已由引擎判定：patch 有值＝該寫） */
+  const fSetForce = (id, val) => {
+    if (!val) return;
+    const host = ADD_CHIP_FIELDS[id] ? document.getElementById(ADD_CHIP_FIELDS[id]) : null;
+    if (host && host._tagInputApi) { host._tagInputApi.setVal(val); return; }
+    const e = document.getElementById(id); if (e) e.value = val;
+  };
+  const _splitListAdd = (v) => String(v || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  /** 表單現值 → 引擎 existing（欄位契約同 deckAddSave：related/forms 陣列、其餘字串） */
+  const _addExisting = () => ({
+    pos: _getPosVal(),
+    definition: deckDefChips.getVal() || document.getElementById('deckAddDef')?.value.trim() || '',
+    example: deckExChips.getVal() || document.getElementById('deckAddExample')?.value.trim() || '',
+    phrases: '',
+    pron: document.getElementById('deckAddPron')?.value.trim() || '',
+    related: _splitListAdd(deckRelChips.getVal()),
+    forms: _splitListAdd(deckFormsChips.getVal()),
+    synonym: deckSynChips.getVal(),
+    antonym: deckAntChips.getVal(),
+    derivative: deckDerivChips.getVal(),
+    etymology: document.getElementById('deckAddEtymology')?.value.trim() || '',
+    syllables: document.getElementById('deckAddSyllables')?.value.trim() || '',
+  });
+  /** 引擎 patch → 表單（patch.example 已含片語） */
+  const _applyAddPatch = (p) => {
+    if (!p) return;
+    if (p.pos) _selectPosChips(_normalizePos(p.pos));
+    if (p.definition) fSetForce('deckAddDef', p.definition);
+    if (p.pron) fSetForce('deckAddPron', p.pron);
+    if (p.related?.length) fSetForce('deckAddRelated', p.related.join(', '));
+    if (p.forms?.length) fSetForce('deckAddForms', p.forms.join(', '));
+    if (p.synonym) fSetForce('deckAddSynonym', p.synonym);
+    if (p.antonym) fSetForce('deckAddAntonym', p.antonym);
+    if (p.derivative) fSetForce('deckAddDerivative', p.derivative);
+    if (p.etymology) fSetForce('deckAddEtymology', p.etymology);
+    if (p.syllables) fSetForce('deckAddSyllables', p.syllables);
+    if (p.example) fSetForce('deckAddExample', p.example);
+  };
   const autoFillAll = async () => {
     const w = document.getElementById('deckAddWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('deckAddAutoFill');
     if (btn) btn.disabled = true;
-    const g = fGet, s = fSet;
-    const chain = getChain();
-    let cambridgeFailed = false;
-    for (const src of chain) {
-      if (src === 'cambridge') {
-        try {
-          const json = await lookupCambridge(w, 'zh');
-          const d = JSON.parse(json);
-          s('deckAddWord', d.word);
-          s('deckAddPron', d.uk_ipa || d.us_ipa);
-          if (d.senses?.length) {
-            const hasZh = 'translation' in d.senses[0];
-            const defs = [...new Set(d.senses.map(s => (hasZh ? s.translation : s.definition)).filter(Boolean))].map(d => d.replace(/;/g, ','));
-            const pos = [...new Set(d.senses.flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim())).filter(Boolean))];
-            s('deckAddDef', defs.join(', '));
-            _selectPosChips(_normalizePos(pos.join(', ')));
-            const exs = [...new Set(d.senses.flatMap(s => (s.examples || []).map(ex => hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english))).filter(Boolean))];
-            if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
-          }
-        } catch (e) { cambridgeFailed = true; }
-      } else if (src === 'merriam') {
-        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
-        try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {}
-      } else if (src === 'dict-api') {
-        try {
-          // DICTAPI-TIMEOUT1：公網已死，10s 斷尾（同引擎；catch 靜默跳過不擋鏈）
-          const ctl = new AbortController();
-          const timer = setTimeout(() => ctl.abort(), 10000);
-          try {
-            const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
-            if (r.ok) {
-              const exs = (await r.json()).flatMap(e =>
-                (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean))
-              );
-              if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
-            }
-          } finally { clearTimeout(timer); }
-        } catch (e) {}
-      } else if (src === 'tatoeba') {
-        try {
-          // TATOEBA-SORT1：必帶 sort（同引擎；無則 400）
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
-          if (r.ok) {
-            const exs = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
-            if (exs.length && !g('deckAddExample')) s('deckAddExample', exs.join('\n'));
-          }
-        } catch (e) {}
-      } else if (src === 'llm') {
-        if (!g('deckAddDef') || !g('deckAddPos') || !g('deckAddPron') || !g('deckAddExample') || !g('deckAddRelated') || !g('deckAddForms') || !g('deckAddEtymology')) {
-          try {
-            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
-            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
-            const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
-            const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
-            if (models.length) {
-              const model = models[0];
-              if (!g('deckAddDef')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `用繁體中文列出「${w}」的定義。多個定義用「、」分隔。只回傳定義，不要其他內容。`
-                );
-                if (t) s('deckAddDef', t.trim().replace(/、/g, ', '));
-              }
-              if (!g('deckAddPos')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `What is/are the part(s) of speech of "${w}"? Return comma-separated English labels only (e.g. noun, verb, adjective).`
-                );
-                if (t) _selectPosChips(_normalizePos(t.trim()));
-              }
-              if (!g('deckAddExample')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model,
-                  `Generate a short English example sentence using "${w}". Return ONLY the sentence, nothing else.`
-                );
-                if (t) s('deckAddExample', t.trim());
-              }
-              await Promise.all([
-                llmFillRelated('deckAddRelated', w),
-                llmFillForms('deckAddForms', w),
-                llmFillSynAntDeriv('deckAdd', w),
-                (async () => {
-                  // 字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝；音節只吃韋氏）
-                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
-                  const mdl = store.state.ollamaModel || (models[0] || 'qwen2.5-coder:7b');
-                  if (!g('deckAddEtymology')) {
-                    try {
-                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
-                      if (t) s('deckAddEtymology', t.trim());
-                    } catch (_) {}
-                  }
-                  // 片語已併入例句：LLM 片語去重接續進例句（韋氏鏈步驟有 key 時走韋氏，此處不搶）
-                  try {
-                    const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                      `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
-                    if (t) s('deckAddExampleAppend', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
-                  } catch (_) {}
-                })()
-              ]);
-            }
-          } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
-        }
-      }
+    try {
+      const { comboAutoFill } = await import('../lib/autofill-run.js');
+      const r = await comboAutoFill(w, _addExisting());
+      if (r.aborted) { toast('查詢中止（額度或來源問題）', 'toast-error'); return; }
+      _applyAddPatch(r.patch);
+    } catch (e) {
+      toast('自動填入失敗，請確認 Ollama 有開', 'toast-error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
-    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
-    if (!chain.includes('merriam')) { try { await mwFillExtra('deckAdd', s, g, w); } catch (_) {} }
-    if (btn) btn.disabled = false;
     _lastAutoFilled = w;
   };
   document.getElementById('deckAddAutoFill')?.addEventListener('click', autoFillAll);
@@ -1037,30 +943,13 @@ function openAddModal(s) {
   document.getElementById('deckAddFillExample')?.addEventListener('click', async () => {
     const w = document.getElementById('deckAddWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
-    const chain = getChain();
-    for (const src of chain) {
-      let ex = '';
-      try {
-        if (src === 'merriam') {
-          // ENGINE3: 韋氏片語候選走引擎（phrase 併例句；引擎以 chips 現值去重，取首句未收錄者＝同舊 find 語意）
-          const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
-          if (dk || tk) {
-            const cur = deckExChips.getVal() || '';
-            const r = await _engineMw(w, { phrase: 'merriam' }, { example: cur, phrases: '' });
-            if (r.patch?.example) {
-              const have = new Set(cur.split('\n').map(x => x.trim()).filter(Boolean));
-              ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean).find(x => !have.has(x)) || '';
-            }
-          }
-        } else if (src === 'cambridge' || src === 'dict-api' || src === 'tatoeba') {
-          // ENGINE3: 其餘來源走引擎 example 單句模式（空底全取候選、取首句照收；同舊無去重語意）
-          // deck 例句鈕舊程式本無 llm 路，chain 雖含 llm 此處照舊略過
-          const r = await _engineMw(w, { example: src }, { example: '' });
-          if (r.patch?.example) ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
-        }
-      } catch (_) {}
-      if (ex) { deckExChips.append(ex); break; }
-    }
+    // AUTOFILL3: 例句來源吃「設定 → 自動補齊」（共用執行器；不再 iterate chip 排序鏈）
+    // 去重語意與 browser.js 例句鈕一致（該鈕本就去重；舊 deck 版非韋氏來源不去重會重複塞同句）
+    const { comboExampleCandidate } = await import('../lib/autofill-run.js');
+    const { cands } = await comboExampleCandidate(w);
+    const have = new Set((deckExChips.getVal() || '').split('\n').map(x => x.trim()).filter(Boolean));
+    const fresh = cands.map(x => x.trim()).filter(Boolean).find(x => !have.has(x));
+    if (fresh) deckExChips.append(fresh);
   });
 }
 
@@ -1172,10 +1061,9 @@ function openEditModal(s, id) {
           </div>
         </div>
         <div class="form-group" style="border-top:1px solid var(--border);padding-top:var(--s2);margin-top:var(--s2)">
-          <label class="form-label">自動填入順序 <span style="font-size:11px;color:var(--text-tertiary)">（點 chip 往後移）</span></label>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:var(--s2)" id="deckEditAutoOrderChips"></div>
-          <div style="display:flex;gap:var(--s2);align-items:center">
+          <div style="display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
             <button class="btn" id="deckEditAutoFill">${icon('search')} 自動填入</button>
+            <span style="font-size:11px;color:var(--text-tertiary)">依「設定 → 自動補齊」的逐欄來源</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -1325,34 +1213,7 @@ function openEditModal(s, id) {
     chip.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
   });
 
-  // ── Auto-fill ───
-  let editAutoFillChain = [...AUTO_FILL_DEFAULT];
-  (async () => {
-    try {
-      const { getSetting } = await import('../lib/db.js');
-      const saved = await getSetting('autoFillOrder');
-      if (saved) { const arr = saved.split(/[,|;]/).map(s => s.trim()).filter(Boolean); if (arr.length) editAutoFillChain = _normalizeAutoChain(arr); }
-      _renderEditAutoOrderChips();
-    } catch (_) {}
-  })();
-  const _renderEditAutoOrderChips = () => {
-    const el = document.getElementById('deckEditAutoOrderChips');
-    if (!el) return;
-    el.innerHTML = editAutoFillChain.map((s, i) =>
-      `<span class="auto-order-chip" data-idx="${i}" style="cursor:pointer;padding:2px 10px;border-radius:100px;font-size:12px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-secondary);transition:background-color .15s,border-color .15s,color .15s">${i + 1}. ${AUTO_FILL_LABELS[s] || s} ›</span>`
-    ).join('');
-    el.querySelectorAll('.auto-order-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const idx = parseInt(chip.dataset.idx, 10);
-        if (idx < editAutoFillChain.length - 1) {
-          [editAutoFillChain[idx], editAutoFillChain[idx + 1]] = [editAutoFillChain[idx + 1], editAutoFillChain[idx]];
-          _renderEditAutoOrderChips();
-          (async () => { try { const { setSetting } = await import('../lib/db.js'); await setSetting('autoFillOrder', editAutoFillChain.join('|')); } catch (_) {} })();
-        }
-      });
-    });
-  };
-  _renderEditAutoOrderChips();
+  // AUTOFILL3: 移除 edit modal 的自動填入順序 chip（改吃「設定 → 自動補齊」逐欄來源）
 
   let _editLastAutoFilled = '';
   // ENGINE3: g/s 提升 modal 層（editAutoFillAll＋音節字源鈕共用；fGet/fSet 避開 modal 參數 s）
@@ -1370,108 +1231,65 @@ function openEditModal(s, id) {
     else if (id === 'deckEditExampleAppend') { if (val) editExChips.setVal(mergeExamplePhrases(editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '', val)); }
     else { const e = document.getElementById(id); if (e && !e.value.trim()) e.value = val; }
   };
+  // ── AUTOFILL3：編輯 modal 自動填入改吃「設定 → 自動補齊（組合包）」逐欄來源 ──
+  const EDIT_CHIP_FIELDS = {
+    deckEditDef: 'deckEditDefChips', deckEditExample: 'deckEditExChips', deckEditRelated: 'deckEditRelatedChips',
+    deckEditForms: 'deckEditFormsChips', deckEditSynonym: 'deckEditSynonymChips',
+    deckEditAntonym: 'deckEditAntonymChips', deckEditDerivative: 'deckEditDerivativeChips',
+  };
+  /** 強制寫入（覆寫語意已由引擎判定：patch 有值＝該寫） */
+  const fSetForceE = (id, val) => {
+    if (!val) return;
+    const host = EDIT_CHIP_FIELDS[id] ? document.getElementById(EDIT_CHIP_FIELDS[id]) : null;
+    if (host && host._tagInputApi) { host._tagInputApi.setVal(val); return; }
+    const e = document.getElementById(id); if (e) e.value = val;
+  };
+  const _splitListE = (v) => String(v || '').split(/[,，]/).map(x => x.trim()).filter(Boolean);
+  /** 表單現值 → 引擎 existing（契約同 deckEditSave：related/forms 陣列、其餘字串） */
+  const _editExisting = () => ({
+    pos: _getEditPosVal(),
+    definition: editDefChips.getVal() || document.getElementById('deckEditDef')?.value.trim() || '',
+    example: editExChips.getVal() || document.getElementById('deckEditExample')?.value.trim() || '',
+    phrases: '',
+    pron: document.getElementById('deckEditPron')?.value.trim() || '',
+    related: _splitListE(editRelChips.getVal()),
+    forms: _splitListE(editFormsChips.getVal()),
+    synonym: editSynChips.getVal(),
+    antonym: editAntChips.getVal(),
+    derivative: editDerivChips.getVal(),
+    etymology: document.getElementById('deckEditEtymology')?.value.trim() || '',
+    syllables: document.getElementById('deckEditSyllables')?.value.trim() || '',
+  });
+  /** 引擎 patch → 表單（patch.example 已含片語） */
+  const _applyEditPatch = (p) => {
+    if (!p) return;
+    if (p.pos) _selectEditPosChips(_normalizePos(p.pos));
+    if (p.definition) fSetForceE('deckEditDef', p.definition);
+    if (p.pron) fSetForceE('deckEditPron', p.pron);
+    if (p.related?.length) fSetForceE('deckEditRelated', p.related.join(', '));
+    if (p.forms?.length) fSetForceE('deckEditForms', p.forms.join(', '));
+    if (p.synonym) fSetForceE('deckEditSynonym', p.synonym);
+    if (p.antonym) fSetForceE('deckEditAntonym', p.antonym);
+    if (p.derivative) fSetForceE('deckEditDerivative', p.derivative);
+    if (p.etymology) fSetForceE('deckEditEtymology', p.etymology);
+    if (p.syllables) fSetForceE('deckEditSyllables', p.syllables);
+    if (p.example) fSetForceE('deckEditExample', p.example);
+  };
   const editAutoFillAll = async () => {
     const w = document.getElementById('deckEditWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const btn = document.getElementById('deckEditAutoFill');
     if (btn) btn.disabled = true;
-    const g = fGetE, s = fSetE;
-    let cambridgeFailed = false;
-    for (const src of editAutoFillChain) {
-      if (src === 'cambridge') {
-        try {
-          const json = await lookupCambridge(w, 'zh');
-          const d = JSON.parse(json);
-          s('deckEditWord', d.word);
-          s('deckEditPron', d.uk_ipa || d.us_ipa);
-          if (d.senses?.length) {
-            const hasZh = 'translation' in d.senses[0];
-            const defs = [...new Set(d.senses.map(s => (hasZh ? s.translation : s.definition)).filter(Boolean))].map(d => d.replace(/;/g, ','));
-            const pos = [...new Set(d.senses.flatMap(s => (s.part_of_speech || '').split(',').map(p => p.trim())).filter(Boolean))];
-            s('deckEditDef', defs.join(', '));
-            _selectEditPosChips(_normalizePos(pos.join(', ')));
-            const exs = [...new Set(d.senses.flatMap(s => (s.examples || []).map(ex => hasZh ? ex.english : (typeof ex === 'string' ? ex : ex.english))).filter(Boolean))];
-            if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
-          }
-        } catch (e) { cambridgeFailed = true; }
-      } else if (src === 'merriam') {
-        // 韋氏鏈步驟：有 key 才跑（音節/字源/片語只填空欄；無 key 靜默跳過不擋後續）
-        try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {}
-      } else if (src === 'dict-api') {
-        try {
-          // DICTAPI-TIMEOUT1：公網已死，10s 斷尾（同引擎；catch 靜默跳過不擋鏈）
-          const ctl = new AbortController();
-          const timer = setTimeout(() => ctl.abort(), 10000);
-          try {
-            const r = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`, { signal: ctl.signal });
-            if (r.ok) {
-              const exs = (await r.json()).flatMap(e => (e.meanings || []).flatMap(m => (m.definitions || []).map(d => d.example).filter(Boolean)));
-              if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
-            }
-          } finally { clearTimeout(timer); }
-        } catch (e) {}
-      } else if (src === 'tatoeba') {
-        try {
-          // TATOEBA-SORT1：必帶 sort（同引擎；無則 400）
-          const r = await fetch(`https://api.tatoeba.org/unstable/sentences?q=${encodeURIComponent(w)}&lang=eng&sort=relevance`);
-          if (r.ok) {
-            const exs = ((await r.json()).data || []).map(s => s.text).filter(Boolean);
-            if (exs.length && !g('deckEditExample')) s('deckEditExample', exs.join('\n'));
-          }
-        } catch (e) {}
-      } else if (src === 'llm') {
-        if (!g('deckEditDef') || !g('deckEditPos') || !g('deckEditPron') || !g('deckEditExample') || !g('deckEditRelated') || !g('deckEditForms') || !g('deckEditEtymology')) {
-          try {
-            // Ollama 位址：設定頁 store 優先（modal 內無 llmUrl 元素時 fallback 本機）
-            const baseUrl = (store.state.ollamaUrl || document.getElementById('llmUrl')?.value?.trim()?.replace(/\/api\/generate$/, '') || 'http://localhost:11434');
-            const tagsResp = await fetchGet(`${baseUrl}/api/tags`);
-            const models = (JSON.parse(tagsResp).models || []).map(m => m.name);
-            if (models.length) {
-              const model = models[0];
-              if (!g('deckEditDef')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model, `用繁體中文列出「${w}」的定義。多個定義用「、」分隔。只回傳定義，不要其他內容。`);
-                if (t) s('deckEditDef', t.trim().replace(/、/g, ', '));
-              }
-              if (!g('deckEditPos')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model, `What is/are the part(s) of speech of "${w}"? Return comma-separated English labels only (e.g. noun, verb, adjective).`);
-                if (t) _selectEditPosChips(_normalizePos(t.trim()));
-              }
-              if (!g('deckEditExample')) {
-                const t = await fetchLLM(`${baseUrl}/api/generate`, model, `Generate a short English example sentence using "${w}". Return ONLY the sentence, nothing else.`);
-                if (t) s('deckEditExample', t.trim());
-              }
-              await Promise.all([
-                llmFillRelated('deckEditRelated', w),
-                llmFillForms('deckEditForms', w),
-                llmFillSynAntDeriv('deckEdit', w),
-                (async () => {
-                  // 字源：LLM 一鍵分支順手補（只填空欄；韋氏在鏈內時先寫者勝；音節只吃韋氏）
-                  const bUrl = (store.state.ollamaUrl || 'http://localhost:11434');
-                  const mdl = store.state.ollamaModel || (model || 'qwen2.5-coder:7b');
-                  if (!g('deckEditEtymology')) {
-                    try {
-                      const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                        `用繁體中文一句話說明英文單字「${w}」的字源（來自何語、何詞根）。只回傳這一句，不要其他內容。`);
-                      if (t) s('deckEditEtymology', t.trim());
-                    } catch (_) {}
-                  }
-                  // 片語已併入例句：LLM 片語去重接續進例句（韋氏鏈步驟有 key 時走韋氏，此處不搶）
-                  try {
-                    const t = await fetchLLM(`${bUrl}/api/generate`, mdl,
-                      `List 3-5 common English phrases or collocations using the word "${w}", one per line. Return ONLY the phrases, nothing else.`);
-                    if (t) s('deckEditExampleAppend', [...new Set(t.trim().split('\n').map(x => x.trim()).filter(Boolean))].join('\n'));
-                  } catch (_) {}
-                })()
-              ]);
-            }
-          } catch (e) { toast('LLM 連線失敗，請確認 Ollama 有開', 'toast-error'); }
-        }
-      }
+    try {
+      const { comboAutoFill } = await import('../lib/autofill-run.js');
+      const r = await comboAutoFill(w, _editExisting());
+      if (r.aborted) { toast('查詢中止（額度或來源問題）', 'toast-error'); return; }
+      _applyEditPatch(r.patch);
+    } catch (e) {
+      toast('自動填入失敗，請確認 Ollama 有開', 'toast-error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
-    if (cambridgeFailed) toast('Cambridge 查詢失敗，已用其他來源', 'toast-warn');
-    // 舊鏈回補：存檔鏈不含 merriam（v5.16.3 前存的）才跑；新鏈走鏈內步驟
-    if (!editAutoFillChain.includes('merriam')) { try { await mwFillExtra('deckEdit', s, g, w); } catch (_) {} }
-    if (btn) btn.disabled = false;
     _editLastAutoFilled = w;
   };
   document.getElementById('deckEditAutoFill')?.addEventListener('click', editAutoFillAll);
@@ -1511,29 +1329,12 @@ function openEditModal(s, id) {
   document.getElementById('deckEditFillExample')?.addEventListener('click', async () => {
     const w = document.getElementById('deckEditWord')?.value.trim();
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
-    for (const src of editAutoFillChain) {
-      let ex = '';
-      try {
-        if (src === 'merriam') {
-          // ENGINE3: 韋氏片語候選走引擎（phrase 併例句；取首句未收錄者＝同舊 find 語意）
-          const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
-          if (dk || tk) {
-            const cur = editExChips.getVal() || '';
-            const r = await _engineMw(w, { phrase: 'merriam' }, { example: cur, phrases: '' });
-            if (r.patch?.example) {
-              const have = new Set(cur.split('\n').map(x => x.trim()).filter(Boolean));
-              ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean).find(x => !have.has(x)) || '';
-            }
-          }
-        } else if (src === 'cambridge' || src === 'dict-api' || src === 'tatoeba') {
-          // ENGINE3: 其餘來源走引擎 example 單句模式（空底全取候選、取首句照收；同舊無去重語意）
-          // deck 例句鈕舊程式本無 llm 路，chain 雖含 llm 此處照舊略過
-          const r = await _engineMw(w, { example: src }, { example: '' });
-          if (r.patch?.example) ex = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean)[0] || '';
-        }
-      } catch (_) {}
-      if (ex) { editExChips.append(ex); break; }
-    }
+    // AUTOFILL3: 例句來源吃「設定 → 自動補齊」（共用執行器；不再 iterate chip 排序鏈）
+    const { comboExampleCandidate } = await import('../lib/autofill-run.js');
+    const { cands } = await comboExampleCandidate(w);
+    const have = new Set((editExChips.getVal() || '').split('\n').map(x => x.trim()).filter(Boolean));
+    const fresh = cands.map(x => x.trim()).filter(Boolean).find(x => !have.has(x));
+    if (fresh) editExChips.append(fresh);
   });
 
   // ── 編輯 modal sparkle 綁定（G22 補全：Related/Forms 按鈕此前存在但從未綁定＝點擊無反應）──
@@ -2252,10 +2053,11 @@ async function runBatchAdd(s, list, targetDeck, normalizePos) {
     return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
   };
   async function fillOne(word) {
-    // AUTOFILL-ENGINE1: 與組合包同一顆引擎（BATCH_METHODS 固定 12 欄；
-    // exampleMax 3 沿用舊 cap；related 走 merriam+llm 雙併，比舊 fillOne
-    // 多併 synonym union，屬只多不砍）。
-    const { fillWordFields, BATCH_METHODS } = await import('../lib/autofill-engine.js');
+    // AUTOFILL4: 批量新增亦吃「設定 → 自動補齊」逐欄來源（取代固定 BATCH_METHODS；
+    // 新增字 existing 為空 → overwrite 不影響結果，但逐欄覆寫仍照使用者設定傳）。
+    // exampleMax 3 沿用批次舊 cap。
+    const { fillWordFields, readComboConfig } = await import('../lib/autofill-engine.js');
+    const { methods: comboMethods, overwrite: comboOw } = await readComboConfig();
     let mwF = null, camEn = null, camZh = null;
     const getMw = async () => { if (!mwF) mwF = await mwLookup(word); return mwF; };
     const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
@@ -2268,7 +2070,7 @@ async function runBatchAdd(s, list, targetDeck, normalizePos) {
     };
     const llmText = async (prompt) => fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
     const r = await fillWordFields({
-      wordText: word, existing: {}, methods: BATCH_METHODS, overwrite: true,
+      wordText: word, existing: {}, methods: comboMethods, overwrite: comboOw,
       threshold: 1, count: 3, exampleMax: 3,
       fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk },
       onStat: () => {},

@@ -1,9 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 
-const ua = navigator.userAgent;
+// CLI（tools/cli.mjs）經 import 鏈拉進本模組，node 無 navigator/window → 直接 ReferenceError
+// 讓 CLI 完全無法執行。故此處對非瀏覽器環境做防護（瀏覽器行為不變）。
+const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 export const isAndroid = /Android/i.test(ua);
 export const isWindows = /Windows/i.test(ua);
-export const isTauri = typeof window.__TAURI__?.core === 'object';
+// typeof window 本身安全；但 window.__TAURI__ 會求值 window（node 下 ReferenceError）
+export const isTauri = typeof window !== 'undefined' && typeof window.__TAURI__?.core === 'object';
 export const isMobile = isAndroid || /Mobi|iPhone|iPad|iPod/i.test(ua);
 
 // 分塊 base64（與 ocr/vision-adapter.js bytesToBase64 同法）：逐 byte 串接在大檔

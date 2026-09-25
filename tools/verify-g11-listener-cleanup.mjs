@@ -33,11 +33,12 @@ for (const [f, hnames] of Object.entries(files)) {
   }
 }
 
-// 特判：browser.js autoFillOrder 不回歸（G19/G20 已修，驗證不被 G11 破壞）
+// 特判：browser.js 自動填入鏈已退場（AUTOFILL2）；G19/G20 的 autoFillOrder 議題隨之消失
 const b = readFileSync('src/pages/browser.js', 'utf8');
-if (!/\.db\.setSetting|\.db\.getSetting/.test(b) && /join\('\\|'\)/.test(b)) {
-  pass.push('browser.js: autoFillOrder .db.* 未殘留＋join(|)（G19/G20 不回歸）');
-} else fail.push('browser.js: autoFillOrder G19/G20 回歸！');
+const bCode = b.split('\n').filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
+if (!/\.db\.setSetting|\.db\.getSetting/.test(b) && !bCode.includes('autoFillOrder')) {
+  pass.push('browser.js: autoFillOrder 已退場＋無 .db.*Setting 殘留');
+} else fail.push('browser.js: autoFillOrder 殘留或 .db.*Setting 回歸！');
 
 // tools.js 維持 guard
 const t = readFileSync('src/pages/tools.js', 'utf8');

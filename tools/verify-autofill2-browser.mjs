@@ -25,12 +25,19 @@ chk('autoFillOrder 不再讀寫（鏈已移除）', !codeOnly.includes('autoFill
 chk('「自動填入順序」標籤已移除', !codeOnly.includes('自動填入順序'));
 
 console.log('[S] 新接線');
-chk('_comboAutoFill 存在', /async function _comboAutoFill\(word, existing\)/.test(browser));
-chk('_comboAutoFill 讀組合包設定', /readComboConfig\(\)/.test(browser));
-chk('_comboAutoFill 呼叫引擎', /fillWordFields\(\{/.test(browser) && /wordText: word, existing, methods, overwrite/.test(browser));
+const runMod = readFileSync('src/lib/autofill-run.js', 'utf8');
+chk('browser.js 走共用執行器 comboAutoFill',
+  /const \{ comboAutoFill \} = await import\('\.\.\/lib\/autofill-run\.js'\)/.test(browser));
+chk('browser.js 無自有 fetcher 組（已收斂到共用模組）', !/const getCamEn = async/.test(browser));
+chk('共用模組匯出 comboAutoFill', /export async function comboAutoFill\(/.test(runMod));
+chk('共用模組匯出 comboExampleCandidate', /export async function comboExampleCandidate\(/.test(runMod));
+chk('共用模組匯出 makeComboFetchers', /export function makeComboFetchers\(/.test(runMod));
+chk('共用模組讀組合包設定', /readComboConfig\(\)/.test(runMod));
+chk('共用模組呼叫引擎', /fillWordFields\(\{/.test(runMod));
 chk('fetchers 六件齊',
-  ['getCamEn', 'getCamZh', 'getMw', 'llmJson', 'llmText', 'llmOk'].every(k => browser.includes(k + (k === 'llmOk' ? ': true' : ' =')) || browser.includes(k)));
-chk('autoFillAll 走 _comboAutoFill', /const r = await _comboAutoFill\(w, _formExisting\(\)\)/.test(browser));
+  ['getCamEn', 'getCamZh', 'getMw', 'llmJson', 'llmText', 'llmOk: true'].every(k => runMod.includes(k)));
+chk('autoFillAll 走共用執行器', /const r = await comboAutoFill\(w, _formExisting\(\)\)/.test(browser));
+chk('例句鈕走共用執行器', /const \{ src, cands \} = await comboExampleCandidate\(w\)/.test(browser));
 chk('表單→引擎映射存在', /const _formExisting = \(\) => \(\{/.test(browser));
 chk('引擎→表單映射存在', /const _applyPatch = \(p\) => \{/.test(browser));
 

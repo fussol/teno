@@ -34,8 +34,8 @@ const statMap = () => { const m = {}; return { m, onStat: (f, k) => { m[f] = m[f
 console.log('[E1] 欄位表＋預設');
 chk('12 欄', AUTOFILL_FIELDS.length === 12, `got=${AUTOFILL_FIELDS.length}`);
 chk('字源音節衍生 fixed', AUTOFILL_FIELDS.filter(f => f.fixed).map(f => f.id).join(',') === 'etymology,syllables,derivative');
-chk('DEFAULT 11 欄含字源音節（merriam）', Object.keys(DEFAULT_METHODS).length === 11 && DEFAULT_METHODS.etymology === 'merriam' && DEFAULT_METHODS.syllables === 'merriam');
-chk('DEFAULT 無 derivative（組合包不管）', !('derivative' in DEFAULT_METHODS));
+chk('DEFAULT 12 欄含字源音節衍生（merriam）', Object.keys(DEFAULT_METHODS).length === 12 && DEFAULT_METHODS.etymology === 'merriam' && DEFAULT_METHODS.syllables === 'merriam');
+chk('DEFAULT 含 derivative（AUTOFILL2：fixed:true 只吃韋氏，與 BATCH 慣例一致）', DEFAULT_METHODS.derivative === 'merriam');
 chk('BATCH 12 欄＋related 雙併', Object.keys(BATCH_METHODS).length === 12 && BATCH_METHODS.related === 'merriam+llm' && BATCH_METHODS.derivative === 'merriam');
 
 console.log('[E2] 純函式');
@@ -238,14 +238,17 @@ console.log('[E9b] 接線覆蓋（ENGINE3：例句鈕整條 chain＋音節字源
   const deck = readFileSync('src/pages/deck-browser.js', 'utf8');
   const brow = readFileSync('src/pages/browser.js', 'utf8');
   const win = (src, anchor, look) => { const i = src.indexOf(anchor); return i >= 0 && src.slice(i, i + 2500).includes(look); };
-  chk('deck 新增例句鈕 merriam 走引擎 phrase', win(deck, "getElementById('deckAddFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
-  chk('deck 新增例句鈕其餘走引擎 example', win(deck, "getElementById('deckAddFillExample')", '_engineMw(w, { example: src }'));
-  chk('deck 新增例句鈕照舊略過 llm', win(deck, "getElementById('deckAddFillExample')", "src === 'cambridge' || src === 'dict-api' || src === 'tatoeba'"));
-  chk('deck 編輯例句鈕 merriam 走引擎 phrase', win(deck, "getElementById('deckEditFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
-  chk('deck 編輯例句鈕其餘走引擎 example', win(deck, "getElementById('deckEditFillExample')", '_engineMw(w, { example: src }'));
-  chk('browser 例句鈕 merriam 走引擎 phrase', win(brow, "getElementById('btnFillExample')", "_engineMw(w, { phrase: 'merriam' }"));
-  chk('browser 例句鈕其餘走引擎 example（含 llm，同舊）', win(brow, "getElementById('btnFillExample')", '_engineMw(w, { example: src }'));
-  chk('browser 例句鈕 toast 語意保留', win(brow, "getElementById('btnFillExample')", '已從 ${SOURCE_LABELS[src] || src} 新增一句') && win(brow, "getElementById('btnFillExample')", '所有來源都沒有新句子'));
+  // AUTOFILL3：例句鈕已從「自跑 chip 排序鏈」改為共用執行器（單一例句來源＝組合包設定）
+  const run = readFileSync('src/lib/autofill-run.js', 'utf8');
+  chk('deck 新增例句鈕走共用執行器', win(deck, "getElementById('deckAddFillExample')", 'comboExampleCandidate(w)'));
+  chk('deck 編輯例句鈕走共用執行器', win(deck, "getElementById('deckEditFillExample')", 'comboExampleCandidate(w)'));
+  chk('browser 例句鈕走共用執行器', win(brow, "getElementById('btnFillExample')", 'comboExampleCandidate(w)'));
+  chk('三顆例句鈕不再自跑 chain', !win(deck, "getElementById('deckAddFillExample')", 'for (const src of')
+    && !win(deck, "getElementById('deckEditFillExample')", 'for (const src of')
+    && !win(brow, "getElementById('btnFillExample')", 'for (const src of'));
+  chk('browser 例句鈕 toast 語意保留', win(brow, "getElementById('btnFillExample')", '已從 ${SOURCE_LABELS[src] || src} 新增一句') && win(brow, "getElementById('btnFillExample')", '沒有新句子'));
+  chk('例句來源由組合包決定（單一來源）', /comboSourceOf\('example'\)/.test(run));
+  chk('例句來源為韋氏時走片語路（沿用舊鏈語意）', /phrase: 'merriam'/.test(run));
   for (const [name, src] of [['deck', deck], ['browser', brow]])
     chk(`${name} _engineMw 備齊 fetchers（getCamEn＋llmText＋getMw 快取）`, /getCamEn: async/.test(src) && /llmText: async/.test(src) && /mwCache/.test(src));
   chk('deck 新增音節字源鈕綁定走 mwFillExtra', /deckAddFillExtra/.test(deck) && /mwFillExtra\('deckAdd', fSet, fGet, w\)/.test(deck));

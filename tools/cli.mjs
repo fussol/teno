@@ -676,43 +676,43 @@ function cmdDeckOrder() {
   list.forEach((id, i) => console.log(`  ${i+1}. ${id}`));
 }
 
-// ═══════════════ 自動填入順序 — 對應單字表單「自動填入順序」 ═══════════════
+// ═══════════════ 自動填入來源 — 對應「設定 → 自動補齊（組合包）」逐欄來源 ═══════════════
+// AUTOFILL3：舊 `autofill set/move` 操作的是 chip 排序鏈（settings.autoFillOrder），
+// 該鏈已整體移除（browser/deck 四個 modal 改吃逐欄來源）。本命令改為檢視／設定逐欄來源。
+
+const COMBO_FIELD_ORDER = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables', 'derivative'];
+const COMBO_FIELD_CN = { pos: '詞性', example: '例句', pron: '發音', related: '相關詞', forms: '詞形', trans: '翻譯', syn: '同義詞', ant: '反義詞', phrase: '片語', etymology: '字源', syllables: '音節', derivative: '衍生' };
+const COMBO_FIXED_SRC = ['etymology', 'syllables', 'derivative'];   // 只吃韋氏（無來源選單）
+const COMBO_SRC = ['cambridge', 'merriam', 'dictionary-api', 'tatoeba', 'llm'];
+const comboKey = (f) => 'combo' + f[0].toUpperCase() + f.slice(1);
 
 function cmdAutofill() {
   const sub = args[0];
-  const getChain = () => {
-    const r = db.prepare(`SELECT value FROM settings WHERE key='autoFillOrder'`).get();
-    return r ? r.value.split('|') : ['cambridge', 'dict-api', 'tatoeba', 'llm'];
-  };
+  let mem = {};
+  try { mem = JSON.parse(readSettingRaw('methodSources') || '{}') || {}; } catch { mem = {}; }
+  const sel = mem.selectors || {};
   if (sub === 'set') {
-    const seq = args.slice(1).join(',');
-    if (!seq) return console.log('需: autofill set cambridge,dict-api,tatoeba,llm');
-    const valid = ['cambridge', 'dict-api', 'tatoeba', 'llm'];
-    const list = seq.split(',').map(s => s.trim()).filter(Boolean);
-    if (!list.every(x => valid.includes(x))) return console.log(`有效值: ${valid.join(', ')}`);
+    const field = args[1], src = args[2];
+    if (!field || !src) return console.log('需: autofill set <欄位> <來源>（欄位清單: autofill 無參數）');
+    if (!COMBO_FIELD_ORDER.includes(field)) return console.log(`無此欄位: ${field}\n欄位: ${COMBO_FIELD_ORDER.join(', ')}`);
+    if (COMBO_FIXED_SRC.includes(field)) return console.log(`${field}（${COMBO_FIELD_CN[field]}）只吃韋氏，無來源可選`);
+    if (!COMBO_SRC.includes(src)) return console.log(`有效來源: ${COMBO_SRC.join(', ')}`);
     backupDb();
-    writeSetting('autoFillOrder', list.join('|'));
-    log('WRITE', `autofill set ${list.join('|')}`);
-    console.log(`已設自動填入順序: ${list.join(' → ')}`);
-  } else if (sub === 'move') {
-    const name = args[1];
-    const dir = args[2] === 'up' ? -1 : args[2] === 'down' ? 1 : null;
-    if (!name || !dir) return console.log('需: autofill move <來源> up|down');
-    const list = getChain();
-    const idx = list.indexOf(name);
-    if (idx === -1) return console.log(`無此來源: ${name}`);
-    const swap = idx + dir;
-    if (swap < 0 || swap >= list.length) return console.log('已在邊緣');
-    [list[idx], list[swap]] = [list[swap], list[idx]];
-    backupDb();
-    writeSetting('autoFillOrder', list.join('|'));
-    log('WRITE', `autofill move ${name} ${dir === -1 ? 'up' : 'down'}`);
-    console.log(`已移動: ${list.join(' → ')}`);
+    const next = { ...mem, selectors: { ...sel, [comboKey(field)]: src } };
+    writeSetting('methodSources', JSON.stringify(next));
+    log('WRITE', `autofill set ${field} ${src}`);
+    console.log(`已設「${COMBO_FIELD_CN[field]}」來源: ${src}`);
   } else {
-    console.log(`目前順序: ${getChain().join(' → ')}`);
-    console.log('autofill 子命令: set <來源,...> | move <來源> up|down | 檢視(無參數)');
-    console.log('來源: cambridge | dict-api | tatoeba | llm');
-    log('READ', `autofill order: ${getChain().join('|')}`);
+    console.log('自動填入逐欄來源（設定 → 自動補齊）:');
+    for (const f of COMBO_FIELD_ORDER) {
+      const v = COMBO_FIXED_SRC.includes(f) ? 'merriam（固定）' : (sel[comboKey(f)] || '（預設）');
+      const off = (mem.comboOn || {})[f] === false ? '  [停用]' : '';
+      const ow = (mem.comboOw || {})[f] ? '  [覆寫]' : '';
+      console.log(`  ${COMBO_FIELD_CN[f].padEnd(4)} ${f.padEnd(11)} ${v}${off}${ow}`);
+    }
+    console.log('子命令: set <欄位> <來源> | 檢視(無參數)');
+    console.log(`來源: ${COMBO_SRC.join(' | ')}`);
+    log('READ', 'autofill sources');
   }
 }
 
@@ -3880,7 +3880,8 @@ function usage() {
   add --word cat --def 貓 --deck 日常 --pos noun --pron /kæt/ --ex "例句" --tags a,b --related x,y --forms cats,catty
   edit <id> --def 新定義 --deck X --tags a,b --desc 描述
   delete <id> --yes
-  autofill set cambridge,dict-api,tatoeba,llm | autofill move <來源> up|down
+  autofill                                  # 檢視自動填入逐欄來源
+  autofill set <欄位> <來源>                # 設定某欄來源（設定 → 自動補齊）
 Deck:
   decks | create-deck <名> [--color #hex] | update-deck <名> [--color] [--rename]
   merge-deck <來源> <目標> | rename-deck <舊> <新> | delete-deck <名> --yes

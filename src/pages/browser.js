@@ -1274,20 +1274,11 @@ function openModal(s, word) {
     if (!w) { toast('請先輸入單字', 'toast-error'); return; }
     const norm = s => s.trim().toLowerCase().replace(/[.。!！?？,，;；:：\s]+$/, '');
     const existing = new Set(exChips.getVal().split('\n').map(s => norm(s)).filter(Boolean));
-    // AUTOFILL2: 吃「設定 → 自動補齊」的例句來源（單一來源；不再 iterate chip 排序鏈）
-    const { readComboConfig, DEFAULT_METHODS } = await import('../lib/autofill-engine.js');
-    const { methods } = await readComboConfig();
-    const src = methods.example || DEFAULT_METHODS.example;
-    let raw = [];
-    try {
-      // ENGINE3: 韋氏片語候選走引擎（空底全取片語）；其餘來源走引擎 example 單句模式
-      const r = src === 'merriam'
-        ? await _engineMw(w, { phrase: 'merriam' }, { example: '', phrases: '' })
-        : await _engineMw(w, { example: src }, { example: '' });
-      if (r.patch?.example) raw = r.patch.example.split('\n').map(x => x.trim()).filter(Boolean);
-    } catch (e) {}
+    // AUTOFILL3: 例句來源吃「設定 → 自動補齊」（共用執行器；不再 iterate chip 排序鏈）
+    const { comboExampleCandidate } = await import('../lib/autofill-run.js');
+    const { src, cands } = await comboExampleCandidate(w);
     const seen = new Set();
-    const deduped = raw.filter(s => { const k = norm(s); return k && !seen.has(k) && seen.add(k); });
+    const deduped = cands.filter(s => { const k = norm(s); return k && !seen.has(k) && seen.add(k); });
     const fresh = deduped.find(s => !existing.has(norm(s)));
     if (fresh) {
       exChips.append(fresh.trim());
@@ -1389,7 +1380,9 @@ function openModal(s, word) {
     const btn = document.getElementById('fAutoFill');
     if (btn) btn.disabled = true;
     try {
-      const r = await _comboAutoFill(w, _formExisting());
+      // AUTOFILL3: 走共用執行器（與牌組新增/編輯同一份；吃組合包逐欄來源）
+      const { comboAutoFill } = await import('../lib/autofill-run.js');
+      const r = await comboAutoFill(w, _formExisting());
       if (r.aborted) { toast('查詢中止（額度或來源問題）', 'toast-error'); return; }
       _applyPatch(r.patch);
     } catch (e) {
@@ -1478,39 +1471,6 @@ async function _engineMw(word, methods, existing = {}) {
       llmOk: true,
     },
     onStat: () => {} });
-}
-/** AUTOFILL2: 自動填入（modal 版）＝依「設定 → 自動補齊（組合包）」的逐欄來源跑共用引擎。
- *  取代舊的 chip 排序鏈。語意等價：舊鏈每個 setter 只填空欄 → 實質＝逐欄第一個提供者勝出
- *  ＝逐欄 methods 的靜態展開（DEFAULT_METHODS 亦註「沿用舊行為」）。
- *  fetchers 比照 tools.js 一鍵全補（getCamEn/getCamZh/getMw/llmJson/llmText）；
- *  threshold 1／count 1＝沿用舊鏈（只補空缺、LLM 出單句）。 */
-async function _comboAutoFill(word, existing) {
-  const { fillWordFields, readComboConfig } = await import('../lib/autofill-engine.js');
-  const { lookupMerriam, lookupCambridge } = await import('../lib/api.js');
-  const { merriamToFields } = await import('../lib/merriam.js');
-  const { methods, overwrite } = await readComboConfig();
-  let camEn = null, camZh = null, mwCache = null;
-  const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
-  const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
-  const getMw = async () => {
-    if (!mwCache) mwCache = merriamToFields(JSON.parse(await lookupMerriam(word, store.state.mwDictKey || '', store.state.mwThesKey || '')), word);
-    return mwCache;
-  };
-  const baseUrl = store.state.ollamaUrl || 'http://localhost:11434';
-  const model = store.state.ollamaModel || 'qwen2.5-coder:7b';
-  const llmText = async (prompt) => fetchLLM(`${baseUrl}/api/generate`, model, prompt);
-  const llmJson = async (prompt) => {
-    const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
-    const cleaned = String(text ?? '').trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-    const arr = JSON.parse(cleaned);
-    return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
-  };
-  return fillWordFields({
-    wordText: word, existing, methods, overwrite,
-    threshold: 1, count: 1,
-    fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk: true },
-    onStat: () => {},
-  });
 }
 async function mwFillExtra(s, g, word) {
   const dk = store.state.mwDictKey || '', tk = store.state.mwThesKey || '';
