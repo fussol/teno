@@ -540,14 +540,30 @@ fn mw_to_lookup_json(word: &str, arr: &serde_json::Value) -> Result<String, Stri
     })).map_err(|e| e.to_string())
 }
 
-/// 翻譯輸出後處理：去引號（含中文引號）、去頭尾分隔符、壓掉空白
+/// 翻譯輸出後處理
+///
+/// 1. 去引號（含中文引號）
+/// 2. **分隔符 = 英文逗號 `,`**（使用者指定）。顯示端 svg.js splitFieldsHtml 的
+///    切分正則是 `[,，;；\n]`，半角逗號吃得下 ✓；且 word-extra/svg 的 pos/syn
+///    切分是 `[,，]` 也吃得下。這裡把所有分隔符（；;、，｜|／/。）統一成 `,` 並去重，
+///    避免模型混用造成「該分開的黏成一顆」。
+/// 3. 壓掉空白
 fn zh_clean(t: &str) -> String {
     let s = t.trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '「' || c == '」' || c == '『' || c == '』')
         .trim();
-    let s = s.trim_start_matches(|c| "；;，,、：:".contains(c))
-             .trim_end_matches(|c| "；;，,、。.".contains(c));
-    s.split_whitespace().collect::<Vec<_>>().join("")
+    let compact: String = s.split_whitespace().collect::<Vec<_>>().join("");
+    let mut out = String::new();
+    for c in compact.chars() {
+        let is_sep = matches!(c, '；' | ';' | '、' | '，' | ',' | '｜' | '|' | '／' | '/' | '。');
+        if is_sep {
+            if !out.is_empty() && !out.ends_with(',') { out.push(','); }
+        } else {
+            out.push(c);
+        }
+    }
+    while out.ends_with(',') { out.pop(); }
+    out
 }
 
 /// DICTREBUILD 翻譯 prompt
@@ -567,8 +583,8 @@ fn zh_translate_prompt(word: &str, defs: &str) -> String {
 - 只輸出繁體中文翻譯。不要英文、拼音、解釋、引號、編號、句號
 - 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略
 - 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」
-- 禁止同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」
-- 用「；」分隔，每個中文詞 2~4 字
+- 不同意思用半角逗號 , 分隔，每個中文詞 2~4 字
+- 禁止同義詞堆疊：「振動,震動,振盪」是錯的，只要「震動」
 
 單字：{}
 英英釋義：
@@ -656,14 +672,19 @@ mod dictrebuild_tests {
 
     #[test]
     fn zh_clean_strips_wrappers_and_separators() {
-        // 實測模型會吐「；爆裂；炸響」這種開頭多一個分隔符的輸出
-        assert_eq!(zh_clean("；爆裂；炸響"), "爆裂；炸響");
+        // 分隔符一律正規化成**英文逗號**（使用者指定）
+        assert_eq!(zh_clean("；爆裂；炸響"), "爆裂,炸響");
         assert_eq!(zh_clean("，震動。"), "震動");
         assert_eq!(zh_clean("「震動」"), "震動");
-        assert_eq!(zh_clean("\"邀請；邀約\""), "邀請；邀約");
-        assert_eq!(zh_clean("  流汗 ； 出汗  "), "流汗；出汗");
-        // 正常輸出不得被動到
-        assert_eq!(zh_clean("鑰匙；關鍵；按鍵"), "鑰匙；關鍵；按鍵");
+        assert_eq!(zh_clean("\"邀請；邀約\""), "邀請,邀約");
+        assert_eq!(zh_clean("  流汗 ； 出汗  "), "流汗,出汗");
+        // 已正確的輸出不得被動到
+        assert_eq!(zh_clean("鑰匙,關鍵,按鍵"), "鑰匙,關鍵,按鍵");
+        // 混用多種分隔符 → 壓成單一逗號、去重、去頭尾
+        assert_eq!(zh_clean("a；b、c，d, e/ f"), "a,b,c,d,e,f");
+        assert_eq!(zh_clean(",開頭,"), "開頭");
+        // 全形逗號也會被正規化（舊資料風格）
+        assert_eq!(zh_clean("保護；保存；維護"), "保護,保存,維護");
     }
 
     #[test]

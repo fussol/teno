@@ -58,17 +58,22 @@ chk('音檔 URL 慣例實作', /media\.merriam-webster\.com\/audio\/prons/.test(
 chk('例句走標記對陣列（["vis", [...]]）', /a\[0\]\.as_str\(\) == Some\("vis"\)/.test(rs));
 chk('韋氏標記去除器存在', /fn strip_mw_markup/.test(rs));
 
-console.log('\n== [D] prompt：涵蓋語意（保險）但禁同義詞堆疊 ==');
+console.log('\n== [D] prompt：涵蓋主要語意（保險）但禁同義詞堆疊；分隔符 = 半角逗號 ==');
 const promptMatch = rs.match(/fn zh_translate_prompt[\s\S]*?\n\}/);
-chk('prompt 要求涵蓋所有語意', !!promptMatch && promptMatch[0].includes('涵蓋'));
+chk('prompt 要求涵蓋主要語意', !!promptMatch && promptMatch[0].includes('涵蓋'));
 chk('prompt 禁止同義詞堆疊', !!promptMatch && promptMatch[0].includes('同義詞堆疊'));
 chk('prompt 要求短（每個詞 2~4 字）', !!promptMatch && promptMatch[0].includes('2~4'));
-chk('prompt 示範 key 的多義（鑰匙/關鍵/按鍵）', !!promptMatch && promptMatch[0].includes('鑰匙'));
+chk('prompt 示範 key 的多義（鑰匙/關鍵）', !!promptMatch && promptMatch[0].includes('鑰匙'));
+// 使用者指定：不同意思用**英文逗號**分隔（顯示端 svg.js 切分吃 [,，;；\n]）
+chk('prompt 指定半角逗號分隔', !!promptMatch && promptMatch[0].includes('半角逗號'));
+chk('prompt 裡沒有把「；」當分隔符', !!promptMatch && !promptMatch[0].includes('用「；」分隔'));
+chk('zh_clean 把分隔符正規化成半角逗號', /out\.ends_with\(','\)/.test(rs) && !/out\.ends_with\('，'\)/.test(rs));
 {
   const eng = src('src/lib/autofill-engine.js');
   chk('trans 分支餵入英英釋義', /const enData = await camEn\(\)/.test(eng) && /senses \|\| \[\]/.test(eng));
   chk('trans 有退化路徑（英英取不到仍可翻）', /走退化路徑/.test(eng));
-  chk('trans 輸出後處理去掉頭尾分隔符', eng.includes('.replace(/^[；;，,、：:]+/'));
+  chk('trans 後處理正規化成半角逗號', eng.includes(".replace(/[；;、，｜|／/。]+/g, ',')"));
+  chk('trans 後處理去重與去頭尾逗號', eng.includes(".replace(/,+/g, ',')") && eng.includes('.replace(/^,|,$/g, \'\')'));
 }
 
 console.log('\n== [E] 設定持久化（原本從未持久化 → 手機無法指向 PC） ==');

@@ -388,11 +388,18 @@ export async function fillWordFields({
               + `- 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略\n`
               + `- 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」\n`
               + `- 禁止同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」\n`
-              + `- 用「；」分隔，每個中文詞 2~4 字\n\n單字：${w}\n英英釋義：\n${defs}`
+              + `- 不同意思用半角逗號 , 分隔，每個中文詞 2~4 字\n`
+              + `- 禁止同義詞堆疊：「振動,震動,振盪」是錯的，只要「震動」\n\n單字：${w}\n英英釋義：\n${defs}`
             : `Give the Traditional Chinese (繁體中文) definition of the English word "${w}". Concise, one line. Return ONLY the Chinese definition, nothing else.`;
           const text = await llmText(prompt);
-          const t = String(text ?? '').trim().split('\n')[0].trim()
-            .replace(/^[；;，,、：:]+/, '').replace(/[；;，,、。.\s]+$/, '');
+          // 分隔符統一成**英文逗號**（使用者指定）。顯示端 svg.js 的切分吃 [,，;；\n]，
+          // 但 word-extra/svg 的 pos/syn 只吃 [,，] → 一律輸出半角逗號最保險，
+          // 也避免模型混用「；」造成該分開的黏成一顆。
+          const t = String(text ?? '').trim().split('\n')[0]
+            .replace(/[；;、，｜|／/。]+/g, ',')
+            .replace(/\s+/g, '')
+            .replace(/,+/g, ',')
+            .replace(/^,|,$/g, '');
           if (t) { patch.definition = t; bump('trans', 'ok'); } else bump('trans', 'fail');
         }
       } else {
