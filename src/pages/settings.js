@@ -674,7 +674,7 @@ function renderSettingsContent(s) {
         <div class="section">
           <div class="section-title">${icon('book')} 韋氏字典</div>
           <div class="config-section">
-            <div class="config-field-hint" style="margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。</div>
+            <div class="config-field-hint" style="margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。<br>底下 <b>API</b> 是英中翻譯用的 AI 接口，本地（ollama）或公開（OpenAI 相容）皆可；手機請填電腦的 tailnet 位址。</div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Dictionary key</span>
               <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
@@ -684,7 +684,23 @@ function renderSettingsContent(s) {
               <input type="password" id="mwThesKeyInput" placeholder="Collegiate Thesaurus 或 Intermediate Thesaurus key（自動相容）" value="${escapeAttr(s.state.mwThesKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
             </div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
-              <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存 Key</button>
+              <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">API</span>
+              <input type="text" id="llmApiUrlInput" placeholder="本地 http://100.x.y.z:11434 ／ 公開 https://api.openai.com/v1" value="${escapeAttr(s.state.llmApiUrl || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
+              <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">模型</span>
+              <input type="text" id="llmModelInput" placeholder="例 qwen2.5:14b（留空自動偵測）" value="${escapeAttr(s.state.llmModel || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
+              <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">格式</span>
+              <select id="llmApiFormatInput" style="padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+                <option value="ollama"${s.state.llmApiFormat === 'openai' ? '' : ' selected'}>ollama（本地）</option>
+                <option value="openai"${s.state.llmApiFormat === 'openai' ? ' selected' : ''}>OpenAI 相容（公開）</option>
+              </select>
+              <input type="password" id="llmApiKeyInput" placeholder="公開 API 金鑰（本地留空）" value="${escapeAttr(s.state.llmApiKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
+              <button class="btn btn-sm" id="mwKeysSaveBtn">${icon('check')} 儲存</button>
               <button class="btn btn-sm" id="mwKeysTestBtn">${icon('search')} 測試連線</button>
             </div>
             <div id="mwKeysTestResult" style="font-size:12px"></div>
@@ -1224,13 +1240,24 @@ export function onMount(s) {
     renderInPlace(s);
   });
   // D段：韋氏 Key 存檔（寫 DB＋同步回 state，免重啟即用）
+  // DICTREBUILD：同一顆按鈕一併存 AI API 設定（位址／模型／格式／金鑰）
   document.getElementById('mwKeysSaveBtn')?.addEventListener('click', async () => {
     const dk = (document.getElementById('mwDictKeyInput')?.value || '').trim();
     const tk = (document.getElementById('mwThesKeyInput')?.value || '').trim();
+    const au = (document.getElementById('llmApiUrlInput')?.value || '').trim();
+    const am = (document.getElementById('llmModelInput')?.value || '').trim();
+    const af = document.getElementById('llmApiFormatInput')?.value === 'openai' ? 'openai' : 'ollama';
+    const ak = (document.getElementById('llmApiKeyInput')?.value || '').trim();
     const { setSetting } = await import('../lib/db.js');
-    try { await setSetting('mwDictKey', dk); await setSetting('mwThesKey', tk); } catch (_) {}
+    try {
+      await setSetting('mwDictKey', dk); await setSetting('mwThesKey', tk);
+      await setSetting('llmApiUrl', au); await setSetting('llmModel', am);
+      await setSetting('llmApiFormat', af); await setSetting('llmApiKey', ak);
+    } catch (_) {}
     s.state.mwDictKey = dk; s.state.mwThesKey = tk;
-    toast(dk || tk ? '韋氏 Key 已儲存' : '韋氏 Key 已清除', 'toast-success');
+    s.state.llmApiUrl = au; s.state.llmModel = am;
+    s.state.llmApiFormat = af; s.state.llmApiKey = ak;
+    toast(dk || tk ? '設定已儲存' : '設定已清除', 'toast-success');
     renderInPlace(s);
   });
   // MWTEST1：韋氏連線測試（用輸入框當下值打 gross，不經存檔；綠＝有 entries，黃＝key 有效但查無字，紅＝key 無效／網路錯）

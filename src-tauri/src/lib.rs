@@ -268,7 +268,7 @@ fn scrape_quizlet(url: String) -> Result<String, String> {
 
 
 #[tauri::command]
-async fn fetch_llm(url: String, model: String, prompt: String, api_format: Option<String>) -> Result<String, String> {
+async fn fetch_llm(url: String, model: String, prompt: String, api_format: Option<String>, api_key: Option<String>) -> Result<String, String> {
     log::info!("fetch_llm url={} model={} prompt_len={} format={:?}", url, model, prompt.len(), api_format);
     let fmt = api_format.unwrap_or_default();
     let body = if fmt == "openai" {
@@ -283,14 +283,17 @@ async fn fetch_llm(url: String, model: String, prompt: String, api_format: Optio
     let json_str = serde_json::to_string(&body).map_err(|e| format!("serialize fail: {}", e))?;
 
     if !url.starts_with("http://") && !url.starts_with("https://") { return Err("URL 格式不正確".to_string()); }
+    let auth = api_key.unwrap_or_default().trim().to_string();
     let handle = tokio::task::spawn_blocking(move || {
         // ponytail: ureq instead of curl — Android has no curl binary
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(std::time::Duration::from_secs(10))
             .timeout(std::time::Duration::from_secs(60)) // 對齊原 curl --max-time 60（整體上限）
             .build();
-        let resp = agent.post(&url)
-            .set("Content-Type", "application/json")
+        let mut req = agent.post(&url).set("Content-Type", "application/json");
+        // DICTREBUILD：公開 OpenAI 相容 API 需要 Bearer；本地 ollama 留空即不送
+        if !auth.is_empty() { req = req.set("Authorization", &format!("Bearer {}", auth)); }
+        let resp = req
             .send_string(&json_str)
             .map_err(|e| format!("HTTP error: {}", e))?;
         let text = resp.into_string().map_err(|e| format!("body error: {}", e))?;
@@ -358,43 +361,411 @@ async fn fetch_get(url: String) -> Result<String, String> {
         .map_err(|e| format!("task failed: {}", e))?
 }
 
-#[tauri::command]
-async fn lookup_cambridge(word: String, lang: Option<String>) -> Result<String, String> {
-    let is_zh = lang.as_deref() == Some("zh");
-    let url = if is_zh {
-        cambridge_scraper::build_chinese_url(&word)
+// ═══════════════════════════════════════════════════════════════════
+// DICTREBUILD：詞典來源重建
+//
+// 背景：Cambridge 全站被 Cloudflare Managed Challenge 攔截 —— 連 robots.txt
+//   都回 403，真 Chromium 亦停在挑戰頁 → 純 HTTP 客戶端不可能修復。
+//
+// 新架構：
+//   EN → 韋氏官方 API（使用者已有 key，且自動補齊的 pos/pron/related 本就走它）
+//   ZH → 同來源取英英釋義 → 本地 ollama → 「短且涵蓋語意」的中文翻譯
+//
+// 設計原則：回傳形狀與舊 scrape_cambridge_html **完全一致** →
+//   JS 的 lookupCambridge() 及其 5 個呼叫點、自動補填的 getCamEn 全部零改動。
+//
+// 英英釋義的角色（使用者定義）：**保險** —— 確保中文翻譯涵蓋到所有語意
+//   （如 key 不只「鑰匙」，還有「關鍵、按鍵」），不是拿來顯示給人看的。
+// ═══════════════════════════════════════════════════════════════════
+
+/// 韋氏 API URL（產品：collegiate / thesaurus / ithesaurus）
+fn mw_url(product: &str, word: &str, key: &str) -> Result<String, String> {
+    let mut u = url::Url::parse(&format!(
+        "https://www.dictionaryapi.com/api/v3/references/{}/json/x", product
+    )).map_err(|e| e.to_string())?;
+    u.path_segments_mut().map_err(|_| "URL 錯誤".to_string())?.pop().push(word);
+    u.query_pairs_mut().append_pair("key", key);
+    Ok(u.to_string())
+}
+
+/// 韋氏回應抓取（collegiate / thesaurus 共用）
+fn mw_fetch(url: &str) -> Result<serde_json::Value, String> {
+    let resp = ureq::get(url)
+        .set("User-Agent", "Teno/5 (dictionary lookup)")
+        .call()
+        .map_err(|e| format!("HTTP error: {}", e))?;
+    let text = resp.into_string().map_err(|e| format!("body error: {}", e))?;
+    serde_json::from_str(&text).map_err(|e| format!("JSON 解析失敗: {}", e))
+}
+
+/// 韋氏音檔檔名 → 完整 URL
+/// 官方慣例：`bix` 開頭 → bix/；數字或 `gg` 開頭 → number/；其餘 → 首字母小寫/
+fn mw_audio_url(audio: &str) -> String {
+    let a = audio.trim();
+    let sub = if a.starts_with("bix") {
+        "bix".to_string()
+    } else if a.starts_with("gg") || a.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        "number".to_string()
     } else {
-        cambridge_scraper::build_english_url(&word)
+        a.chars().next().map(|c| c.to_ascii_lowercase().to_string()).unwrap_or_else(|| "number".into())
     };
-    log::info!("lookup_cambridge word={} url={} lang={:?}", word, url, lang);
-    let handle = tokio::task::spawn_blocking(move || {
-        // ponytail: ureq instead of curl — Android has no curl binary
-        let resp = ureq::get(&url)
-            .set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .call()
-            .map_err(|e| format!("HTTP error: {}", e))?;
-        let html = resp.into_string()
-            .map_err(|e| format!("body error: {}", e))?;
-        if is_zh {
-            let mut result = cambridge_scraper::scrape_cambridge_chinese_html(&html)
-                .map_err(|e| format!("解析失敗: {}", e))?;
-            // ANTFIX：同頁多條目（ant/-ant）只留查詢字的 sense；對不上半個回退全留（舊行為）
-            let kept: Vec<_> = result.senses.iter()
-                .filter(|s| cambridge_scraper::headword_matches(&s.headword, &word))
-                .cloned().collect();
-            if !kept.is_empty() { result.senses = kept; }
-            serde_json::to_string(&result).map_err(|e| format!("JSON 序列化失敗: {}", e))
-        } else {
-            let mut result = cambridge_scraper::scrape_cambridge_html(&html)
-                .map_err(|e| format!("解析失敗: {}", e))?;
-            let kept: Vec<_> = result.senses.iter()
-                .filter(|s| cambridge_scraper::headword_matches(&s.headword, &word))
-                .cloned().collect();
-            if !kept.is_empty() { result.senses = kept; }
-            serde_json::to_string(&result).map_err(|e| format!("JSON 序列化失敗: {}", e))
+    format!("https://media.merriam-webster.com/audio/prons/en/us/mp3/{}/{}.mp3", sub, a)
+}
+
+/// 去除韋氏的標記語法
+/// `{it}word{/it}` → word；`{a_link|顯示文字}` → 顯示文字
+fn strip_mw_markup(t: &str) -> String {
+    let mut out = String::new();
+    let mut buf = String::new();
+    let mut depth = 0u32;
+    for c in t.chars() {
+        match c {
+            '{' => { depth += 1; if depth == 1 { buf.clear(); } }
+            '}' => {
+                if depth == 1 {
+                    if let Some(pos) = buf.find('|') { out.push_str(&buf[pos + 1..]); }
+                }
+                depth = depth.saturating_sub(1);
+            }
+            _ if depth == 0 => out.push(c),
+            _ => buf.push(c),
         }
+    }
+    out.split_whitespace().collect::<Vec<_>>().join(" ").trim().to_string()
+}
+
+/// 從韋氏 entry 的 `def` 樹蒐集例句（verbal illustrations）
+///
+/// 韋氏的實際形狀是**標記對陣列**：`dt: [["vis", [{ "t": "…" }]]]`，
+/// 不是物件鍵。初版只認物件形式 → 例句恆為空（靜默失效），由單元測試抓出。
+/// 兩種寫法都處理，避免日後格式微調又要重蹈覆轍。
+fn mw_collect_examples(entry: &serde_json::Value) -> Vec<String> {
+    fn take(items: &serde_json::Value, out: &mut Vec<String>) {
+        if let Some(arr) = items.as_array() {
+            for it in arr {
+                if let Some(t) = it.get("t").and_then(|x| x.as_str()) {
+                    let s = strip_mw_markup(t);
+                    if !s.is_empty() && !out.contains(&s) { out.push(s); }
+                }
+            }
+        }
+    }
+    fn walk(v: &serde_json::Value, out: &mut Vec<String>) {
+        match v {
+            serde_json::Value::Object(m) => {
+                for (k, val) in m {
+                    if k == "vis" { take(val, out); } else { walk(val, out); }
+                }
+            }
+            serde_json::Value::Array(a) => {
+                if a.len() == 2 && a[0].as_str() == Some("vis") { take(&a[1], out); return; }
+                for it in a { walk(it, out); }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(entry, &mut out);
+    out.truncate(4);
+    out
+}
+
+/// 韋氏 collegiate 回應 → 舊 Cambridge 的 EnglishLookup JSON 形狀
+fn mw_to_lookup_json(word: &str, arr: &serde_json::Value) -> Result<String, String> {
+    let entries = arr.as_array().ok_or("韋氏回應格式異常")?;
+    // 查無字時韋氏回「建議字串陣列」（非 entries）→ 以 meta 有無判別
+    let objs: Vec<&serde_json::Value> = entries.iter().filter(|e| e.get("meta").is_some()).collect();
+    if objs.is_empty() {
+        let sug: Vec<String> = entries.iter().filter_map(|e| e.as_str().map(|s| s.to_string())).take(5).collect();
+        return Err(if sug.is_empty() {
+            format!("查無「{}」", word)
+        } else {
+            format!("查無「{}」，是否想查：{}", word, sug.join(", "))
+        });
+    }
+
+    let mut senses: Vec<serde_json::Value> = Vec::new();
+    for e in &objs {
+        let pos = e.get("fl").and_then(|x| x.as_str()).unwrap_or("");
+        let hw = e.pointer("/hwi/hw").and_then(|x| x.as_str()).unwrap_or(word).replace('*', "");
+        let exs = mw_collect_examples(e);
+        if let Some(sd) = e.get("shortdef").and_then(|x| x.as_array()) {
+            for d in sd {
+                if let Some(t) = d.as_str() {
+                    senses.push(serde_json::json!({
+                        "part_of_speech": pos,
+                        "definition": t,
+                        "examples": exs,
+                        "cefr_level": serde_json::Value::Null,
+                        "headword": hw,
+                    }));
+                }
+            }
+        }
+    }
+
+    // ANTFIX 等價過濾：同頁多條目（ant/-ant）只留查詢字的 sense；對不上則回退全留
+    let kept: Vec<serde_json::Value> = senses.iter()
+        .filter(|s| cambridge_scraper::headword_matches(s["headword"].as_str().unwrap_or(""), word))
+        .cloned().collect();
+    if !kept.is_empty() { senses = kept; }
+
+    // 發音／音檔：取第一個有 prs 的 entry（第一筆 prs 才是完整發音，其後為變體如 "he-"）
+    let mut us_ipa = serde_json::Value::Null;
+    let mut us_audio = serde_json::Value::Null;
+    for e in &objs {
+        if let Some(prs) = e.pointer("/hwi/prs").and_then(|x| x.as_array()) {
+            for p in prs {
+                if us_ipa.is_null() {
+                    if let Some(mw) = p.get("mw").and_then(|x| x.as_str()) {
+                        if !mw.ends_with('-') { us_ipa = serde_json::json!(mw); }
+                    }
+                }
+                if us_audio.is_null() {
+                    if let Some(a) = p.pointer("/sound/audio").and_then(|x| x.as_str()) {
+                        us_audio = serde_json::json!(mw_audio_url(a));
+                    }
+                }
+            }
+        }
+    }
+
+    serde_json::to_string(&serde_json::json!({
+        "word": word,
+        "uk_ipa": serde_json::Value::Null,
+        "uk_audio": serde_json::Value::Null,
+        "us_ipa": us_ipa,
+        "us_audio": us_audio,
+        "senses": senses,
+    })).map_err(|e| e.to_string())
+}
+
+/// 翻譯輸出後處理：去引號（含中文引號）、去頭尾分隔符、壓掉空白
+fn zh_clean(t: &str) -> String {
+    let s = t.trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '「' || c == '」' || c == '『' || c == '』')
+        .trim();
+    let s = s.trim_start_matches(|c| "；;，,、：:".contains(c))
+             .trim_end_matches(|c| "；;，,、。.".contains(c));
+    s.split_whitespace().collect::<Vec<_>>().join("")
+}
+
+/// DICTREBUILD 翻譯 prompt
+/// 使用者定義：英英釋義是「保險」→ 要求**涵蓋所有語意**，但**禁止同義詞堆疊**
+fn zh_translate_prompt(word: &str, defs: &str) -> String {
+    format!(
+"你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。
+
+規則：
+- 只輸出翻譯。不要解釋、拼音、引號、編號、句號
+- 英英釋義列出幾個語意，中文就要涵蓋幾個（key 有「鑰匙、關鍵、按鍵」三義就三個都要）
+- 但不要列同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」
+- 用「；」分隔，每個中文詞 2~4 字
+
+單字：{}
+英英釋義：
+{}", word, defs)
+}
+
+/// 呼叫 AI API —— 本地 ollama 或公開 OpenAI 相容端點皆可
+/// format: "ollama" → {base}/api/generate，回應取 .response
+///         "openai" → {base}/chat/completions，帶 Bearer，回應取 .choices[0].message.content
+fn llm_generate(base_url: &str, model: &str, format: &str, api_key: &str, prompt: &str) -> Result<String, String> {
+    let b = base_url.trim().trim_end_matches('/');
+    let is_openai = format == "openai";
+    let url = if is_openai {
+        if b.ends_with("/chat/completions") { b.to_string() }
+        else { format!("{}/chat/completions", b.trim_end_matches("/api/generate")) }
+    } else if b.ends_with("/api/generate") {
+        b.to_string()
+    } else {
+        format!("{}/api/generate", b.trim_end_matches("/chat/completions"))
+    };
+    let body = if is_openai {
+        serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": prompt }],
+            "stream": false, "temperature": 0.2
+        })
+    } else {
+        serde_json::json!({
+            "model": model, "prompt": prompt, "stream": false,
+            "options": { "temperature": 0.2, "num_predict": 120 }
+        })
+    };
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build();
+    let mut req = agent.post(&url).set("Content-Type", "application/json");
+    let k = api_key.trim();
+    if !k.is_empty() { req = req.set("Authorization", &format!("Bearer {}", k)); }
+    let resp = req.send_string(&body.to_string()).map_err(|e| format!("AI API 連線失敗: {}", e))?;
+    let text = resp.into_string().map_err(|e| format!("AI API body error: {}", e))?;
+    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("AI API JSON 解析失敗: {}", e))?;
+    let out = if is_openai {
+        json["choices"][0]["message"]["content"].as_str()
+    } else {
+        json["response"].as_str()
+    };
+    out.map(|s| s.to_string()).ok_or_else(|| "AI API 回應缺少預期欄位".to_string())
+}
+
+/// 從 teno.db 讀取設定值（DICTREBUILD 需要 mwDictKey / ollamaUrl / ollamaModel）
+fn dict_read_settings(app: &tauri::AppHandle, keys: &[&str]) -> std::collections::HashMap<String, String> {
+    use tauri::Manager;
+    let mut out = std::collections::HashMap::new();
+    let dir = match app.path().app_config_dir() { Ok(d) => d, Err(_) => return out };
+    let path = dir.join("teno.db");
+    let conn = match rusqlite::Connection::open(&path) { Ok(c) => c, Err(_) => return out };
+    let _ = conn.execute_batch("PRAGMA busy_timeout=3000;");
+    for k in keys {
+        if let Ok(v) = conn.query_row("SELECT value FROM settings WHERE key = ?1", rusqlite::params![k],
+                                      |r| r.get::<_, String>(0)) {
+            out.insert((*k).to_string(), v);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod dictrebuild_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn audio_url_follows_mw_convention() {
+        // 官方慣例：一般 → 首字母小寫/；bix → bix/；數字或 gg → number/
+        // 已用真實韋氏資料端到端驗證 6/6 可下載（workspace/verify-mw-audio.py）
+        assert!(mw_audio_url("hello001").ends_with("/h/hello001.mp3"));
+        assert!(mw_audio_url("artisa01").ends_with("/a/artisa01.mp3"));
+        assert!(mw_audio_url("key00001").ends_with("/k/key00001.mp3"));
+        assert!(mw_audio_url("beauti02").ends_with("/b/beauti02.mp3"));
+        assert!(mw_audio_url("bix").contains("/bix/bix.mp3"));
+        assert!(mw_audio_url("gg0001").contains("/number/gg0001.mp3"));
+        assert!(mw_audio_url("5star").contains("/number/5star.mp3"));
+    }
+
+    #[test]
+    fn zh_clean_strips_wrappers_and_separators() {
+        // 實測模型會吐「；爆裂；炸響」這種開頭多一個分隔符的輸出
+        assert_eq!(zh_clean("；爆裂；炸響"), "爆裂；炸響");
+        assert_eq!(zh_clean("，震動。"), "震動");
+        assert_eq!(zh_clean("「震動」"), "震動");
+        assert_eq!(zh_clean("\"邀請；邀約\""), "邀請；邀約");
+        assert_eq!(zh_clean("  流汗 ； 出汗  "), "流汗；出汗");
+        // 正常輸出不得被動到
+        assert_eq!(zh_clean("鑰匙；關鍵；按鍵"), "鑰匙；關鍵；按鍵");
+    }
+
+    #[test]
+    fn mw_json_maps_to_legacy_shape() {
+        // fixture 依真實韋氏 collegiate 回應形狀（hello）
+        let fixture = json!([{
+            "meta": { "id": "hello:1" },
+            "hwi": {
+                "hw": "hel*lo",
+                "prs": [
+                    { "mw": "hə-ˈlō", "sound": { "audio": "hello001", "ref": "c", "stat": "1" } },
+                    { "mw": "he-" }
+                ]
+            },
+            "fl": "noun",
+            "shortdef": ["an expression or gesture of greeting", "a greeting"],
+            "def": [{ "sseq": [[["sense", { "dt": [["vis", [{ "t": "said {it}hello{/it} to everyone" }]]] }]]] }]
+        }]);
+
+        let s = mw_to_lookup_json("hello", &fixture).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+
+        assert_eq!(v["word"], "hello");
+        // 第一筆才是完整發音；第二筆是變體 "he-" 不該勝出
+        assert_eq!(v["us_ipa"], "hə-ˈlō");
+        assert!(v["us_audio"].as_str().unwrap().ends_with("/h/hello001.mp3"));
+        assert_eq!(v["uk_ipa"], serde_json::Value::Null);   // 韋氏無英式
+        assert_eq!(v["senses"].as_array().unwrap().len(), 2);
+        assert_eq!(v["senses"][0]["part_of_speech"], "noun");
+        assert_eq!(v["senses"][0]["definition"], "an expression or gesture of greeting");
+        assert_eq!(v["senses"][0]["cefr_level"], serde_json::Value::Null);
+        assert_eq!(v["senses"][0]["headword"], "hello");    // hw 的 * 已去除
+        assert_eq!(v["senses"][0]["examples"][0], "said hello to everyone"); // {it} 已去除
+    }
+
+    #[test]
+    fn mw_suggest_response_is_a_clear_error() {
+        // 查無字時韋氏回「建議字串陣列」而非 entries
+        let fixture = json!(["helicopter", "helio", "hello"]);
+        let e = mw_to_lookup_json("heli", &fixture).unwrap_err();
+        assert!(e.contains("查無"), "err={}", e);
+        assert!(e.contains("helicopter"), "err={}", e);
+    }
+
+    #[test]
+    fn zh_prompt_is_coverage_oriented_but_bans_stacking() {
+        let p = zh_translate_prompt("key", "a small metal object\nsomething crucial");
+        assert!(p.contains("key"));
+        assert!(p.contains("a small metal object"));
+        // 使用者的定義：英英釋義是「保險」→ 要求涵蓋所有語意
+        assert!(p.contains("涵蓋"), "prompt 應要求涵蓋語意");
+        // 但禁止同義詞堆疊
+        assert!(p.contains("同義詞堆疊"), "prompt 應禁止堆疊");
+    }
+}
+
+#[tauri::command]
+async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: tauri::AppHandle) -> Result<String, String> {
+    // DICTREBUILD：對外簽名與回傳形狀不變（JS 端零改動），內部來源換成韋氏 +
+    //   本地 ollama 翻譯。函式名保留 `cambridge` 是刻意的 —— 使用者既有的
+    //   methodSources 設定以字串 'cambridge' 記錄來源，改名會讓設定失效。
+    let is_zh = lang.as_deref() == Some("zh");
+    let w = word.trim().to_string();
+    if w.is_empty() { return Err("請輸入單字".to_string()); }
+
+    let cfg = dict_read_settings(&app_handle,
+        &["mwDictKey", "llmApiUrl", "llmModel", "llmApiFormat", "llmApiKey", "ollamaUrl", "ollamaModel"]);
+    let key = cfg.get("mwDictKey").cloned().unwrap_or_default().trim().to_string();
+    if key.is_empty() {
+        return Err("詞典查詢需要韋氏 API Key（設定 → 韋氏字典 Key）".to_string());
+    }
+    // AI API：新鍵優先，舊 ollama* 為相容 fallback；留空時用本地預設
+    let pick = |a: &str, b: &str| cfg.get(a).or_else(|| cfg.get(b)).cloned().unwrap_or_default();
+    let llm_url = { let v = pick("llmApiUrl", "ollamaUrl"); if v.trim().is_empty() { "http://localhost:11434".to_string() } else { v } };
+    let llm_model = { let v = pick("llmModel", "ollamaModel"); if v.trim().is_empty() { "qwen2.5:14b".to_string() } else { v } };
+    let llm_format = cfg.get("llmApiFormat").map(|s| s.as_str()).unwrap_or("ollama").to_string();
+    let llm_key = cfg.get("llmApiKey").cloned().unwrap_or_default();
+
+    log::info!("lookup_cambridge(DICTREBUILD) word={} lang={:?} api={} model={} fmt={}", w, lang, llm_url, llm_model, llm_format);
+    let handle = tokio::task::spawn_blocking(move || {
+        let arr = mw_fetch(&mw_url("collegiate", &w, &key)?)?;
+        let en_json = mw_to_lookup_json(&w, &arr)?;
+        if !is_zh { return Ok(en_json); }
+
+        // ZH：英英釋義 → 本地 AI → 短中文翻譯。
+        // 英英釋義的角色是「保險」（使用者定義）：確保中文涵蓋到所有語意，
+        // 不是拿來顯示的 —— 所以這裡只把它當翻譯的輸入，不進回傳的 definition。
+        let en: serde_json::Value = serde_json::from_str(&en_json).map_err(|e| e.to_string())?;
+        let defs: Vec<String> = en["senses"].as_array().map(|a| a.iter()
+            .filter_map(|s| s["definition"].as_str().map(|x| x.to_string()))
+            .collect()).unwrap_or_default();
+        if defs.is_empty() { return Err(format!("查無「{}」的釋義，無法產生翻譯", w)); }
+        let raw = llm_generate(&llm_url, &llm_model, &llm_format, &llm_key, &zh_translate_prompt(&w, &defs.join("\n")))?;
+        let zh = zh_clean(&raw);
+        if zh.is_empty() { return Err("翻譯服務回傳空值".to_string()); }
+        serde_json::to_string(&serde_json::json!({
+            "word": w,
+            "uk_ipa": en["uk_ipa"], "uk_audio": en["uk_audio"],
+            "us_ipa": en["us_ipa"], "us_audio": en["us_audio"],
+            "senses": [{
+                "part_of_speech": en["senses"][0]["part_of_speech"],
+                "definition": "",
+                "translation": zh,
+                "examples": [],
+                "cefr_level": serde_json::Value::Null,
+                "headword": en["senses"][0]["headword"],
+            }],
+        })).map_err(|e| e.to_string())
     });
-    tokio::time::timeout(std::time::Duration::from_secs(15), handle).await
+    tokio::time::timeout(std::time::Duration::from_secs(120), handle).await
         .map_err(|_| format!("lookup_cambridge request timed out"))?
         .map_err(|e| format!("task failed: {}", e))?
 }

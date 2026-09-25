@@ -9,8 +9,56 @@ export const getAppPaths = () =>
   invoke('get_app_paths')
 
 // ─── LLM / Network ─────────────────────────────────────
-export const fetchLLM = (url, model, prompt, apiFormat) =>
-  invoke('fetch_llm', { url, model, prompt, apiFormat })
+/**
+ * DICTREBUILD：把使用者填的位址正規化成實際端點。
+ *   'ollama' → {base}/api/generate
+ *   'openai' → {base}/chat/completions
+ * 已是完整端點時原樣沿用。
+ */
+export const buildLlmEndpoint = (base, format) => {
+  const b = String(base || '').trim().replace(/\/+$/, '');
+  if (!b) return '';
+  if (format === 'openai') {
+    if (/\/chat\/completions$/.test(b)) return b;
+    return b.replace(/\/api\/generate$/, '') + '/chat/completions';
+  }
+  if (/\/api\/generate$/.test(b)) return b;
+  return b.replace(/\/chat\/completions$/, '') + '/api/generate';
+};
+
+/**
+ * 本地／公開 AI API 的**單一解析點**。
+ *
+ * 全 app 有 19 個呼叫點，全都傳 `${baseUrl}/api/generate`（ollama 慣例）與模型名。
+ * 為了不動那 19 處，端點／模型／格式／金鑰一律在此解析：
+ *   設定有填 → 以設定為準（可指向本地 ollama 或公開 OpenAI 相容 API）
+ *   設定留空 → 完全沿用呼叫端傳入的值（與改動前行為逐字相同）
+ */
+export const fetchLLM = async (url, model, prompt, apiFormat) => {
+  let cfg = null;
+  try {
+    const { getSetting } = await import('./db.js');
+    const [u, m, f, k] = await Promise.all([
+      getSetting('llmApiUrl'), getSetting('llmModel'),
+      getSetting('llmApiFormat'), getSetting('llmApiKey'),
+    ]);
+    cfg = {
+      url: String(u || '').trim(),
+      model: String(m || '').trim(),
+      format: f === 'openai' ? 'openai' : 'ollama',
+      key: String(k || '').trim(),
+    };
+  } catch (_) { cfg = null; }   // 非 Tauri（CLI/web-demo）→ 沿用呼叫端傳入值
+  const override = !!cfg && (cfg.url !== '' || cfg.key !== '' || cfg.format === 'openai');
+  if (!override) return invoke('fetch_llm', { url, model, prompt, apiFormat });
+  return invoke('fetch_llm', {
+    url: buildLlmEndpoint(cfg.url || 'http://localhost:11434', cfg.format),
+    model: cfg.model || model,
+    prompt,
+    apiFormat: cfg.format,
+    apiKey: cfg.key,
+  });
+};
 
 export const fetchGet = (url) =>
   invoke('fetch_get', { url })

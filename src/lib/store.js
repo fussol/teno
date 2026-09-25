@@ -138,6 +138,17 @@ export function createStore() {
     ocrRestoreModel: '',                      // 可選 AI 還原模型（進階/devMode；空=純離線 edit-distance 還原，不呼叫 LLM）
     mwDictKey: '',                             // D段：韋氏 Collegiate Dictionary key（自備，dictionaryapi.com）
     mwThesKey: '',                             // D段：韋氏 Collegiate Thesaurus key（自備）
+    // DICTREBUILD：AI API 端點與模型。放在「設定 → 韋氏字典」區。
+    // 可接**本地 API**（ollama）或**公開 API**（OpenAI 相容），由 llmApiFormat 決定。
+    // 留空時 19 個既有呼叫點沿用自身預設（http://localhost:11434 / qwen2.5-coder:7b）。
+    // 手機須填 PC 的 tailnet 位址（例 http://100.x.y.z:11434）才連得到本地 AI。
+    llmApiUrl: '',
+    llmModel: '',
+    llmApiFormat: 'ollama',                    // 'ollama' | 'openai'
+    llmApiKey: '',                             // 公開 API 用（本地 ollama 留空）
+    // 舊鍵（DICTREBUILD 之前從未持久化；保留為相容讀取，不再由 UI 寫入）
+    ollamaUrl: '',
+    ollamaModel: '',
     ocrCambridgeVerify: true,  // OCR 錄入 Cambridge 查證開關（查得到才入；devMode 可關）
     uiHints: false,           // 介面備註開關（使用者 2026-09-10 裁示：預設關；設定頁可開）
     uiScaleIdx: 0,              // UISCALE1：介面縮放檔位 0..4（0＝100% 目前大小最小）
@@ -339,6 +350,13 @@ export function createStore() {
             // MWKEYS1: loadAll 漏讀五鍵——hydrate 端有消費、上游沒餵 → 重啟後恆空
             mwDictKey: await db.getSetting('mwDictKey'),
             mwThesKey: await db.getSetting('mwThesKey'),
+            // DICTREBUILD: AI API 端點／模型／格式／金鑰（原本從未持久化 → 手機無法指向 PC）
+            llmApiUrl: await db.getSetting('llmApiUrl'),
+            llmModel: await db.getSetting('llmModel'),
+            llmApiFormat: await db.getSetting('llmApiFormat'),
+            llmApiKey: await db.getSetting('llmApiKey'),
+            ollamaUrl: await db.getSetting('ollamaUrl'),
+            ollamaModel: await db.getSetting('ollamaModel'),
             graylist: await db.getSetting('graylist'),
             ocrMode: await db.getSetting('ocrMode'),
             ocrRestoreModel: await db.getSetting('ocrRestoreModel'),
@@ -535,6 +553,13 @@ export function createStore() {
     state.ocrRestoreModel = typeof settings.ocrRestoreModel === 'string' ? settings.ocrRestoreModel : '';
     state.mwDictKey = typeof settings.mwDictKey === 'string' ? settings.mwDictKey : '';
     state.mwThesKey = typeof settings.mwThesKey === 'string' ? settings.mwThesKey : '';
+    // DICTREBUILD: AI API 設定（可接本地 ollama，也可接公開 OpenAI 相容端點）。
+    // 舊鍵 ollamaUrl/ollamaModel 保持原樣不動 —— vision-adapter 直接讀該設定，
+    // 而視覺模型只有本地 ollama 有，指到公開 API 反而會壞。
+    state.llmApiUrl = typeof settings.llmApiUrl === 'string' ? settings.llmApiUrl : '';
+    state.llmModel = typeof settings.llmModel === 'string' ? settings.llmModel : '';
+    state.llmApiFormat = settings.llmApiFormat === 'openai' ? 'openai' : 'ollama';
+    state.llmApiKey = typeof settings.llmApiKey === 'string' ? settings.llmApiKey : '';
     state.ocrCambridgeVerify = typeof settings.ocrCambridgeVerify === 'boolean'
       ? settings.ocrCambridgeVerify : true;
     // 介面備註開關（no-hints body class；預設關＝備註隱藏）

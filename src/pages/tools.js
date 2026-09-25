@@ -190,14 +190,7 @@ export function render(s) {
             style="width:50px;font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);text-align:center">
           <label style="font-size:12px;white-space:nowrap">句(0=全顯示)</label>
         </div>
-        <div id="llmUrlRow" style="display:none;margin-bottom:var(--s2)">
-          <div style="display:flex;gap:var(--s2);margin-bottom:4px">
-            <input id="llmUrl" type="text" value="http://localhost:11434/api/generate" placeholder="Ollama API 網址"
-              style="flex:2;font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
-            <input id="llmModel" type="text" value="" placeholder="模型名稱 (留空自動偵測)"
-              style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
-          </div>
-        </div>
+        <!-- DICTREBUILD：AI API 位址／模型已移入「設定 → 韋氏字典 → API」 -->
         <div class="tool-output" id="comboResult" style="margin-top:var(--s3);display:none"></div>
       </div>
     </div><!-- /自動補齊 section -->
@@ -340,32 +333,26 @@ export function onMount(s) {
   window.__pageCleanup = () => { _unsub(); delete window.__pageCleanup; };
 
   // ponytail: shared LLM model detection
+  // DICTREBUILD: 位址與模型改由「設定 → 韋氏字典 → API」讀取（原本的輸入框已移入設定）。
+  // 設定留空時沿用本地預設，行為與改動前相同。
   async function detectModel(resultElId) {
-    const llmRow = document.getElementById('llmUrlRow');
-    if (llmRow) llmRow.style.display = 'block';
-    const baseUrl = (document.getElementById('llmUrl')?.value || '').trim().replace(/\/api\/generate$/, '') || 'http://localhost:11434';
-    let model = (document.getElementById('llmModel')?.value || '').trim();
+    const baseUrl = ((s.state.llmApiUrl || '').trim() || 'http://localhost:11434').replace(/\/api\/generate$/, '').replace(/\/chat\/completions$/, '');
+    let model = (s.state.llmModel || '').trim();
     if (model) return { baseUrl, model };
     const el = document.getElementById(resultElId);
     if (!el) return null;
     el.style.display = 'block';
     try {
-      el.innerHTML = `<div>偵測 Ollama 模型...</div>`;
+      el.innerHTML = `<div>偵測本地 AI 模型...</div>`;
       const resp = await fetchGet(`${baseUrl}/api/tags`);
       const list = (JSON.parse(resp).models || []).map(m => m.name);
       if (!list.length) { el.innerHTML = `<div style="color:var(--orange)">${icon('info')} 無可用模型</div>`; return null; }
       model = list[0];
-      document.getElementById('llmModel').value = model;
       return { baseUrl, model };
     } catch (e) {
-      el.innerHTML = `<div style="color:var(--orange)">${icon('info')} 無法連線 Ollama，請確認 http://localhost:11434 有在運作</div>`;
+      el.innerHTML = `<div style="color:var(--orange)">${icon('info')} 無法連線 AI API（${baseUrl}）——請到「設定 → 韋氏字典 → API」確認位址</div>`;
       return null;
     }
-  }
-
-  function hideLlmRow() {
-    const r = document.getElementById('llmUrlRow');
-    if (r) r.style.display = 'none';
   }
 
   // ponytail: read method selector value
@@ -631,8 +618,8 @@ export function onMount(s) {
     if (vals.includes('llm')) {
       llm = await detectModel('comboResult');
       llmOk = !!llm;
-      if (!llmOk) toast('連不上 Ollama：LLM 來源的欄位會跳過，其餘照做', 'toast-warn');
-    } else hideLlmRow();
+      if (!llmOk) toast('連不上 AI API：LLM 來源的欄位會跳過，其餘照做', 'toast-warn');
+    }
     const { threshold, count } = _exampleConfig();
     const CN = {};
     for (const f of on) CN[f] = COMBO_CN[f];
@@ -726,7 +713,8 @@ export function onMount(s) {
         const pos = normalizePos(s.part_of_speech || '');
         html += `<div style="margin-top:4px;padding:6px;background:var(--bg-secondary);border-radius:var(--r1)">`;
         html += `<div style="font-size:12px;color:var(--accent);margin-bottom:2px">${pos}${s.cefr_level ? ` <span style="color:var(--orange)">${s.cefr_level}</span>` : ''}</div>`;
-        html += `<div style="font-size:13px;margin-bottom:2px">${icon('info')} ${s.definition}</div>`;
+        // DICTREBUILD：英中模式只回翻譯（definition 空）→ 不要留一行空白的資訊圖示
+        if (s.definition) html += `<div style="font-size:13px;margin-bottom:2px">${icon('info')} ${s.definition}</div>`;
         if (s.translation) html += `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:2px">${icon('translate')} ${s.translation}</div>`;
         for (const ex of (s.examples || [])) {
           const txt = typeof ex === 'string' ? ex : `${ex.english}${ex.chinese ? ` / ${ex.chinese}` : ''}`;

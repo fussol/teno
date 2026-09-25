@@ -368,8 +368,27 @@ export async function fillWordFields({
       if (M === 'llm') {
         if (!llmOk) bump('trans', 'skip');
         else {
-          const text = await llmText(`Give the Traditional Chinese (繁體中文) definition of the English word "${w}". Concise, one line. Return ONLY the Chinese definition, nothing else.`);
-          const t = String(text ?? '').trim().split('\n')[0].trim();
+          // DICTREBUILD：把**英英釋義**餵進去 —— 使用者定義的用途是「保險」：
+          // 確保中文涵蓋到所有語意（key 不只「鑰匙」），並要求短且禁同義詞堆疊。
+          // 取不到英英釋義時退化為舊 prompt（只看單字），不讓翻譯整體失效。
+          let defs = '';
+          if (camEn) {
+            try {
+              const enData = await camEn();
+              defs = (enData.senses || [])
+                .map(s => String(s.definition || '').trim()).filter(Boolean).join('\n');
+            } catch (_) { /* 英英來源不可用 → 走退化路徑 */ }
+          }
+          const prompt = defs
+            ? `你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。\n\n`
+              + `規則：\n- 只輸出翻譯。不要解釋、拼音、引號、編號、句號\n`
+              + `- 英英釋義列出幾個語意，中文就要涵蓋幾個\n`
+              + `- 但不要列同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」\n`
+              + `- 用「；」分隔，每個中文詞 2~4 字\n\n單字：${w}\n英英釋義：\n${defs}`
+            : `Give the Traditional Chinese (繁體中文) definition of the English word "${w}". Concise, one line. Return ONLY the Chinese definition, nothing else.`;
+          const text = await llmText(prompt);
+          const t = String(text ?? '').trim().split('\n')[0].trim()
+            .replace(/^[；;，,、：:]+/, '').replace(/[；;，,、。.\s]+$/, '');
           if (t) { patch.definition = t; bump('trans', 'ok'); } else bump('trans', 'fail');
         }
       } else {

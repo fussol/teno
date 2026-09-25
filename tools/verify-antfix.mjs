@@ -23,10 +23,13 @@ ok('en Sense 有 headword（serde default）',
 ok('en 舊模板記 entry_headword', en.includes('headword: entry_headword.clone()'));
 ok('en 新模板 nearest_headword 歸屬', en.includes('fn nearest_headword') && en.includes('nearest_headword(&block)'));
 
-console.log('== T2 呼叫端：lookup_cambridge 同字過濾＋回退 ==');
+console.log('== T2 呼叫端：同字過濾＋回退 ==');
+// DICTREBUILD：來源由 Cambridge 換成韋氏後，過濾從 lookup_cambridge 移進 mw_to_lookup_json
+//（語意完全不變：同字過濾 + 對不上則全留）。斷言改抓「行為仍在」而非「寫在哪一行」。
 ok('zh 分支過濾（headword_matches＋空則全留）',
-  lib.includes('cambridge_scraper::headword_matches(&s.headword, &word)'));
-ok('en 分支同樣過濾', (lib.match(/headword_matches\(&s\.headword, &word\)/g) || []).length >= 2);
+  lib.includes('cambridge_scraper::headword_matches') && lib.includes('if !kept.is_empty() { senses = kept; }'));
+ok('en 分支同樣過濾（韋氏映射處）',
+  /fn mw_to_lookup_json[\s\S]*?headword_matches[\s\S]*?if !kept\.is_empty\(\) \{ senses = kept; \}/.test(lib));
 ok('headword_matches 匯出（crate lib.rs）', readFileSync(`${R}/src-tauri/cambridge_scraper/src/lib.rs`, 'utf8').includes('headword_matches'));
 
 console.log('== T3 顯示：長翻譯換行 ==');
