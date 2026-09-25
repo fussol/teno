@@ -98,6 +98,34 @@ for (const [c, p] of [['WORD_UPSERT_SQL', 'wordUpsertParams'], ['CARD_UPSERT_SQL
   chk(`${c} 被單筆與批次共用（≥3 引用）`, uses >= 3, `uses=${uses}`);
 }
 chk('raw 寫入 helper 已移除（改由 SQL 單一來源）', !/_saveWordRaw|_saveCardRaw/.test(codeOnly));
+// DB-TX1: 佔位符數必須等於參數數 —— 不一致會在執行期「整批交易失敗」
+//         （rusqlite: wrong number of parameters），而且只在使用者匯入／評分時才炸。
+{
+  const sqlOf = (name) => {
+    const i = codeOnly.indexOf(`const ${name} = `);
+    if (i < 0) return '';
+    const s = codeOnly.indexOf('`', i);
+    const e = codeOnly.indexOf('`', s + 1);
+    return s < 0 || e < 0 ? '' : codeOnly.slice(s + 1, e);
+  };
+  // 本 repo 寫法：一行一元素 → 數「非空、非註解」的行
+  const paramCountOf = (fn) => {
+    const body = fnBody(`function ${fn}(`);
+    const i = body.indexOf('return [');
+    const j = body.indexOf('];', i);
+    if (i < 0 || j < 0) return -1;
+    return body.slice(i + 8, j).split('\n').filter(l => { const t = l.trim(); return t && !t.startsWith('//'); }).length;
+  };
+  for (const [c, p] of [['WORD_UPSERT_SQL', 'wordUpsertParams'], ['CARD_UPSERT_SQL', 'cardUpsertParams']]) {
+    const nums = [...sqlOf(c).matchAll(/\$(\d+)/g)].map(m => +m[1]);
+    const maxN = nums.length ? Math.max(...nums) : 0;
+    const uniq = new Set(nums).size;
+    chk(`${c} 佔位符從 $1 連續（無跳號）`, nums.length === maxN && uniq === maxN,
+      `distinct=${uniq} max=${maxN} refs=${nums.length}`);
+    const cnt = paramCountOf(p);
+    chk(`${p} 參數數 === 佔位符數（${maxN}）`, cnt === maxN, `params=${cnt} placeholders=${maxN}`);
+  }
+}
 // 8 個交易函式：必須在 _write 內、走 Rust _tx、不得自己組交易或呼叫走佇列的 saveWord/saveCard
 const TX_FNS = ['saveWordsInTx', 'bulkSaveWords', 'bulkSaveCards', 'deleteWordsByDeck',
                 'saveFolders', 'bulkSaveAdditions', 'clearAll', 'deleteWord'];
