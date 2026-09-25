@@ -60,7 +60,7 @@ export function barChart(data, opts = {}) {
  * Render a line chart SVG with optional area fill.
  * Null values are treated as gaps: the line breaks there (no dot, no segment).
  * @param {{label:string,value:(number|null)}[]} data
- * @param {{width?:number,height?:number,min?:number,max?:number,color?:string,fmt?:function}} [opts]
+ * @param {{width?:number,height?:number,min?:number,max?:number,color?:string,fmt?:function,band?:boolean,xLabels?:boolean}} [opts]
  */
 export function lineChart(data, opts = {}) {
   const width = opts.width || 460;
@@ -77,7 +77,18 @@ export function lineChart(data, opts = {}) {
   const axisColor = 'rgba(128,120,153,0.35)';
 
   const pts = data.map((d, i) => {
-    const x = pad.l + (n <= 1 ? innerW / 2 : (innerW * i) / (n - 1));
+    // x 定位兩種模式：
+    //   band=true  → 對齊 barChart 的柱心，供「折線疊在柱狀圖上」使用。
+    //   預設的 i/(n-1) 會讓同一組 x 標籤被兩層畫在差 2~9px 的位置上，
+    //   視覺上像數字重疊／糊掉（HDIST1 2026-09-25）。
+    //   ⚠️ 算式刻意與 barChart 逐字相同（bw = innerW/n；pad.l + i*bw + bw/2），
+    //      不是 (i+0.5)*innerW/n——後者浮點結合律不同，toFixed(1) 會差 0.1，
+    //      標籤就會有極輕微的雙影。要位元級相同才保證完全重合。
+    //   預設       → 端點到端點 i/(n-1)，折線圖慣例。
+    const bw = innerW / n;
+    const x = pad.l + (n <= 1 ? innerW / 2
+      : opts.band ? i * bw + bw / 2
+      : (innerW * i) / (n - 1));
     const v = typeof d.value === 'number' ? d.value : NaN;
     const y = Number.isFinite(v) ? pad.t + innerH - ((v - min) / span) * innerH : NaN;
     return { x, y, d, v };
@@ -99,7 +110,9 @@ export function lineChart(data, opts = {}) {
     `${seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} L ${seg[seg.length - 1].x.toFixed(1)} ${pad.t + innerH} L ${seg[0].x.toFixed(1)} ${pad.t + innerH} Z`
   ).join(' ');
   const dots = pts.filter(p => Number.isFinite(p.y)).map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" fill="${color}"/>`).join('');
-  const labels = pts.filter((_, i) => i % Math.max(1, Math.ceil(n / 8)) === 0).map(p => {
+  // HDIST1：疊圖時外層不該再畫一次 x 標籤（同一組標籤畫兩次＝糊掉；
+  // 且兩層的抽稀步長若因寬度不同而分歧，還會畫在不同位置）。xLabels:false 關閉。
+  const labels = (opts.xLabels === false) ? '' : pts.filter((_, i) => i % Math.max(1, Math.ceil(n / 8)) === 0).map(p => {
     return `<text x="${p.x.toFixed(1)}" y="${height - 6}" text-anchor="middle" font-size="10" fill="rgba(128,120,153,0.9)">${escapeXml(p.d.label || '')}</text>`;
   }).join('');
 

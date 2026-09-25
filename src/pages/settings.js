@@ -16,7 +16,7 @@ import { renderContent as renderExportContent, onMount as onMountExport } from '
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
 import { ICON_PRESETS } from '../lib/icon-presets.js';
 import { clampLearnAhead, UI_SCALE_LABELS } from '../lib/store.js';
-import { FIELD_LABELS, FIELD_KEYS } from '../lib/word-extra.js';
+import { FIELD_LABELS, FIELD_KEYS, FIELD_STUDY_ONLY } from '../lib/word-extra.js';
 
 // 欄位顯示三組（設定頁 master）：瀏覽器字卡正面／背面＋學習測驗共用
 const FIELD_VIS_GROUPS = [
@@ -310,17 +310,22 @@ function renderSettingsContent(s) {
       <div class="section-title">${icon('eye')} 欄位顯示</div>
       <div class="config-section">
         <div class="config-field-info" style="margin-bottom:var(--s2)">
-          <div class="config-field-hint">三組各別設定要顯示哪些欄位（例句含片語；英文單字只有字卡正反面可以隱藏）</div>
+          <div class="config-field-hint">三組各別設定要顯示哪些欄位（例句含片語；英文單字只有字卡正反面可以隱藏）。「複習次數」「上次複習」只在學習組——三個模式各有自己的卡狀態，故只顯示你當下模式的數據。</div>
         </div>
         ${FIELD_VIS_GROUPS.map(([ctx, name, hint]) => {
           const cur = Array.isArray(s.state['fieldVis' + ctx[0].toUpperCase() + ctx.slice(1)])
             ? s.state['fieldVis' + ctx[0].toUpperCase() + ctx.slice(1)]
-            : [...FIELD_KEYS];
+            : FIELD_KEYS.filter(k => !FIELD_STUDY_ONLY.includes(k));   // REPS1: fresh 不自動勾僅限學習情境的欄位
+          // REPS1: reps/lastReview 只在學習情境有意義（瀏覽器無對應模式、測驗不寫卡），
+          //   故僅「學習組」提供開關；瀏覽器正面／背面組不列，免得勾了沒反應。
+          const groupKeys = ctx === 'study'
+            ? FIELD_KEYS
+            : FIELD_KEYS.filter(k => !FIELD_STUDY_ONLY.includes(k));
           return `<div style="margin-bottom:var(--s3)">
             <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:2px">${name}</div>
             <div class="config-field-hint" style="margin-bottom:6px">${hint}</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
-              ${FIELD_KEYS.map(k => {
+              ${groupKeys.map(k => {
                 const forced = ctx === 'study' && k === 'word';
                 const checked = forced || cur.includes(k);
                 return `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-secondary);border:1px solid var(--border);border-radius:100px;padding:3px 10px;${forced ? 'opacity:.55;' : 'cursor:pointer'}">

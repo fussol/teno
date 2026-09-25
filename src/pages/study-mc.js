@@ -109,7 +109,7 @@ function renderBack(w, cnt) {
       ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
       ${(visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${(visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
-      ${extraFieldsHtml(w, e, 'study')}
+      ${extraFieldsHtml(w, e, 'study', session?.current?.card)}
     </div>
     <div class="study-buttons">
       ${[[0,'Again','var(--red)'],[1,'Hard','var(--orange)'],[2,'Good','var(--green)'],[3,'Easy','var(--cyan)']].map(([r,lbl,c])=>`

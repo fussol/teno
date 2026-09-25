@@ -108,7 +108,7 @@ function renderBack(w, cnt) {
       ${(visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
       ${(visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${(visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
-      ${extraFieldsHtml(w, e, 'study')}
+      ${extraFieldsHtml(w, e, 'study', session?.current?.card)}
       <div class="study-user-input">你的輸入：<span class="study-user-word">${e(userInput)}</span></div>
     </div>
     <div class="study-buttons">

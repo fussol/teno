@@ -630,8 +630,10 @@ function renderHourDistChart(reviewLog) {
   return `
     <div style="position:relative">
       ${barChart(barData, { max: Math.max(1, ...counts), color: '#fbbf24', height: 110 })}
+      <!-- HDIST1：折線疊在柱狀圖上——band 讓折線點對齊柱心，xLabels:false 避免
+           外層再畫一次 x 標籤（兩層都畫會錯位成「數字糊在一起」）。x 軸標籤由 barChart 提供。 -->
       <div style="position:absolute;top:0;left:0;right:0;pointer-events:none">
-        ${lineChart(lineData, { min: 0, max: 100, color: 'var(--green)', height: 110 })}
+        ${lineChart(lineData, { min: 0, max: 100, color: 'var(--green)', height: 110, band: true, xLabels: false })}
       </div>
     </div>
     <div style="display:flex;gap:var(--s4);font-size:11px;color:var(--text-tertiary);margin-top:var(--s1)">

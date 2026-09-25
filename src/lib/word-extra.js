@@ -25,9 +25,27 @@ export const FIELD_LABELS = {
   image: '圖片',
   syllables: '音節',
   etymology: '字源',
+  // REPS1（2026-09-25 使用者裁示）：複習次數／上次複習各自獨立顯示，
+  // 資料源＝cards 表（words 無排程欄位）。新增 key 必須進 FIELD_LABELS，
+  // 否則 getFieldVis() 的白名單 filter 會把它濾掉、設定頁也不會長出開關。
+  reps: '複習次數',
+  lastReview: '上次複習',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS);
+
+/**
+ * REPS1：僅適用於學習情境的欄位（flip／mc／spell 三個學習模式各自顯示自己的卡狀態）。
+ *
+ * 兩個後果，都由此清單驅動：
+ * 1. 不在瀏覽器字卡（browserFront／browserBack）與測驗頁渲染——那兩處沒有「對應模式」
+ *    可言（瀏覽器無模式；測驗根本不寫卡，顯示的數字永遠不受該次測驗影響）。
+ * 2. 預設隱藏：使用者須在設定頁「學習」組明確勾選才會出現。
+ *
+ * store.js 的 hydrate 白名單／fallback 與 settings.js 的 UI fallback 共用此清單，
+ * 避免語意散落多處而漂移。
+ */
+export const FIELD_STUDY_ONLY = ['reps', 'lastReview'];
 
 /**
  * 取某情境可見欄位 Set（讀 window.__fieldVis；store 開機 hydrate、
@@ -42,12 +60,53 @@ export function getFieldVis(ctx) {
     const v = window.__fieldVis?.[c];
     if (Array.isArray(v)) return new Set(v.filter(k => FIELD_KEYS.includes(k)));
   } catch (_) {}
-  return new Set(FIELD_KEYS);
+  // 無可見度資料時：全可見，但僅限學習情境的欄位仍不自動出現（REPS1）
+  return new Set(FIELD_KEYS.filter(k => !FIELD_STUDY_ONLY.includes(k)));
 }
 
 /** 某情境下某欄位是否可見（'word' 只在字卡正反面可關，其餘處呼叫端直接渲染）。 */
 export function visShow(ctx, key) {
   return getFieldVis(ctx).has(key);
+}
+
+/**
+ * REPS1：lastReview（UTC ISO 字串，cards.last_review）→ 相對時間文字。
+ * 無法解析／空值回空字串（呼叫端據此整塊不渲染，不塞佔位）。
+ * 分段沿用 exam-session.js 的 formatSessionTime（1 分／1 時／1 天／7 天），
+ * 但該檔在 core/ 且吃 ms number，word-extra 是零 import 的共用 leaf，
+ * 故本地實作以免 lib→core 反向依賴。
+ */
+function fmtLastReview(iso) {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const diff = Date.now() - t;
+  if (diff < 60000) return '剛剛';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins} 分鐘前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} 小時前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} 天前`;
+  const d = new Date(t);   // 超過一週改絕對日期（本地時區）
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** 複習次數／上次複習兩塊 HTML（瀏覽器字卡與學習／測驗共用；各自獨立判斷可見度）。
+ *  回傳 block 字串陣列（呼叫端 push(...)），保持與其他欄位一致的 out 結構。
+ *  無 card（未學過的詞）或欄位無值 → 該塊不產生。 */
+function cardStatBlocks(card, e, gv) {
+  if (!card) return [];
+  const out = [];
+  if (gv('reps')) {
+    out.push(`<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">複習次數 </span><span style="font-weight:600">${e(card.reps ?? 0)}</span></div>`);
+  }
+  if (gv('lastReview')) {
+    const s = fmtLastReview(card.lastReview);
+    if (s) out.push(`<div class="card-panel-desc" style="margin-top:4px"><span style="font-weight:600;color:var(--text-tertiary);font-size:11px">上次複習 </span><span style="font-weight:600">${e(s)}</span></div>`);
+  }
+  return out;
 }
 
 /**
@@ -93,6 +152,10 @@ export function cardFaceHtml(w, s, face, h) {
       return `<span class="tag" style="background:${c};color:${(s?.state?.tagConfig || {})[t] ? '#fff' : 'var(--accent-on)'}">${e(t)}</span>`;
     }).join('')}</div>`);
   }
+  // REPS1：複習次數／上次複習刻意【不在】瀏覽器字卡渲染——
+  //   flip／mc／spell 三模式各有自己的卡狀態（state.cards／cardsMc／cardsSpell），
+  //   瀏覽器沒有「對應模式」可言，硬取 flip 那張會對只練 mc/spell 的詞顯示錯誤數字。
+  //   故只在學習情境（extraFieldsHtml，由該模式自己的 session.current.card 供值）顯示。
   return out.join('');
 }
 
@@ -100,9 +163,15 @@ export function cardFaceHtml(w, s, face, h) {
  * @param {object} w 單字物件
  * @param {(s:string)=>string} esc escape 函式
  * @param {'study'|'exam'} [ctx] 可見度情境（預設 study）
+ * @param {object} [card] card 物件（REPS1：複習次數／上次複習來源）。
+ *   ⚠️ 只有學習頁該傳，且必須傳【該模式自己的卡】：
+ *   study-v4 傳 session.current.card（flip）／study-mc 傳 session.current.card（mc）／
+ *   study-spell 傳 session.current.card（spell）—— 三者由 makeSession 分別餵
+ *   state.cards／cardsMc／cardsSpell，所以同一個存取式天然取得對應模式的資料。
+ *   測驗頁不傳（測驗不寫卡，顯示該數字會誤導）；瀏覽器不走本函式。
  * @returns {string} HTML（無欄位時回空字串）
  */
-export function extraFieldsHtml(w, esc, ctx = 'study') {
+export function extraFieldsHtml(w, esc, ctx = 'study', card = null) {
   if (!w) return '';
   const e = esc || ((s) => String(s ?? ''));
   const show = (k) => visShow(ctx, k);
@@ -121,5 +190,9 @@ export function extraFieldsHtml(w, esc, ctx = 'study') {
   if (w.etymology && show('etymology')) {
     out.push(`<div class="study-example" style="font-style:normal"><span style="color:var(--accent);font-size:10px;letter-spacing:.08em">字源</span><br>${e(w.etymology).replace(/\n/g, '<br>')}</div>`);
   }
+  // REPS1：複習次數／上次複習——僅學習情境渲染。
+  //   ctx 'exam' 依設計別名到 study（可見度共用），但這兩個欄位不該出現在測驗頁
+  //   （測驗不寫卡），故此處獨立擋掉，避免未來有人補傳 card 就漏出來。
+  if (ctx !== 'exam') out.push(...cardStatBlocks(card, e, show));
   return out.join('');
 }

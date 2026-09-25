@@ -77,7 +77,7 @@ function renderCard(s) {
       ${(isAns && visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
       ${(isAns && visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
       ${(isAns && visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
-      ${isAns ? extraFieldsHtml(w, e, 'study') : ''}
+      ${isAns ? extraFieldsHtml(w, e, 'study', session?.current?.card) : ''}
       ${(isAns && visShow('study', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${e(w.description)}</div>` : ''}
     </div>
     ${!isAns

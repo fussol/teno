@@ -9,6 +9,7 @@ import { startAutoBackup } from './backup-scheduler.js';
 import { FSRS, AGAIN, HARD, GOOD, EASY, STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING, generateFuzzFactor, parseStepsStr } from '../core/fsrs.js';
 import { mulberry32 } from './rng.js';
 import { DEFAULT_BLACKLIST, normalizeBlackWord } from './ocr-blacklist.js';
+import { FIELD_STUDY_ONLY } from './word-extra.js';
 
 /**
  * A9: 作答時間 cap — 對齊 Anki rslib `cap_answer_time_to_secs`（預設 60s，
@@ -470,9 +471,12 @@ export function createStore() {
     // 正面預設只顯示英文單字（fresh）；背面預設全開。舊 fieldVisBrowser 遷給背面。
     // 學習／測驗共用同一組：舊 fieldVisExam 併入 study（聯集，不藏使用者看過的），
     // 雙鍵同步寫回，exam 讀 study 別名。
-    const _FV_KEYS = ['word', 'pron', 'definition', 'example', 'description', 'related', 'forms', 'synonym', 'antonym', 'tags', 'image', 'syllables', 'etymology'];
+    // REPS1: 白名單必須含全部欄位——_parseVis 用它 filter 已存值，
+    // 漏掉新 key 會讓使用者勾選的設定在重啟 hydrate 時被靜默濾除。
+    const _FV_KEYS = ['word', 'pron', 'definition', 'example', 'description', 'related', 'forms', 'synonym', 'antonym', 'tags', 'image', 'syllables', 'etymology', 'reps', 'lastReview'];
     const _parseVis = (v, fallback) => {
-      const fb = fallback || _FV_KEYS;
+      // REPS1: fallback（fresh／無設定）排除僅限學習情境的欄位——新欄位不自動開
+      const fb = (fallback || _FV_KEYS).filter(k => !FIELD_STUDY_ONLY.includes(k));
       if (v == null || v === '') return [...fb];
       // FVPERSIST1: getSetting 對 JSON 字串會先 parse 成 array 回來——array 本身就是
       // 合法結果直接用（舊碼 JSON.parse(array) 必 throw → 恆 fallback → 使用者設定記不住）

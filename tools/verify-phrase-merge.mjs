@@ -39,7 +39,8 @@ ok('blank lines dropped', mergeExamplePhrases('a\n\nb', '\n c \n') === 'a\nb\nc'
 // ── word-extra：可見度預設全開、缺失回退、新 ctx 別名 ──
 const extra = await import('../src/lib/word-extra.js');
 globalThis.window = {};
-ok('FIELD_KEYS=13', extra.FIELD_KEYS.length === 13, extra.FIELD_KEYS.join(','));
+// REPS1（2026-09-25）：13 → 15（新增 reps／lastReview 兩個可顯示欄位）
+ok('FIELD_KEYS=15', extra.FIELD_KEYS.length === 15, extra.FIELD_KEYS.join(','));
 ok('word is first key', extra.FIELD_KEYS[0] === 'word');
 ok('default all visible', extra.visShow('study', 'example') && extra.visShow('exam', 'syllables') && extra.visShow('browserFront', 'image'));
 // exam 是 study 別名：只設 study，exam 跟著走
