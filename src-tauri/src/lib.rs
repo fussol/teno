@@ -1,7 +1,9 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, FilePath};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod tts_android;
@@ -540,6 +542,45 @@ fn mw_to_lookup_json(word: &str, arr: &serde_json::Value) -> Result<String, Stri
     })).map_err(|e| e.to_string())
 }
 
+// ── SIMPLIFIED-LOCK（程式鎖）────────────────────────────────────────────
+// 使用者要求：翻譯「必須輸出繁體，不能簡體」，要兩道鎖 ——
+//   鎖① prompt 明令（zh_translate_prompt / autofill-engine.js）
+//   鎖② 輸出後程式轉換（此處 + zh_clean + zh_traditional 命令）
+//
+// 表來源（見 tools/gen-zh-s2t.mjs）：
+//   fcitx gbks2t.tab（簡體→繁體）＋ opencc jp2t（日文漢字→繁體）
+// 關鍵安全性質：**只收「本身不是合法繁體」的字** —— 167 個共享字
+//   （台/后/里/系/只/志/万…）被刻意排除，所以不會把「台語」「皇后」
+//   「系統」「裡面」這類正確繁體轉壞。這是純字表轉換能安全的原因。
+// 日文漢字那 231 條是擋模型多語混入（実→實、経済→經濟、発→發）。
+static ZH_S2T: LazyLock<HashMap<char, char>> = LazyLock::new(|| {
+    include_str!("zh_s2t.tsv")
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            let s = it.next()?.trim().chars().next()?;
+            let t = it.next()?.trim().chars().next()?;
+            Some((s, t))
+        })
+        .collect()
+});
+
+/// 簡體／日文漢字 → 繁體。無法轉的字原樣保留。
+/// 全繁體或純 ASCII 時直接回傳（不必每次走整個 map）。
+pub fn to_traditional(s: &str) -> String {
+    if !s.chars().any(|c| ZH_S2T.contains_key(&c)) {
+        return s.to_string();
+    }
+    s.chars().map(|c| *ZH_S2T.get(&c).unwrap_or(&c)).collect()
+}
+
+/// 給前端用的程式鎖 —— autofill 的翻譯走 JS 路徑，需要同一道鎖
+/// （前端拿不到這張表，所以由 Rust 統一提供，確保兩條路徑轉出來的結果一致）
+#[tauri::command]
+fn zh_traditional(text: String) -> String {
+    to_traditional(&text)
+}
+
 /// 翻譯輸出後處理
 ///
 /// 1. 去引號（含中文引號）
@@ -547,7 +588,8 @@ fn mw_to_lookup_json(word: &str, arr: &serde_json::Value) -> Result<String, Stri
 ///    切分正則是 `[,，;；\n]`，半角逗號吃得下 ✓；且 word-extra/svg 的 pos/syn
 ///    切分是 `[,，]` 也吃得下。這裡把所有分隔符（；;、，｜|／/。）統一成 `,` 並去重，
 ///    避免模型混用造成「該分開的黏成一顆」。
-/// 3. 壓掉空白
+/// 3. **繁體鎖** —— 走 `to_traditional`，簡體字與日文漢字一律轉正體
+/// 4. 壓掉空白
 fn zh_clean(t: &str) -> String {
     let s = t.trim()
         .trim_matches(|c| c == '"' || c == '\'' || c == '`' || c == '「' || c == '」' || c == '『' || c == '』')
@@ -563,7 +605,7 @@ fn zh_clean(t: &str) -> String {
         }
     }
     while out.ends_with(',') { out.pop(); }
-    out
+    to_traditional(&out)
 }
 
 /// DICTREBUILD 翻譯 prompt
@@ -580,7 +622,9 @@ fn zh_translate_prompt(word: &str, defs: &str) -> String {
 "你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。
 
 規則：
-- 只輸出繁體中文翻譯。不要英文、拼音、解釋、引號、編號、句號
+- **必須輸出繁體中文（台灣正體）。絕對不可出現任何簡體字或日文漢字**
+  （简→簡、发→發、学→學、济→濟、実→實、図→圖、経→經）
+- 只輸出中文翻譯。不要英文、拼音、解釋、引號、編號、句號
 - 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略
 - 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」
 - 不同意思用半角逗號 , 分隔，每個中文詞 2~4 字
@@ -652,7 +696,91 @@ fn dict_read_settings(app: &tauri::AppHandle, keys: &[&str]) -> std::collections
     out
 }
 
+// ── SIMPLIFIED-LOCK 測試 ────────────────────────────────────────────────
+// 兩道鎖：①prompt 明令（字串比對，見 zh_translate_prompt 測試）
+//        ②程式轉換（這裡）
 #[cfg(test)]
+mod zhlock_tests {
+    use super::*;
+
+    /// 表本身要載得進來（include_str!/parse 壞掉時這裡會先炸）
+    #[test]
+    fn table_loads_and_is_sizable() {
+        assert!(ZH_S2T.len() > 3000, "字表過小：{}", ZH_S2T.len());
+    }
+
+    /// 簡體漏字必須轉正
+    #[test]
+    fn converts_simplified_leaks() {
+        assert_eq!(to_traditional("这个单词的意思是钥匙"), "這個單詞的意思是鑰匙");
+        assert_eq!(to_traditional("学习英语很难"), "學習英語很難");
+        assert_eq!(to_traditional("开发软件"), "開發軟件");
+        assert_eq!(to_traditional("面对困难"), "面對困難");
+        assert_eq!(to_traditional("问题"), "問題");
+    }
+
+    /// 日文漢字混入也要擋掉（模型多語輸出）
+    #[test]
+    fn converts_japanese_kanji() {
+        assert_eq!(to_traditional("経済"), "經濟");
+        assert_eq!(to_traditional("実現"), "實現");
+        assert_eq!(to_traditional("変対"), "變對");
+        assert_eq!(to_traditional("発図"), "發圖");
+    }
+
+    /// **最關鍵的安全性質**：正確的繁體必須原封不動。
+    /// 這是「純字表轉換能安全使用」的唯一理由 —— 表只收「本身非合法繁體」的字。
+    #[test]
+    fn correct_traditional_is_untouched() {
+        for s in [
+            "鑰匙,關鍵,鎖定", "奔跑,經營,流傳", "光,光亮,淡色",
+            "邀請,請柬,引誘", "手工藝人,藝匠,工匠", "磁鐵,吸引物,磁力",
+            "出汗", "違反,侵犯,破壞", "保護,保存,維護", "永久地,永久,永久性",
+            "完成的,嫻熟的,有造詣的", "意圖,目的,打算", "通訊,符合,對應",
+        ] {
+            assert_eq!(to_traditional(s), s, "正確繁體被改動了：{s}");
+        }
+    }
+
+    /// 共享字（本身即合法繁體）不可被轉 —— 167 個刻意排除的字
+    #[test]
+    fn shared_chars_are_never_converted() {
+        for s in ["皇后", "台灣", "台語", "系統", "只是", "裡面", "後面", "頭髮", "經濟"] {
+            assert_eq!(to_traditional(s), s, "共享字被誤轉：{s}");
+        }
+        // 逐字檢查那批高風險共享字全都不在表內
+        for c in "台后里系只志万丑丰了于云仆仇价仿伙余佛俊修借僵".chars() {
+            assert!(!ZH_S2T.contains_key(&c), "共享字 {c} 不該在轉換表內");
+        }
+    }
+
+    /// ASCII／純繁體走快速路徑，不該有副作用
+    #[test]
+    fn ascii_and_pure_traditional_pass_through() {
+        assert_eq!(to_traditional("hello"), "hello");
+        assert_eq!(to_traditional(""), "");
+        assert_eq!(to_traditional("繁體中文"), "繁體中文");
+    }
+
+    /// zh_clean 現在含鎖②：清洗完的分隔符結果也要是繁體
+    #[test]
+    fn zh_clean_applies_traditional_lock() {
+        assert_eq!(zh_clean("这个,问题"), "這個,問題");
+        assert_eq!(zh_clean("学習；実現"), "學習,實現");
+        assert_eq!(zh_clean("鑰匙；關鍵"), "鑰匙,關鍵");
+    }
+
+    /// prompt 鎖①：Rust 這份 prompt 必須含明令
+    #[test]
+    fn prompt_has_traditional_lock() {
+        let p = zh_translate_prompt("key", "a small metal object");
+        assert!(p.contains("絕對不可出現任何簡體字"), "prompt 缺繁體明令");
+        assert!(p.contains("台灣正體"));
+        // 兩個易錯字要出現在示範裡
+        assert!(p.contains("发→發"));
+    }
+}
+
 mod dictrebuild_tests {
     use super::*;
     use serde_json::json;
@@ -3366,7 +3494,7 @@ pub fn run() {
         .plugin(tts_android::init())
         .plugin(icon_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list, sql_tx])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list, sql_tx, zh_traditional])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {

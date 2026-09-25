@@ -78,7 +78,8 @@ chk('JS 端無 BEGIN IMMEDIATE（交易已全數移交 Rust）', (codeOnly.match
   const rs = readFileSync('src-tauri/src/lib.rs', 'utf8');
   chk('Rust 有 sql_tx 指令', /async fn sql_tx\(/.test(rs));
   chk('Rust 用 BEGIN IMMEDIATE（避開 517 讀→寫升級）', /BEGIN IMMEDIATE/.test(rs));
-  chk('Rust 已註冊 sql_tx', /generate_handler!\[[\s\S]{0,4000}sql_tx\]/.test(rs));
+  // 註冊清單會新增指令（如 zh_traditional）→ 不能綁死 sql_tx 是最後一個
+  chk('Rust 已註冊 sql_tx', /generate_handler!\[[\s\S]{0,4000}\bsql_tx\s*[,)\]]/.test(rs));
   chk('Rust 用單一連線（rusqlite Connection::open）', /rusqlite::Connection::open\(/.test(rs));
   chk('Rust 有交易原子性單元測試', /fn rolls_back_whole_batch_on_failure\(/.test(rs));
   chk('Rust 有 $N 佔位符相容測試', /fn binds_dollar_numbered_placeholders\(/.test(rs));

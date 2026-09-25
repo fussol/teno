@@ -32,10 +32,15 @@ for (const f of ['webdavSaveConfig', 'webdavStatus', 'webdavTest', 'webdavUpload
   ok(`api:${f}`, api.includes(`export const ${f}`));
 
 const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8');
-for (const id of ['webdavUrl', 'webdavUser', 'webdavPass', 'webdavSaveBtn', 'webdavTestBtn', 'webdavUploadBtn', 'webdavDownloadBtn', 'webdavClearBtn', 'webdavStatusText'])
+for (const id of ['webdavUrl', 'webdavUser', 'webdavPass', 'webdavUploadBtn', 'webdavDownloadBtn', 'webdavClearBtn', 'webdavStatusText', 'webdavSrvToggleBtn'])
   ok(`settings:id ${id}`, st.includes(`id="${id}"`));
+// SIMPLIFY1：儲存／測試連線兩顆按鈕已由「失焦即存＋自動測連線」取代
+ok('settings:自動儲存（bindWebdavAutoSave）', st.includes('bindWebdavAutoSave'));
+ok('settings:自動測連線', st.includes('webdavTest()'));
+ok('settings:設定欄位已無儲存鈕', !st.includes('webdavSaveBtn') && !st.includes('webdavTestBtn'));
 ok('settings:Drive UI 已退役', !st.includes('driveCredsSection') && !st.includes('driveSaveCredsBtn') && !st.includes('driveSyncBtn') && !st.includes('Google Drive 同步'));
-ok('settings:密碼存後清空', st.includes("getElementById('webdavPass').value = ''"));
+// SIMPLIFY1：密碼改由自動儲存路徑清空（passEl.value = ''）
+ok('settings:密碼存後清空', st.includes("passEl.value = ''"));
 ok('settings:上傳前 checkpoint', st.includes('checkpoint()') && st.includes('webdavUpload()'));
 ok('settings:下載前備份＋關庫', st.includes('backupDb()') && st.includes('webdavDownload()'));
 

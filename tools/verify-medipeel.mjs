@@ -75,7 +75,10 @@ ok('settings log archive dev-gated', st.includes('logArchiveUploadBtn') && st.in
 console.log('== MEDIAQUEUE static ==');
 ok('media queue module', existsSync(`${R}/src/lib/media-queue.js`));
 ok('enqueue on addWordImage', db.includes('enqueueMedia'));
-ok('settings patch buttons', st.includes('webdavPatchUploadBtn') && st.includes('webdavPatchDownloadBtn'));
+// SIMPLIFY1：差量按鈕整併進「上傳」「下載」主按鈕 —— 先差量、失敗自動落整包
+ok('settings 上傳先走差量', /webdavUploadBtn'\)\?\.addEventListener[\s\S]{0,1500}webdavPatchUpload\(\)/.test(st));
+ok('settings 下載先走差量', /webdavDownloadBtn'\)\?\.addEventListener[\s\S]{0,1500}webdavPatchDownload\(\)/.test(st));
+ok('settings 差量失敗會落回整包', /catch \(_patchErr\)/.test(st));
 ok('settings media flush UI', st.includes('webdavMediaFlushBtn') && st.includes('mediaWifiOnly'));
 ok('api patch fns', api.includes('webdavPatchUpload') && api.includes('webdavPatchDownload'));
 ok('api log archive fns', api.includes('webdavLogArchiveUpload') && api.includes('webdavLogArchivePrune'));

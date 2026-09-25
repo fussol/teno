@@ -42,7 +42,7 @@ console.log('== T3 結構：設定頁 section 全覆蓋 ==');
 const titles = [...js.matchAll(/<div class="section-title"[^>]*>\$\{icon\('([a-zA-Z]+)'\)\} ([^<]+)<\/div>/g)]
   .map(m => m[2].trim());
 ok(`section-title 數量充足（${titles.length} 個）`, titles.length >= 18, `got ${titles.length}`);
-for (const t of ['每日重置時間', '主題配色', 'WebDAV 同步', '危險區域', '韋氏字典', '關於'])
+for (const t of ['每日重置時間', '主題配色', 'WebDAV 同步', '危險區域', 'API', '關於'])
   ok(`標題「${t}」存在`, titles.includes(t));
 ok('section-header 型（含操作鈕）也被覆蓋', js.includes('section-header'));
 

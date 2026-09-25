@@ -88,7 +88,8 @@ const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');
 for (const f of ['webdavServerGetConfig', 'webdavServerSaveConfig', 'webdavServerStart', 'webdavServerStop', 'webdavServerStatus'])
   ok(`api:${f}`, api.includes(`export const ${f}`));
 const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8');
-for (const id of ['webdavSrvPort', 'webdavSrvUser', 'webdavSrvPass', 'webdavSrvAutostart', 'webdavSrvSaveBtn', 'webdavSrvStartBtn', 'webdavSrvStopBtn', 'webdavSrvStatusText'])
+// SIMPLIFY1：儲存／啟動／停止三顆 → 一顆「啟動⇄停止」切換（欄位改自動儲存）
+for (const id of ['webdavSrvPort', 'webdavSrvUser', 'webdavSrvPass', 'webdavSrvAutostart', 'webdavSrvToggleBtn', 'webdavSrvStatusText'])
   ok(`settings:id ${id}`, st.includes(`id="${id}"`));
 ok('settings:CONFLICT upload branch', st.includes("msg.includes('CONFLICT:')"));
 ok('settings:EMPTY_LOCAL branch', st.includes("msg.includes('EMPTY_LOCAL:')"));

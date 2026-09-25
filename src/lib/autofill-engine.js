@@ -384,10 +384,11 @@ export async function fillWordFields({
           const prompt = defs
             ? `你是英漢詞典編輯。根據英英釋義，寫出這個英文單字最對應的繁體中文翻譯。\n\n`
               + `規則：\n`
-              + `- 只輸出繁體中文翻譯。不要英文、拼音、解釋、引號、編號、句號\n`
+              + `- **必須輸出繁體中文（台灣正體）。絕對不可出現任何簡體字或日文漢字**\n`
+              + `  （发→發、学→學、济→濟、実→實、図→圖、経→經）\n`
+              + `- 只輸出中文翻譯。不要英文、拼音、解釋、引號、編號、句號`
               + `- 只取最常用、最核心的 1~3 個語意；冷僻義、專業術語一律忽略\n`
               + `- 多義字要涵蓋主要語意：key 至少要「鑰匙」與「關鍵」\n`
-              + `- 禁止同義詞堆疊：「振動；震動；振盪」是錯的，只要「震動」\n`
               + `- 不同意思用半角逗號 , 分隔，每個中文詞 2~4 字\n`
               + `- 禁止同義詞堆疊：「振動,震動,振盪」是錯的，只要「震動」\n\n單字：${w}\n英英釋義：\n${defs}`
             : `Give the Traditional Chinese (繁體中文) definition of the English word "${w}". Concise, one line. Return ONLY the Chinese definition, nothing else.`;
@@ -395,11 +396,25 @@ export async function fillWordFields({
           // 分隔符統一成**英文逗號**（使用者指定）。顯示端 svg.js 的切分吃 [,，;；\n]，
           // 但 word-extra/svg 的 pos/syn 只吃 [,，] → 一律輸出半角逗號最保險，
           // 也避免模型混用「；」造成該分開的黏成一顆。
-          const t = String(text ?? '').trim().split('\n')[0]
+          let t = String(text ?? '').trim().split('\n')[0]
             .replace(/[；;、，｜|／/。]+/g, ',')
             .replace(/\s+/g, '')
             .replace(/,+/g, ',')
             .replace(/^,|,$/g, '');
+          // SIMPLIFIED-LOCK 鎖②（程式鎖）：呼叫 Rust 的同一張表做簡→繁。
+          // 表只在 Rust 端（26KB TSV），前端拿不到 → 由命令提供，
+          // 確保 autofill 與字典面板兩條路徑轉出來的結果完全一致。
+          //
+          // 注意：本檔是 node-safe（標頭註明不引入外部依賴，CLI／harness 要在
+          // Node 跑）→ **不能**靜態 import '@tauri-apps/api/core'，
+          // 只能在此處動態載入；失敗（CLI／無後端）不影響結果，prompt 鎖仍在。
+          if (t) {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const fixed = await invoke('zh_traditional', { text: t });
+              if (typeof fixed === 'string' && fixed) t = fixed;
+            } catch (_) { /* 無後端 → 只靠 prompt 鎖 */ }
+          }
           if (t) { patch.definition = t; bump('trans', 'ok'); } else bump('trans', 'fail');
         }
       } else {
