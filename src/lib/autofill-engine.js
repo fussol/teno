@@ -63,6 +63,53 @@ export const BATCH_METHODS = {
   derivative: 'merriam',
 };
 
+// AUTOFILL1: 組合包欄位（11 欄；不含 derivative——組合包不補衍生）
+export const COMBO_FIELDS = ['pos', 'example', 'pron', 'related', 'forms', 'trans', 'syn', 'ant', 'phrase', 'etymology', 'syllables'];
+
+/** 只吃韋氏的欄位（only Merriam provides these；無來源選單） */
+const COMBO_FIXED_MERRIAM = ['etymology', 'syllables'];
+
+/** methodSources 的 selector id：'combo' + 首字大寫欄位名（comboPos / comboEtymology / …） */
+export const comboSelectorId = (field) => 'combo' + field[0].toUpperCase() + field.slice(1);
+
+/**
+ * AUTOFILL1：由 methodSources 記憶體 + 全域覆寫開關，導出引擎要的 { methods, overwrite }。
+ * 語意與 tools.js 一鍵全補完全一致（該處原為內嵌組裝，抽出來供所有自動填入入口共用）。
+ *
+ * 「不再用 chip 切換」的關鍵：舊 chip 順序是「跨來源嘗試序列」，但每個 setter 只寫入
+ * 仍為空的欄位（fSet: `if (!e.value.trim())`），所以其實質語意＝**逐欄由鏈上第一個
+ * 提供它的來源勝出**——正是這裡的逐欄 methods 靜態展開。故轉換不損失能力。
+ *
+ * @param {object|null} mem methodSources 設定的值（{selectors, comboOn, comboOw}）
+ * @param {boolean} globalOverwrite 全域覆寫開關（tools 頁那顆）
+ * @returns {{methods:object, overwrite:object, enabled:string[]}}
+ */
+export function comboConfig(mem, globalOverwrite = false) {
+  const sel = (mem && typeof mem === 'object' && mem.selectors) || {};
+  const on = (mem && typeof mem === 'object' && mem.comboOn) || {};
+  const ow = (mem && typeof mem === 'object' && mem.comboOw) || {};
+  const methods = {}, overwrite = {};
+  for (const f of COMBO_FIELDS) {
+    if (on[f] === false) continue;                       // 未存過＝開（沿用 DOM 預設全開）
+    methods[f] = COMBO_FIXED_MERRIAM.includes(f)
+      ? 'merriam'
+      : (sel[comboSelectorId(f)] || DEFAULT_METHODS[f]);
+    overwrite[f] = !!globalOverwrite || !!ow[f];          // 未存過＝關（只補缺失）
+  }
+  return { methods, overwrite, enabled: Object.keys(methods) };
+}
+
+/** 讀 DB 設定 → comboConfig（非 tools 頁的自動填入入口用；動態 import 免靜態循環依賴） */
+export async function readComboConfig() {
+  let mem = null, ow = false;
+  try {
+    const { getSetting } = await import('./db.js');
+    mem = await getSetting('methodSources');
+    ow = !!(await getSetting('autofillOverwrite'));
+  } catch (_) {}
+  return comboConfig(mem, ow);
+}
+
 // ── 純函式（語意照抄 tools.js，engine 內自含不跨檔 import）──
 
 export function countSentences(text) {

@@ -456,7 +456,11 @@ export function onMount(s) {
   // ─── 來源記憶載入＋組合包收合開關（每導航一次跑一次；存檔走 module 級 _srcMem）───
   import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
     try {
-      const stored = v ? JSON.parse(v) : null;
+      // AUTOFILL0：getSetting 對 JSON 字串已先 parse（db.js:649），所以 v 回來就是物件。
+      // 舊碼對物件再 JSON.parse → String(物件)="[object Object]" → 必 throw → 永遠走 catch
+      // → 來源選擇／欄位開關／逐欄覆寫在 app 重啟後全部回預設（UI 宣稱「都會記住」為假）。
+      // 與 FVPERSIST1（fieldVis 記不住）同源同位置，該次只修了 array 分支、object 未修。
+      const stored = (v && typeof v === 'object') ? v : (v ? JSON.parse(v) : null);
       // 合併：載入完成前使用者已點過選單/收合/開關/覆寫的話，以手上的為準（防競態洗掉）
       _srcMem = {
         selectors: { ...(stored?.selectors || {}), ...(_srcMem?.selectors || {}) },
