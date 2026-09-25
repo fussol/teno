@@ -474,6 +474,10 @@ function renderSettingsContent(s) {
     </div>
 
     <!-- WebDAV 同步（本地雲：同 LAN／Tailscale 自建空間） -->
+    <!-- SIMPLIFY1：15 顆按鈕 → 3 顆可見。
+         自動化的：設定欄位失焦即存＋自動測連線／差量優先失敗自動整包／
+                   啟動停止合一／媒體併入主上傳／雲端列表自動重整。
+         收進「進階」：媒體重試、清除設定、內嵌本地雲後台、來源切換。 -->
     <div class="section">
       <div class="section-title">${icon('upload')} WebDAV 同步</div>
       <div class="config-section">
@@ -481,14 +485,12 @@ function renderSettingsContent(s) {
           <div class="config-field">
             <div class="config-field-info">
               <div class="config-field-label">伺服器 URL</div>
-              <div class="config-field-hint">桌機 WebDAV 位址，如 http://192.168.50.69:8080（尾 slash 可加可不加）</div>
+              <div class="config-field-hint">填好即自動儲存並測試連線（不用按按鈕）</div>
             </div>
             <input type="text" id="webdavUrl" class="form-input" placeholder="http://192.168.50.69:8080" style="width:100%">
           </div>
           <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">帳號</div>
-            </div>
+            <div class="config-field-info"><div class="config-field-label">帳號</div></div>
             <input type="text" id="webdavUser" class="form-input" placeholder="帳號" style="width:100%">
           </div>
           <div class="config-field">
@@ -498,92 +500,88 @@ function renderSettingsContent(s) {
             </div>
             <input type="password" id="webdavPass" class="form-input" placeholder="密碼" style="width:100%">
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
-            <button class="btn-primary btn-sm" id="webdavSaveBtn">${icon('check')} 儲存</button>
-            <button class="btn btn-sm btn-secondary" id="webdavTestBtn">${icon('zap')} 測試連線</button>
-          </div>
         </div>
         <div id="webdavSyncSection" style="margin-top:var(--s3)">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);margin-bottom:var(--s3)">
+            <input type="checkbox" id="webdavAutoUpload">
+            自動同步（備份時上傳，有變更才傳；媒體圖檔一併帶）
+          </label>
           <div class="config-field">
             <div class="config-field-info">
               <div class="config-field-label">${icon('upload')} 同步</div>
-              <div class="config-field-hint">整顆 TENOC 同步包上傳／下載（teno.db＋app-log.db）；版本＝最後更改時間，舊蓋新先擋，分叉留雙檔，空檔拒傳</div>
+              <div class="config-field-hint">整顆 TENOC 同步包（teno.db＋app-log.db）。上傳／下載會**先走差量**（幾 KB），不可用時自動改走整包 —— 不用自己選。舊蓋新會先擋、分叉留雙檔、空檔拒傳。</div>
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:var(--s2)">
-              <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳同步</button>
-              <button class="btn btn-sm" id="webdavPatchUploadBtn" title="只傳變動頁（幾 KB）；對不上自動掉回整包">${icon('zap')} 差量上傳</button>
-              <button class="btn btn-sm btn-secondary" id="webdavDownloadBtn">${icon('download')} 下載</button>
-              <button class="btn btn-sm" id="webdavPatchDownloadBtn" title="只拉變動頁；對不上自動掉回整包">${icon('zap')} 差量下載</button>
-              <button class="btn btn-sm btn-secondary" id="webdavClearBtn">${icon('x')} 清除設定</button>
+              <button class="btn btn-sm btn-primary" id="webdavUploadBtn">${icon('upload')} 上傳</button>
+              <button class="btn btn-sm btn-primary" id="webdavDownloadBtn">${icon('download')} 下載</button>
             </div>
-            <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-top:var(--s2)">
-              <button class="btn btn-sm" id="webdavMediaFlushBtn">${icon('image')} 媒體佇列上傳 (<span id="mediaQueueCount">…</span>)</button>
-              <button class="btn btn-sm" id="webdavMediaFlushCancelBtn" style="display:none">${icon('x')} 取消</button>
+          </div>
+          <div style="font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)" id="webdavStatusText">檢查中…</div>
+        </div>
+
+        <details style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s2)">
+          <summary style="cursor:pointer;font-size:13px;color:var(--text-secondary);user-select:none">進階</summary>
+          <div style="margin-top:var(--s2)">
+            <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s3)">
+              <span id="mediaQueueWrap" style="display:none">
+                <button class="btn btn-sm" id="webdavMediaFlushBtn">${icon('image')} 媒體重試 (<span id="mediaQueueCount">0</span>)</button>
+                <button class="btn btn-sm" id="webdavMediaFlushCancelBtn" style="display:none">${icon('x')} 取消</button>
+              </span>
               <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--text-tertiary)">
                 <input type="checkbox" id="mediaWifiOnly"> 僅 WiFi 傳圖
               </label>
+              <button class="btn btn-sm btn-secondary" id="webdavClearBtn">${icon('x')} 清除設定</button>
             </div>
-          </div>
-          <div style="font-size:12px;color:var(--text-tertiary)" id="webdavStatusText">檢查中…</div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)">
-            <input type="checkbox" id="webdavAutoUpload">
-            自動備份時同步上傳到這台 WebDAV（跟本地備份同一節奏，有變更才傳）
-          </label>
-        </div>
-        ${isAndroid ? '' : `
-        <div id="webdavServerSection" style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">${icon('cloud')} 內嵌本地雲（跟著 Teno 起）</div>
-              <div class="config-field-hint">桌機開 Teno 就等於開雲，手機直接連；跟 ~/teno-webdav-app 同一空間同一語義。App 關掉後換獨立版頂（狀態行會講誰在聽）。手機請用 Termux 獨立版。</div>
+            ${isAndroid ? '' : `
+            <div id="webdavServerSection" style="border-top:1px solid var(--border-subtle);padding-top:var(--s2)">
+              <div class="config-field">
+                <div class="config-field-info">
+                  <div class="config-field-label">${icon('cloud')} 內嵌本地雲（跟著 Teno 起）</div>
+                  <div class="config-field-hint">桌機開 Teno 就等於開雲，手機直接連；跟 ~/teno-webdav-app 同一空間。填好自動儲存。</div>
+                </div>
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-tertiary);margin-bottom:var(--s2)">
+                <input type="checkbox" id="webdavSrvAutostart">
+                Teno 啟動時自動開啟（獨立版已頂著時自動讓路）
+              </label>
+              <div class="config-field">
+                <div class="config-field-info"><div class="config-field-label">Port</div></div>
+                <input type="number" id="webdavSrvPort" class="form-input" min="1" max="65535" value="8080" style="width:110px">
+              </div>
+              <div class="config-field">
+                <div class="config-field-info"><div class="config-field-label">帳號</div></div>
+                <input type="text" id="webdavSrvUser" class="form-input" placeholder="teno" style="width:100%">
+              </div>
+              <div class="config-field">
+                <div class="config-field-info">
+                  <div class="config-field-label">密碼</div>
+                  <div class="config-field-hint">只輸這一次，存本機 0600；內嵌不設裸奔（要裸奔請用獨立版 --no-auth）</div>
+                </div>
+                <input type="password" id="webdavSrvPass" class="form-input" placeholder="密碼（已存則留空＝不改）" style="width:100%">
+              </div>
+              <div style="margin-top:var(--s2)">
+                <button class="btn btn-sm btn-primary" id="webdavSrvToggleBtn">${icon('play')} 啟動本地雲</button>
+              </div>
+              <div style="font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)" id="webdavSrvStatusText">檢查中…</div>
             </div>
+            `}
           </div>
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">Port</div>
-            </div>
-            <input type="number" id="webdavSrvPort" class="form-input" min="1" max="65535" value="8080" style="width:110px">
-          </div>
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">帳號</div>
-            </div>
-            <input type="text" id="webdavSrvUser" class="form-input" placeholder="teno" style="width:100%">
-          </div>
-          <div class="config-field">
-            <div class="config-field-info">
-              <div class="config-field-label">密碼</div>
-              <div class="config-field-hint">只輸這一次，存本機 0600；內嵌不設裸奔（要裸奔請用獨立版 --no-auth）</div>
-            </div>
-            <input type="password" id="webdavSrvPass" class="form-input" placeholder="密碼（已存則留空＝不改）" style="width:100%">
-          </div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)">
-            <input type="checkbox" id="webdavSrvAutostart">
-            Teno 啟動時自動開啟內嵌本地雲（獨立版已頂著時自動讓路）
-          </label>
-          <div style="display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2)">
-            <button class="btn-primary btn-sm" id="webdavSrvSaveBtn">${icon('check')} 儲存</button>
-            <button class="btn btn-sm btn-primary" id="webdavSrvStartBtn">${icon('play')} 啟動</button>
-            <button class="btn btn-sm btn-secondary" id="webdavSrvStopBtn">${icon('x')} 停止</button>
-          </div>
-          <div style="font-size:12px;color:var(--text-tertiary);margin-top:var(--s2)" id="webdavSrvStatusText">檢查中…</div>
-        </div>
-        `}
+        </details>
+
         <!-- 雲端檔案 CLOUDBROWSE1（免開瀏覽器：桌機本機直讀零網路／手機雲端列表走已存帳密） -->
         <div id="webdavCloudSection" style="margin-top:var(--s3);border-top:1px solid var(--border-subtle);padding-top:var(--s3)">
           <div class="config-field">
             <div class="config-field-info">
               <div class="config-field-label">${icon('folder')} 雲端檔案（免開瀏覽器）</div>
-              <div class="config-field-hint">點目錄進入；桌面版預設讀本機 ~/teno-webdav（免網路），手機版讀雲端列表</div>
+              <div class="config-field-hint">點目錄進入、點「↑」回上層（清單自動重整）</div>
             </div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center;margin-bottom:var(--s2)">
+            <button class="btn btn-sm btn-secondary" id="cloudUpBtn">↑</button>
             <span id="cloudPathLabel" style="font-size:12px;color:var(--text-secondary);font-weight:700">/</span>
             <span id="cloudSourceLabel" style="font-size:11px;color:var(--text-tertiary)"></span>
             <span style="flex:1"></span>
             ${isAndroid ? '' : `<button class="btn btn-sm btn-secondary" id="cloudSrcToggleBtn" title="本機直讀／雲端列表切換">切換來源</button>`}
-            <button class="btn btn-sm btn-secondary" id="cloudUpBtn">上層</button>
-            <button class="btn btn-sm btn-primary" id="cloudRefreshBtn">${icon('refresh')} 重新整理</button>
           </div>
           <div id="cloudFileTable" style="font-size:13px;color:var(--text-tertiary)">載入中…</div>
         </div>
@@ -672,9 +670,9 @@ function renderSettingsContent(s) {
 
         <!-- D段：韋氏字典 API Key（自備；dictionaryapi.com 註冊，Dictionary＋Thesaurus 各一把，各 1000 次/天免費） -->
         <div class="section">
-          <div class="section-title">${icon('book')} 韋氏字典</div>
+          <div class="section-title">${icon('book')} API</div>
           <div class="config-section">
-            <div class="config-field-hint" style="margin-bottom:var(--s2)">自動補齊的「韋氏字典」來源用。兩把 key 分開存本機 DB，不上傳別處。<br>底下 <b>API</b> 是英中翻譯用的 AI 接口，本地（ollama）或公開（OpenAI 相容）皆可；手機請填電腦的 tailnet 位址。</div>
+            <div class="config-field-hint" style="margin-bottom:var(--s2)">詞典來源（韋氏 Key）＋ AI 接口（英中翻譯用）。金鑰分開存本機 DB，不上傳別處。<br>AI 接口可接<b>本地</b>（ollama）或<b>公開</b>（OpenAI 相容）—— 手機請填電腦的 tailnet 位址。</div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:var(--s2);flex-wrap:wrap">
               <span style="font-size:12px;min-width:92px;color:var(--text-secondary)">Dictionary key</span>
               <input type="password" id="mwDictKeyInput" placeholder="Collegiate Dictionary key" value="${escapeAttr(s.state.mwDictKey || '')}" style="flex:1;min-width:0;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:13px">
@@ -1031,7 +1029,8 @@ function renderFilteredDecks(s) {
 
 // ─── 設定頁收合（整頓：標題常駐＋內容下拉，狀態記 localStorage）───
 // 設計：render 零改動（以後加新 section 自動跟上）；onMount 枚举頂層 .section
-// 掛 .collapsible＋chevron；內嵌（匯入／匯出／標籤頁自己的子 section）保持展開。
+// 掛 .collapsible；內嵌（匯入／匯出／標籤頁自己的子 section）保持展開。
+// ACCORDION1：**一次只能展開一個**（使用者指定「不可同時有兩個同時下拉」）。
 const COLLAPSE_KEY = 'teno-settings-collapsed';
 function _collapseKeyOf(titleEl) {
   const t = (titleEl?.textContent || '').replace(/\s+/g, '').slice(0, 24);
@@ -1046,6 +1045,18 @@ function _loadCollapsedSet() {
 }
 function _saveCollapsedSet(set) {
   try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...set])); } catch (_) {}
+}
+/** 把一個 section 設為收合／展開，並同步 aria-expanded */
+function _setCollapsed(sec, collapsed) {
+  sec.classList.toggle('collapsed', collapsed);
+  const t = sec.querySelector(':scope > .section-title')
+    || sec.querySelector(':scope > .section-header .section-title');
+  t?.setAttribute('aria-expanded', String(!collapsed));
+}
+/** 由 DOM 現況導出收合集合（單一真相：class，不靠點擊歷程累積） */
+function _collapsedSetFromDom(sections) {
+  return new Set(sections.filter(s => s.classList.contains('collapsed'))
+    .map(s => s.dataset.collapseKey).filter(Boolean));
 }
 function bindCollapsibleSections() {
   const container = document.getElementById('pageContainer');
@@ -1066,22 +1077,28 @@ function bindCollapsibleSections() {
     sec.dataset.collapseKey = key;
     sec.classList.add('collapsible');
     const isCollapsed = firstRun ? true : collapsed.has(key);
-    sec.classList.toggle('collapsed', isCollapsed);
-    titleEl.setAttribute('aria-expanded', String(!isCollapsed));
+    _setCollapsed(sec, isCollapsed);
     const clickTarget = head || titleEl;
     if (clickTarget.dataset.collapseBound) return;
     clickTarget.dataset.collapseBound = '1';
     clickTarget.addEventListener('click', (e) => {
       // 標題列裡的按鈕／輸入（字本管理的新增字本等）點了只做自己的事，不觸發收合
       if (e.target.closest('button, a, input, select, textarea, label')) return;
-      const nowCollapsed = sec.classList.toggle('collapsed');
-      titleEl.setAttribute('aria-expanded', String(!nowCollapsed));
-      const cur = _loadCollapsedSet() || new Set();
-      if (nowCollapsed) cur.add(key); else cur.delete(key);
-      _saveCollapsedSet(cur);
+      const willExpand = sec.classList.contains('collapsed');
+      // ACCORDION1：展開新的之前，先把其他全部收合（最多一個展開）
+      if (willExpand) {
+        sections.forEach(other => { if (other !== sec) _setCollapsed(other, true); });
+      }
+      _setCollapsed(sec, !willExpand);
+      _saveCollapsedSet(_collapsedSetFromDom(sections));
     });
   });
-  if (firstRun) _saveCollapsedSet(new Set(sections.map(s => s.dataset.collapseKey).filter(Boolean)));
+  // 舊 localStorage 可能存了「多個展開」→ 載入時強制收斂成最多一個
+  const expanded = sections.filter(s => !s.classList.contains('collapsed'));
+  if (expanded.length > 1) expanded.slice(1).forEach(s => _setCollapsed(s, true));
+  if (firstRun || expanded.length > 1) {
+    _saveCollapsedSet(_collapsedSetFromDom(sections));
+  }
 }
 
 export function onMount(s) {
@@ -1496,36 +1513,60 @@ export function onMount(s) {
     });
   }).catch(() => {});
 
-  document.getElementById('webdavSaveBtn')?.addEventListener('click', async () => {
-    const url = document.getElementById('webdavUrl').value.trim();
-    const user = document.getElementById('webdavUser').value.trim();
-    const pass = document.getElementById('webdavPass').value;
-    if (!url || !user) { toast('請填寫 URL 和帳號', 'toast-warn'); return; }
-    try {
-      const result = await webdavSaveConfig(url, user, pass);
-      document.getElementById('webdavPass').value = '';
-      toast(result, 'toast-success');
-      updateWebdavUI();
-    } catch (e) {
-      toast(String(e), 'toast-error');
-    }
-  });
+  // SIMPLIFY1：設定欄位失焦即存＋自動測連線（取代原本「儲存」「測試連線」兩顆按鈕）
+  (function bindWebdavAutoSave() {
+    const urlEl = document.getElementById('webdavUrl');
+    const userEl = document.getElementById('webdavUser');
+    const passEl = document.getElementById('webdavPass');
+    if (!urlEl || !userEl || !passEl) return;
+    let last = { url: urlEl.value, user: userEl.value, pass: passEl.value };
+    const saveNow = async () => {
+      const url = urlEl.value.trim();
+      const user = userEl.value.trim();
+      const pass = passEl.value;
+      if (!url || !user) return;                 // 未填齊 → 不打擾
+      try {
+        await webdavSaveConfig(url, user, pass);
+        passEl.value = '';
+        try {
+          const r = await webdavTest();           // 自動測連線
+          toast(r, 'toast-success');
+        } catch (te) { toast('已儲存，但連線測試失敗：' + te, 'toast-warn'); }
+        updateWebdavUI();
+      } catch (e) { toast(String(e), 'toast-error'); }
+    };
+    const maybeSave = () => {
+      const now = { url: urlEl.value, user: userEl.value, pass: passEl.value };
+      if (now.url === last.url && now.user === last.user && now.pass === last.pass) return;
+      last = { ...now };
+      saveNow();
+    };
+    [urlEl, userEl, passEl].forEach(el => {
+      el.addEventListener('change', maybeSave);
+    });
+    urlEl.addEventListener('blur', maybeSave);
+  })();
 
-  document.getElementById('webdavTestBtn')?.addEventListener('click', async () => {
-    try {
-      const result = await webdavTest();
-      toast(result, 'toast-success');
-      updateWebdavUI();
-    } catch (e) {
-      toast(String(e), 'toast-error');
-    }
-  });
-
+  // SIMPLIFY1：上傳＝**先差量（幾 KB），不可用自動走整包** —— 不必自己選。
+  // 任何差量失敗都落到整包路徑，由那裡統一面對衝突（CONFLICT/REMOTE_NEWER 防呆）。
   document.getElementById('webdavUploadBtn')?.addEventListener('click', async () => {
     const btn = document.getElementById('webdavUploadBtn');
     btn.disabled = true;
     btn.textContent = '處理中…';
     try {
+      // ① 差量優先（快）
+      try {
+        const r = await webdavPatchUpload();
+        toast(r, 'toast-success');
+        try {
+          const { addAudit } = await import('../lib/db.js');
+          await addAudit('webdav-patch-upload', 'WebDAV 差量上傳').catch(() => {});
+        } catch (_) {}
+        try { const mr = await webdavMediaUpload(); if (mr) toast(mr, ''); } catch (_) {}
+        return;
+      } catch (_patchErr) {
+        // ② 落到整包（下方流程）；失敗原因交由整包路徑的防呆統一呈現
+      }
       // D3 同源：WAL checkpoint → 主檔完整後再上傳（webdav_upload 只 fs::read 主檔）
       const { checkpoint } = await import('../lib/db.js');
       await checkpoint();
@@ -1575,11 +1616,22 @@ export function onMount(s) {
     }
   });
 
+  // SIMPLIFY1：下載＝**先差量（fast-forward，本地乾淨時），不可用自動走整包**。
+  // 只有一次確認（涵蓋兩種路徑），比舊版「差量確認＋整包確認」少一次打擾。
   document.getElementById('webdavDownloadBtn')?.addEventListener('click', async () => {
     const btn = document.getElementById('webdavDownloadBtn');
     btn.disabled = true;
     try {
-      if (!confirm('確定要從 WebDAV 下載備份並取代目前資料？（會自動備份目前資料庫）')) return;
+      if (!confirm('確定要從 WebDAV 下載並取代目前資料？（會先自動備份目前資料庫）')) return;
+      // ① 差量優先（不需關庫）
+      try {
+        const r = await webdavPatchDownload();
+        toast(r, 'toast-success');
+        setTimeout(() => location.reload(), 500);
+        return;
+      } catch (_patchErr) {
+        // ② 落到整包（下方流程，含 CONFLICT/LOCAL_NEWER 防呆）
+      }
       const { checkpoint, closeDB, initDB } = await import('../lib/db.js');
       const { closeAppLog } = await import('../lib/app-log.js');
       await checkpoint();
@@ -1643,40 +1695,17 @@ export function onMount(s) {
     updateWebdavUI();
   });
 
-  // ── PATCHDIFF1 差量收發（對不上／太大自動掉回整包；失敗一次不自動重試 patch）──
-  document.getElementById('webdavPatchUploadBtn')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget; btn.disabled = true;
-    try {
-      const r = await webdavPatchUpload();
-      toast(r, 'toast-success');
-    } catch (err) {
-      const m = String(err || '');
-      if (/NO_BASE|PATCH_TOO_BIG|BASE_MISMATCH|PATCH_REJECTED|請走整包/.test(m)) {
-        toast('差量不可用，走整包：' + m, 'toast-warn');
-        document.getElementById('webdavUploadBtn')?.click();
-      } else toast(m, 'toast-error');
-    } finally { btn.disabled = false; updateWebdavUI(); }
-  });
-  document.getElementById('webdavPatchDownloadBtn')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget; btn.disabled = true;
-    try {
-      if (!confirm('差量下載只在本地乾淨時可 fast-forward；確定繼續？')) return;
-      const r = await webdavPatchDownload();
-      toast(r, 'toast-success');
-      setTimeout(() => location.reload(), 500);
-    } catch (err) {
-      const m = String(err || '');
-      if (/NO_BASE|BASE_MISMATCH|請走整包/.test(m)) {
-        toast('差量不可用，走整包：' + m, 'toast-warn');
-        document.getElementById('webdavDownloadBtn')?.click();
-      } else toast(m, 'toast-error');
-    } finally { btn.disabled = false; }
-  });
+  // ── SIMPLIFY1：差量已併入「上傳」「下載」主按鈕（先差量、失敗自動整包），
+  //    故獨立的差量按鈕與處理器已移除。
 
   // ── MEDIAPEEL1 媒體佇列（有時間慢慢傳；取消＋僅 WiFi）──
   import('../lib/media-queue.js').then(mq => {
     const cnt = document.getElementById('mediaQueueCount');
-    if (cnt) cnt.textContent = mq.pendingCount();
+    const wrap = document.getElementById('mediaQueueWrap');
+    const n = mq.pendingCount();
+    if (cnt) cnt.textContent = n;
+    // SIMPLIFY1：沒待傳就整顆藏起來（上傳主按鈕本來就會順帶傳媒體）
+    if (wrap) wrap.style.display = n > 0 ? '' : 'none';
     const wf = document.getElementById('mediaWifiOnly');
     if (wf) {
       wf.checked = mq.wifiOnly();
@@ -1752,11 +1781,19 @@ export function onMount(s) {
   async function updateWebdavSrvUI() {
     const st = document.getElementById('webdavSrvStatusText');
     if (!st) return;
+    let running = false;
     try {
       const status = await webdavServerStatus();
       st.textContent = `狀態: ${status}`;
+      // SIMPLIFY1：切換鈕文字依狀態（Rust 端固定用「內嵌跑著」開頭表示執行中）
+      running = /內嵌跑著/.test(String(status));
     } catch (e) {
       st.textContent = `狀態: ${e}`;
+    }
+    const btn = document.getElementById('webdavSrvToggleBtn');
+    if (btn) {
+      btn.dataset.running = running ? '1' : '0';
+      btn.textContent = running ? '停止本地雲' : '啟動本地雲';
     }
     try {
       const cfg = await webdavServerGetConfig();
@@ -1770,39 +1807,39 @@ export function onMount(s) {
   }
   updateWebdavSrvUI();
 
-  document.getElementById('webdavSrvSaveBtn')?.addEventListener('click', async () => {
+  // SIMPLIFY1：內嵌本地雲 = 欄位自動儲存 + 一顆「啟動⇄停止」切換（取代儲存/啟動/停止三顆）
+  async function srvSaveConfig() {
     const port = parseInt(document.getElementById('webdavSrvPort')?.value, 10) || 8080;
     const user = document.getElementById('webdavSrvUser')?.value.trim() || 'teno';
     const pass = document.getElementById('webdavSrvPass')?.value || '';
     const autostart = !!document.getElementById('webdavSrvAutostart')?.checked;
-    try {
-      const result = await webdavServerSaveConfig(port, user, pass, autostart);
-      document.getElementById('webdavSrvPass').value = '';
-      toast(result, 'toast-success');
-      updateWebdavSrvUI();
-    } catch (e) {
-      toast(String(e), 'toast-error');
-    }
+    const r = await webdavServerSaveConfig(port, user, pass, autostart);
+    const pe = document.getElementById('webdavSrvPass'); if (pe) pe.value = '';
+    return r;
+  }
+  ['webdavSrvPort', 'webdavSrvUser', 'webdavSrvPass', 'webdavSrvAutostart'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', async () => {
+      try { await srvSaveConfig(); toast('本地雲設定已儲存', 'toast-success'); updateWebdavSrvUI(); }
+      catch (e) { toast(String(e), 'toast-error'); }
+    });
   });
 
-  document.getElementById('webdavSrvStartBtn')?.addEventListener('click', async () => {
+  document.getElementById('webdavSrvToggleBtn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const running = btn.dataset.running === '1';
+    btn.disabled = true;
     try {
-      const result = await webdavServerStart();
-      toast(result, 'toast-success');
+      if (running) {
+        toast(await webdavServerStop(), 'toast-success');
+      } else {
+        try { await srvSaveConfig(); } catch (_) {}   // 啟動前先把欄位存起來
+        toast(await webdavServerStart(), 'toast-success');
+      }
       updateWebdavSrvUI();
-    } catch (e) {
-      toast(String(e), 'toast-error');
-    }
-  });
-
-  document.getElementById('webdavSrvStopBtn')?.addEventListener('click', async () => {
-    try {
-      const result = await webdavServerStop();
-      toast(result, 'toast-success');
-      updateWebdavSrvUI();
-    } catch (e) {
-      toast(String(e), 'toast-error');
-    }
+    } catch (err) { toast(String(err), 'toast-error'); }
+    finally { btn.disabled = false; }
   });
 
   // ── 雲端檔案瀏覽 CLOUDBROWSE1（免開瀏覽器）──
@@ -1881,7 +1918,7 @@ export function onMount(s) {
       if (srcEl) srcEl.textContent = '';
     }
   }
-  document.getElementById('cloudRefreshBtn')?.addEventListener('click', refreshCloudBrowser);
+  // SIMPLIFY1：「重新整理」按鈕已移除 —— 進入目錄／回上層／切換來源都會自動重整
   document.getElementById('cloudSrcToggleBtn')?.addEventListener('click', () => {
     _cloudSource = (_cloudSource === 'local') ? 'remote' : 'local';
     refreshCloudBrowser();

@@ -35,5 +35,5 @@ echo
 echo "✅ 全部完成"
 echo "  Linux: src-tauri/target/release/bundle/{deb,rpm,appimage}/"
 VER="$(node -p "require('./package.json').version")"
-echo "  APK:   \$HOME/teno-v${VER}.apk (+ .sha256)"
+echo "  APK:   \$HOME/teno-dist/teno-v${VER}.apk (+ .sha256；交付鏡像在 ~/teno-webdav)"
 echo "  Arch:  scripts/package-arch.sh（另跑，需 sudo 安裝那步你自己來）"
