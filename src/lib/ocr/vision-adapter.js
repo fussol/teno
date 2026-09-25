@@ -30,6 +30,10 @@ let _cfgOverride = null;
  * @template T
  * @param {{url?: string, model?: string}|null} cfg
  */
+// TAURIGATE1: 桌面判定原本查 window.__TAURI__?.core，但 withGlobalTauri=false
+// → 該全域不存在 → 桌面被誤判成「非 Tauri」→ vision-ai 引擎永遠不列出。改用 isTauri。
+import { isTauri } from '../platform.js';
+
 export function _setVisionConfig(cfg) { _cfgOverride = cfg; }
 
 /** 解析組態（含 fallback）。 @returns {Promise<{url: string, model: string}>} */
@@ -69,7 +73,7 @@ export function isDesktopEnv() {
   try {
     const ua = globalThis.navigator?.userAgent || '';
     if (/Android|Mobi|iPhone|iPad|iPod/i.test(ua)) return false;
-    return !!(globalThis.window && typeof globalThis.window.__TAURI__?.core === 'object');
+    return isTauri;
   } catch (_) {
     return false;
   }

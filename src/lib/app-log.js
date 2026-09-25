@@ -66,7 +66,11 @@ export function isScopeEnabled(scope) {
 
 // ─── WEB-DEMO（2026-09-08 使用者裁示：網頁版內建示範資料）───
 // 無 Tauri 後端時：寫入走記憶體、查詢回種子，不碰 plugin-sql。實機零影響。
-const noBackend = () => typeof window !== 'undefined' && typeof window.__TAURI__?.core !== 'object';
+// TAURIGATE1: 判定改用 platform.js 的 isTauri（原本查 window.__TAURI__?.core，
+// 但 withGlobalTauri=false → 桌面/Android 上該全域不存在 → noBackend() 恆真
+// → 操作日誌從 2026-09-09 起全部只進記憶體、永不入 app-log.db（靜默）。
+import { isTauri } from './platform.js';
+const noBackend = () => !isTauri;
 let demoLogSeq = -1;
 const demoLogs = [
   { id: -1, ts: Date.now() - 5 * 60000, level: 'log', scope: 'system', message: '展示模式啟動：載入 36 個示範單字' },
@@ -112,6 +116,8 @@ export function initAppLog(days) {
   retentionDays = days > 0 ? days : 0;
   enabled = retentionDays > 0;
   ready = true;
+  // TAURIGATE1: 把後端判定結果顯性化，避免「日誌靜默不寫」再次無聲無息
+  if (typeof window !== 'undefined') window.__logBackend = !noBackend();
   if (!enabled) { queue = []; return; }
   pruneLogs();
   flush();

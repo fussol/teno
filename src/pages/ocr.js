@@ -8,6 +8,7 @@
 // 入庫：s.actions.importOcrText（黑名單/Cambridge/補欄位 pipeline 原封不動）
 // ═══════════════════════════════════════════════════════════════
 import { icon } from '../lib/svg.js';
+import { isTauri } from '../lib/platform.js';
 import { toast } from '../lib/toast.js';
 import { listEngines } from '../lib/ocr/engine.js';
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_KEYS } from '../lib/ocr/preprocess.js';
@@ -64,7 +65,9 @@ function _isDesktop() {
   try {
     const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
     if (/Android|Mobi|iPhone|iPad|iPod/i.test(ua)) return false;
-    return !!(typeof window !== 'undefined' && window.__TAURI__?.core);
+    // TAURIGATE1: 原本查 window.__TAURI__?.core（withGlobalTauri=false → 恆不存在）
+    // → 桌面被誤判成「非 Tauri」而把 vision-ai 引擎判定為不可用。改用 isTauri。
+    return isTauri;
   } catch (_) { return false; }
 }
 

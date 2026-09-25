@@ -1,5 +1,5 @@
 import { speakText as nativeSpeak, speakAndroid as androidSpeak, stopAndroid } from './api.js'
-import { isAndroid, isWindows } from './platform.js'
+import { isAndroid, isWindows, isTauri } from './platform.js'
 
 const _voiceMap = {
   'en-us': 'en_US-amy-medium',
@@ -90,7 +90,9 @@ export function speak(text, speed, voice, pitch) {
   if (!text) return Promise.resolve();
   if (isAndroid) return speakAndroidTts(text, speed ?? 0.9, voice || '', pitch ?? 50);
   // WEB-DEMO（2026-09-08）：無 Tauri 後端 → 瀏覽器 speechSynthesis；實機路徑不動
-  if (typeof window !== 'undefined' && typeof window.__TAURI__?.core !== 'object' && typeof speechSynthesis !== 'undefined') {
+  // TAURIGATE1: 原本查 window.__TAURI__?.core（withGlobalTauri=false → 恆不存在）
+  // → 桌面被誤判成「無原生 TTS」而退回瀏覽器 speechSynthesis。改用 isTauri。
+  if (!isTauri && typeof speechSynthesis !== 'undefined') {
     return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50);
   }
   // 2026-09-05 方案 C（使用者裁示）：Windows 走 WebView2 speechSynthesis（Edge/Microsoft

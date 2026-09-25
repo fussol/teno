@@ -5,8 +5,12 @@ import { invoke } from '@tauri-apps/api/core'
 const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
 export const isAndroid = /Android/i.test(ua);
 export const isWindows = /Windows/i.test(ua);
-// typeof window 本身安全；但 window.__TAURI__ 會求值 window（node 下 ReferenceError）
-export const isTauri = typeof window !== 'undefined' && typeof window.__TAURI__?.core === 'object';
+// TAURIGATE1: 原本用 window.__TAURI__?.core 判斷，但本專案 tauri.conf.json 的
+// withGlobalTauri=false（Tauri v2 預設）→ 該全域「從來不存在」→ 桌面/Android 上
+// 一律判成「非 Tauri」。Tauri v2 恆注入的是 __TAURI_INTERNALS__（npm 模組 invoke 走它），
+// 故以它為準。WEB-DEMO（純瀏覽器）下確實不存在 → 仍正確判為非 Tauri。
+export const isTauri = typeof window !== 'undefined'
+  && !!(window.__TAURI_INTERNALS__ || window.__TAURI__?.core);
 export const isMobile = isAndroid || /Mobi|iPhone|iPad|iPod/i.test(ua);
 
 // 分塊 base64（與 ocr/vision-adapter.js bytesToBase64 同法）：逐 byte 串接在大檔
