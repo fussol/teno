@@ -34,7 +34,7 @@ export const buildLlmEndpoint = (base, format) => {
  *   設定有填 → 以設定為準（可指向本地 ollama 或公開 OpenAI 相容 API）
  *   設定留空 → 完全沿用呼叫端傳入的值（與改動前行為逐字相同）
  */
-export const fetchLLM = async (url, model, prompt, apiFormat) => {
+export const fetchLLM = async (url, model, prompt, apiFormat, messages) => {
   let cfg = null;
   try {
     const { getSetting } = await import('./db.js');
@@ -50,13 +50,15 @@ export const fetchLLM = async (url, model, prompt, apiFormat) => {
     };
   } catch (_) { cfg = null; }   // 非 Tauri（CLI/web-demo）→ 沿用呼叫端傳入值
   const override = !!cfg && (cfg.url !== '' || cfg.key !== '' || cfg.format === 'openai');
-  if (!override) return invoke('fetch_llm', { url, model, prompt, apiFormat });
+  // messages 省略時 undefined 會被 JSON.stringify 拔掉 → Rust 端 Option 收 None → 走單輪舊路徑
+  if (!override) return invoke('fetch_llm', { url, model, prompt, apiFormat, messages });
   return invoke('fetch_llm', {
     url: buildLlmEndpoint(cfg.url || 'http://localhost:11434', cfg.format),
     model: cfg.model || model,
     prompt,
     apiFormat: cfg.format,
     apiKey: cfg.key,
+    messages,
   });
 };
 

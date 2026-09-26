@@ -269,11 +269,14 @@ fn scrape_quizlet(url: String) -> Result<String, String> {
 
 
 
-#[tauri::command]
-async fn fetch_llm(url: String, model: String, prompt: String, api_format: Option<String>, api_key: Option<String>) -> Result<String, String> {
-    log::info!("fetch_llm url={} model={} prompt_len={} format={:?}", url, model, prompt.len(), api_format);
-    let fmt = api_format.unwrap_or_default();
-    let body = if fmt == "openai" {
+/// 組 LLM 請求 → (最終 URL, body, 是否走多輪 chat)。
+/// 沒有 messages 時輸出與舊版**逐字相同**（全 app 19+ 個單輪呼叫點靠這條）。
+/// 有 messages：ollama 換端點 `/api/generate` → `/api/chat`；openai 分支本來就是 messages。
+fn llm_request(url: &str, fmt: &str, model: &str, prompt: &str, messages: Option<&[serde_json::Value]>) -> (String, serde_json::Value, bool) {
+    let chat = fmt != "openai" && messages.is_some();
+    let body = if let Some(msgs) = messages {
+        serde_json::json!({ "model": model, "messages": msgs, "stream": false })
+    } else if fmt == "openai" {
         serde_json::json!({
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -282,15 +285,54 @@ async fn fetch_llm(url: String, model: String, prompt: String, api_format: Optio
     } else {
         serde_json::json!({ "model": model, "prompt": prompt, "stream": false })
     };
+    let final_url = if chat {
+        match url.strip_suffix("/api/generate") {
+            Some(base) => format!("{}/api/chat", base),
+            None => url.to_string(),
+        }
+    } else {
+        url.to_string()
+    };
+    (final_url, body, chat)
+}
+
+/// 解析回覆。chat 分支讀 `message.content`，空字串視為失敗
+/// （qwen3 開思考時 token 會被思考吃光、content 落空 —— 實測 1500 token 全給 thinking）
+fn llm_parse(fmt: &str, chat: bool, json: &serde_json::Value) -> Result<String, String> {
+    if fmt == "openai" {
+        match json["choices"][0]["message"]["content"].as_str() {
+            Some(s) => Ok(s.to_string()),
+            None => { log::warn!("fetch_llm: openai response missing content"); Err("API response missing content".to_string()) }
+        }
+    } else if chat {
+        match json["message"]["content"].as_str() {
+            Some(s) if !s.is_empty() => Ok(s.to_string()),
+            _ => { log::warn!("fetch_llm: chat response missing/empty content"); Err("API response missing 'message.content' field".to_string()) }
+        }
+    } else {
+        match json["response"].as_str() {
+            Some(s) => Ok(s.to_string()),
+            None => { log::warn!("fetch_llm: response missing field"); Err("API response missing 'response' field".to_string()) }
+        }
+    }
+}
+
+#[tauri::command]
+async fn fetch_llm(url: String, model: String, prompt: String, api_format: Option<String>, api_key: Option<String>, messages: Option<Vec<serde_json::Value>>) -> Result<String, String> {
+    let fmt = api_format.unwrap_or_default();
+    let (url, body, chat) = llm_request(&url, &fmt, &model, &prompt, messages.as_deref());
+    log::info!("fetch_llm url={} model={} prompt_len={} format={} chat={}", url, model, prompt.len(), fmt, chat);
     let json_str = serde_json::to_string(&body).map_err(|e| format!("serialize fail: {}", e))?;
 
     if !url.starts_with("http://") && !url.starts_with("https://") { return Err("URL 格式不正確".to_string()); }
     let auth = api_key.unwrap_or_default().trim().to_string();
+    // 多輪（作文/批改）實測 glm-4.7-flash 寫完一篇 2m9s、qwen3 71s → 60s 必爆，單輪維持原限時
+    let (inner_s, outer_s) = if chat { (240u64, 300u64) } else { (60, 90) };
     let handle = tokio::task::spawn_blocking(move || {
         // ponytail: ureq instead of curl — Android has no curl binary
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(std::time::Duration::from_secs(10))
-            .timeout(std::time::Duration::from_secs(60)) // 對齊原 curl --max-time 60（整體上限）
+            .timeout(std::time::Duration::from_secs(inner_s)) // 單輪維持對齊原 curl --max-time 60
             .build();
         let mut req = agent.post(&url).set("Content-Type", "application/json");
         // DICTREBUILD：公開 OpenAI 相容 API 需要 Bearer；本地 ollama 留空即不送
@@ -300,22 +342,63 @@ async fn fetch_llm(url: String, model: String, prompt: String, api_format: Optio
             .map_err(|e| format!("HTTP error: {}", e))?;
         let text = resp.into_string().map_err(|e| format!("body error: {}", e))?;
         let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("json parse fail: {}", e))?;
-        let resp = if fmt == "openai" {
-            match json["choices"][0]["message"]["content"].as_str() {
-                Some(s) => s.to_string(),
-                None => { log::warn!("fetch_llm: openai response missing content"); return Err("API response missing content".to_string()); }
-            }
-        } else {
-            match json["response"].as_str() {
-                Some(s) => s.to_string(),
-                None => { log::warn!("fetch_llm: response missing field"); return Err("API response missing 'response' field".to_string()); }
-            }
-        };
-        Ok(resp)
+        llm_parse(&fmt, chat, &json)
     });
-    tokio::time::timeout(std::time::Duration::from_secs(90), handle).await
-        .map_err(|_| format!("LLM request timed out after 90s"))?
+    tokio::time::timeout(std::time::Duration::from_secs(outer_s), handle).await
+        .map_err(|_| format!("LLM request timed out after {}s", outer_s))?
         .map_err(|e| format!("task failed: {}", e))?
+}
+
+/// fetch_llm 多輪（messages）改動的回歸網 —— 19+ 個單輪呼叫點全靠第一條護著
+#[cfg(test)]
+mod llm_tests {
+    use super::*;
+
+    /// 沒有 messages → URL 與 body 與舊版逐字相同（openai / ollama 兩分支）
+    #[test]
+    fn without_messages_paths_are_unchanged() {
+        let (u, b, chat) = llm_request("http://localhost:11434/api/generate", "ollama", "m", "hi", None);
+        assert!(!chat);
+        assert_eq!(u, "http://localhost:11434/api/generate");
+        assert_eq!(b["prompt"], "hi");
+        assert!(b.get("messages").is_none());
+
+        let (u, b, chat) = llm_request("https://x/v1/chat/completions", "openai", "m", "hi", None);
+        assert!(!chat);
+        assert_eq!(u, "https://x/v1/chat/completions");
+        assert_eq!(b["messages"][0]["role"], "user");
+        assert_eq!(b["messages"][0]["content"], "hi");
+        assert!(b.get("prompt").is_none());
+    }
+
+    /// 有 messages → ollama 換 /api/chat；openai 端點不動（本來就吃 messages）
+    #[test]
+    fn with_messages_switches_to_chat_endpoint() {
+        let msgs = vec![
+            serde_json::json!({"role": "system", "content": "s"}),
+            serde_json::json!({"role": "user", "content": "q"}),
+        ];
+        let (u, b, chat) = llm_request("http://localhost:11434/api/generate", "ollama", "m", "hi", Some(&msgs));
+        assert!(chat);
+        assert_eq!(u, "http://localhost:11434/api/chat");
+        assert_eq!(b["messages"][1]["content"], "q");
+        assert!(b.get("prompt").is_none());
+
+        let (u, _b, chat) = llm_request("https://x/v1/chat/completions", "openai", "m", "hi", Some(&msgs));
+        assert!(!chat);
+        assert_eq!(u, "https://x/v1/chat/completions");
+    }
+
+    /// 回應解析三態：generate 讀 response、chat 讀 message.content（空字串＝失敗）、openai 讀 choices
+    #[test]
+    fn parses_all_three_response_shapes() {
+        assert_eq!(llm_parse("ollama", false, &serde_json::json!({"response": "ok"})).unwrap(), "ok");
+        assert_eq!(llm_parse("ollama", true, &serde_json::json!({"message": {"content": "ok"}})).unwrap(), "ok");
+        // qwen3 開思考時 token 被吃光 → content 空字串，要報錯不要回空字串
+        assert!(llm_parse("ollama", true, &serde_json::json!({"message": {"content": ""}})).is_err());
+        assert!(llm_parse("ollama", false, &serde_json::json!({"message": {"content": "ok"}})).is_err());
+        assert_eq!(llm_parse("openai", false, &serde_json::json!({"choices": [{"message": {"content": "ok"}}]})).unwrap(), "ok");
+    }
 }
 
 /// fetch_get URL 白名單：http 僅允許本機 host（localhost/127.0.0.1/[::1]），其餘一律 https-only。
