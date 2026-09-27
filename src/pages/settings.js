@@ -4,13 +4,18 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon } from '../lib/svg.js';
+import { withPageScope } from '../lib/scope-dom.js';
 import { initCustomSelects } from '../lib/custom-select.js';   // G14: renderInPlace 重渲染後重建 custom-select
+
+// KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
+const pageRoot = () => document.getElementById('page-settings') || document.getElementById('pageContainer');
+
 import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal } from '../lib/api.js';
+import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -956,6 +961,10 @@ async function deleteBackup(filename) {
 // ─── 字本管理 ───────────────────────────────────
 function renderDeckManager(s) {
   const { decks, words } = s.state;
+  // KEEPALIVE1-PERF1：原式在 decks.map() 裡逐字本 words.filter() → O(decks × words)
+  // （16 字本 × 4921 詞 ≈ 7.9 萬次帶閉包迭代）。改成一次 O(words) 統計，輸出相同。
+  const deckCount = new Map();
+  for (const w of words) deckCount.set(w.deck, (deckCount.get(w.deck) || 0) + 1);
   return `
     <div class="section">
       <div class="section-header">
@@ -970,7 +979,7 @@ function renderDeckManager(s) {
         ` : `
           <div style="display:flex;flex-direction:column;gap:var(--s2);padding:0 var(--s1)">
             ${decks.map((d, i) => {
-              const count = words.filter(w => w.deck === d.name).length;
+              const count = deckCount.get(d.name) || 0;
               const first = i === 0;
               const last = i === decks.length - 1;
               return `
@@ -1061,7 +1070,7 @@ function _collapsedSetFromDom(sections) {
     .map(s => s.dataset.collapseKey).filter(Boolean));
 }
 function bindCollapsibleSections() {
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
   // 頂層 section：沒有 .section 祖先（排除匯入／匯出／標籤內嵌的子 section）
   const sections = [...container.querySelectorAll('.section')]
@@ -1103,7 +1112,11 @@ function bindCollapsibleSections() {
   }
 }
 
+/** KEEPALIVE1：包一層把 onMount 內的全域查詢限制在本頁圖層內（見 lib/scope-dom.js） */
 export function onMount(s) {
+  return withPageScope(pageRoot(), () => _mount(s));
+}
+function _mount(s) {
   bindCollapsibleSections();
   const modelList = document.getElementById('piperModelList');
   if (modelList) modelList.innerHTML = '';
@@ -2180,7 +2193,7 @@ function bindDeckManager(s) {
 
 function openDeckModal(s, deck) {
   const isEdit = !!deck;
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
   document.getElementById('deckModal')?.remove();
 
@@ -2316,7 +2329,7 @@ function openMergeModal(s, srcDeck) {
         </div>
       </div>
     </div>`;
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   container.insertAdjacentHTML('beforeend', html);
   const close = () => document.getElementById('mergeModal')?.remove();
   document.getElementById('mergeModalClose')?.addEventListener('click', close);
@@ -2337,7 +2350,7 @@ function openMergeModal(s, srcDeck) {
 // ─── 過濾牌組 Modal ─────────────────────────────
 function showFilteredDeckModal(s, fd = null) {
   const isEdit = !!fd;
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
 
   const html = `
@@ -2456,7 +2469,7 @@ function showFilteredDeckModal(s, fd = null) {
 // ─── 匯入事件綁定 ──────────────────────────────
 // ─── 重新渲染當頁（保留搜尋狀態）─────────────
 function renderInPlace(s) {
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (container) {
     container.innerHTML = render(s);
     onMount(s);

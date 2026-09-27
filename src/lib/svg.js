@@ -208,7 +208,10 @@ export function icon(name, px = 0, cls = '') {
   const fn = icons[name];
   if (!fn) return '';
   const style = px ? ` style="font-size:${px}px"` : '';
-  return `<span class="ic${cls ? ' ' + cls : ''}"${style}>${fn()}</span>`;
+  // ponytail: px>0 時屬性自帶尺寸——.ic svg 1em 規則沒載入時防 svg 預設 300×150 壓字（CSS 載入時屬性被蓋、同值無衝突）
+  let html = fn();
+  if (px) html = html.replace('<svg ', `<svg width="${px}" height="${px}" `);
+  return `<span class="ic${cls ? ' ' + cls : ''}"${style}>${html}</span>`;
 }
 
 /**

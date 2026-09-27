@@ -1,0 +1,342 @@
+{
+ "1-1": [
+  "與 It、There 相關",
+  "It + is/was + adj./N (+ for sb.) + to V；It + is/was + adj. (+ of sb.) + to V"
+ ],
+ "1-2": [
+  "與 It、There 相關",
+  "It is/was no use V-ing；There is no use V-ing"
+ ],
+ "1-3": [
+  "與 It、There 相關",
+  "It is/was time (+ for sb.) to V；It is/was time (that) S V-ed"
+ ],
+ "1-4": [
+  "與 It、There 相關",
+  "It occurs/happens to sb. that...；It strikes sb. that...；Sth occurs/happens/strikes sb."
+ ],
+ "1-5": [
+  "與 It、There 相關",
+  "S + find/consider/think/make + it + adj./N (+ for sb.) + to V"
+ ],
+ "1-6": [
+  "與 It、There 相關",
+  "There is + N + V-ing/p.p."
+ ],
+ "1-7": [
+  "與 It、There 相關",
+  "There is no V-ing"
+ ],
+ "1-8": [
+  "與 It、There 相關",
+  "There is/was/has/have + N + V-ing/p.p."
+ ],
+ "2-1": [
+  "代名詞與冠詞",
+  "from one N to another"
+ ],
+ "2-2": [
+  "代名詞與冠詞",
+  "one..., the other...；one..., another..., the other...；some..., others...；some..., the others..."
+ ],
+ "2-3": [
+  "代名詞與冠詞",
+  "S + V (+ that) + S + V + and + that + S + V"
+ ],
+ "2-4": [
+  "代名詞與冠詞",
+  "...that/those (of)..."
+ ],
+ "3-1": [
+  "連接詞",
+  "either A or B；neither A nor B；not only A but also B"
+ ],
+ "3-2": [
+  "連接詞",
+  "not A but B"
+ ],
+ "3-3": [
+  "連接詞",
+  "祈使句, and + S + V；祈使句, or + S + V"
+ ],
+ "4-1": [
+  "助動詞",
+  "had better + V；would rather...than..."
+ ],
+ "4-2": [
+  "助動詞",
+  "advise/demand/require/order/insist/suggest + that + S (+ should) + V；It is necessary/essential/vital for sb. to V"
+ ],
+ "4-3": [
+  "助動詞",
+  "lest...；for fear that...；in case..."
+ ],
+ "4-4": [
+  "助動詞",
+  "S + must/could/may/might + V"
+ ],
+ "4-5": [
+  "助動詞",
+  "S + must/could/may/might + have + p.p."
+ ],
+ "5-1": [
+  "比較級",
+  "as + adj./adv. + as"
+ ],
+ "5-2": [
+  "比較級",
+  "比較級 + and + 比較級；more and more + adj./adv."
+ ],
+ "5-3": [
+  "比較級",
+  "The more..., the more..."
+ ],
+ "5-4": [
+  "比較級",
+  "比較級 + than any other N；No other N + as...as"
+ ],
+ "5-5": [
+  "比較級",
+  "倍數 + as...as；倍數 + 比較級 + than"
+ ],
+ "5-6": [
+  "比較級",
+  "twice/three times/etc. the N of..."
+ ],
+ "6-1": [
+  "關係詞",
+  "N + which/who/whom/whose...；N + which/who/whom + V；which + V"
+ ],
+ "6-2": [
+  "關係詞",
+  "介系詞 + which/whom；from which/whom..."
+ ],
+ "6-3": [
+  "關係詞",
+  "N + where/when...；where/when 關係副詞"
+ ],
+ "6-4": [
+  "關係詞",
+  "N + why/where/when + S + V；as/how/when + S + V"
+ ],
+ "6-5": [
+  "關係詞",
+  "what = the thing(s) which"
+ ],
+ "6-6": [
+  "關係詞",
+  "whatever/whoever/whichever 等複合關係詞"
+ ],
+ "7-1": [
+  "動名詞",
+  "go + V-ing；do + the + V-ing"
+ ],
+ "7-2": [
+  "動名詞",
+  "have difficulty/trouble/problem/a hard time + V-ing"
+ ],
+ "7-3": [
+  "動名詞",
+  "keep/stop/prevent/protect/ban + O + from + V-ing"
+ ],
+ "7-4": [
+  "動名詞",
+  "to + V-ing/N"
+ ],
+ "7-5": [
+  "動名詞",
+  "to + V-ing/N"
+ ],
+ "8-1": [
+  "不定詞",
+  "S + be/pronoun/which (+ N) + one/how/when/where/whether + to V"
+ ],
+ "8-2": [
+  "不定詞",
+  "What/All/The only thing + S + must/need to/do + be + (to) V"
+ ],
+ "8-3": [
+  "不定詞",
+  "It seems that S V；S seems to V"
+ ],
+ "8-4": [
+  "不定詞",
+  "S + be said/believed/thought + to V；S + be said... that...；People say/believe... that..."
+ ],
+ "9-1": [
+  "分詞",
+  "S + V..., V-ing/p.p."
+ ],
+ "9-2": [
+  "分詞",
+  "keep/find/leave + O + OC (V-ing/p.p./adj./prep. phrase)"
+ ],
+ "9-3": [
+  "分詞",
+  "With + O + OC；With + N"
+ ],
+ "9-4": [
+  "分詞",
+  "S + sit/lie/stand + adj./V-ing/p.p."
+ ],
+ "9-5": [
+  "分詞",
+  "S + V..., V-ing..."
+ ],
+ "9-6": [
+  "分詞",
+  "V-ing/p.p. (+ S) + be/V..."
+ ],
+ "9-7": [
+  "分詞",
+  "N + V-ing/p.p...."
+ ],
+ "10-1": [
+  "假設語氣",
+  "If S were/V-ed..., S would/could/might/should V"
+ ],
+ "10-2": [
+  "假設語氣",
+  "If S had + p.p., S would/could/might have + p.p."
+ ],
+ "10-3": [
+  "假設語氣",
+  "If S had + p.p., S would/could/might + V"
+ ],
+ "10-4": [
+  "假設語氣",
+  "If S should + V, S would/could/might/should V"
+ ],
+ "10-5": [
+  "假設語氣",
+  "wish + S + were/V-ed/had p.p.；If only + S + were/V-ed/had p.p."
+ ],
+ "10-6": [
+  "假設語氣",
+  "If it were not for N；If it had not been for N；But for N；Without N"
+ ],
+ "10-7": [
+  "假設語氣",
+  "as if/as though + S + V-ed / had p.p."
+ ],
+ "11-1": [
+  "否定句",
+  "too + adj./adv. + (for sb.) + to V"
+ ],
+ "11-2": [
+  "否定句",
+  "not/never...too...；not/never...without N/V-ing"
+ ],
+ "11-3": [
+  "否定句",
+  "not/never + V + too + adj./adv."
+ ],
+ "11-4": [
+  "否定句",
+  "the last N + to V；the last N + that S V / that V"
+ ],
+ "12-1": [
+  "倒裝句",
+  "Adverbial phrase + be/V + S"
+ ],
+ "12-2": [
+  "倒裝句",
+  "Negative adverb + be + S / aux. + S + V；Not only..."
+ ],
+ "12-3": [
+  "倒裝句",
+  "adj./adv./N + as + S + V/be + S, ..."
+ ],
+ "12-4": [
+  "倒裝句",
+  "..., and so + be/aux. + S；and neither + be/aux. + S；nor + be/aux. + S"
+ ],
+ "12-5": [
+  "倒裝句",
+  "Only... + be + S；Only... + aux. + S + V"
+ ],
+ "12-6": [
+  "倒裝句",
+  "So + be + S；So + aux. + S + V；Such + N + be + S；Such + S + V + that..."
+ ],
+ "12-7": [
+  "倒裝句",
+  "As soon as S V, S V；Upon/On V-ing/N, S V"
+ ],
+ "13-1": [
+  "時態",
+  "Since + N/S V-ed, S have/has + p.p."
+ ],
+ "13-2": [
+  "時態",
+  "Not until...；It is not until...that..."
+ ],
+ "13-3": [
+  "時態",
+  "By the time S V-ed, S had p.p.；By the time S V, S will have p.p."
+ ],
+ "13-4": [
+  "時態",
+  "No sooner had S p.p. than S V-ed"
+ ],
+ "14-1": [
+  "讓步子句",
+  "Whether..., or... + S + V"
+ ],
+ "14-2": [
+  "讓步子句",
+  "No matter how/where/why/when/which...；Whichever/Whatever/Whenever...；However + adj./adv. + S + V"
+ ],
+ "14-3": [
+  "讓步子句",
+  "Although S be/V, S V；Adj./Adv./N + as/though + S be/V"
+ ],
+ "14-4": [
+  "讓步子句",
+  "Despite/In spite of + N/V-ing/the fact that S V"
+ ],
+ "15-1": [
+  "副詞子句（因果、目的、結果）",
+  "Because + S V；Because of + N"
+ ],
+ "15-2": [
+  "副詞子句（因果、目的、結果）",
+  "so + adj./adv. + that S V；such + N + that S V"
+ ],
+ "15-3": [
+  "副詞子句（因果、目的、結果）",
+  "S + V + so that S V；S + V + in order that S V"
+ ],
+ "16-1": [
+  "其他句型",
+  "look/taste/smell/sound/feel + adj.；... + like + N"
+ ],
+ "16-2": [
+  "其他句型",
+  "have/make/let + O + V；have/make + O + p.p.；let + O + be + p.p."
+ ],
+ "16-3": [
+  "其他句型",
+  "see/hear/watch/feel + O + V/V-ing；... + O + p.p."
+ ],
+ "16-4": [
+  "其他句型",
+  "S + V + adj. + enough + to V；V + adv. + enough + to V"
+ ],
+ "16-5": [
+  "其他句型",
+  "It is possible...；S + be possible..."
+ ],
+ "16-6": [
+  "其他句型",
+  "see/refer/regard/think of/look upon/refer to + A + as + B；consider/deem + A + (to be) + B"
+ ],
+ "16-7": [
+  "其他句型",
+  "What + is + S + be/V；How + adj./adv. + S + be/V"
+ ],
+ "1-9": [
+  "與 It、There 相關",
+  "It is/was + 強調部分 + that/who...（分裂句 / 強調句型）"
+ ]
+}

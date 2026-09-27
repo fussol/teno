@@ -29,9 +29,22 @@ const ORIGINALS = {
 let _filterTag = null;
 let _tmDocOutside = null;   // G11: palette outside-click（onMount 重複註冊累積）
 
+/** KEEPALIVE1-PERF1：reviewLog 逐筆 words.find() 是 O(reviewLog × words)。
+ * 實測 3000 筆 × 4921 詞 ≈ 1470 萬次迭代，節流 6x 下 130ms，佔設定頁 render 的 80%
+ * （設定頁內嵌標籤管理，renderContent 走這裡）。
+ * 改成一次建 id→word 索引 O(words)，輸出完全不變（已用 byte-for-byte 比對驗證）。 */
+function wordsById(words) {
+  const m = new Map();
+  // first-wins：對齊 Array.find() 取「第一個」符合者的語意（Map.set 預設覆蓋成最後一個，
+  // 若真有重複 id 兩者結果會不同）
+  for (const w of words || []) if (!m.has(w.id)) m.set(w.id, w);
+  return m;
+}
+
 function sysTagStats(s) {
   const { words, reviewLog, systemTags, tagConfig } = s.state;
   const tagByName = new Map((systemTags || []).map(t => [t.name, t]));
+  const byId = wordsById(words);
   const stats = new Map();
   for (const w of words) for (const t of (w.tags || [])) {
     if (!stats.has(t)) stats.set(t, { count: 0, correct: 0, total: 0 });
@@ -39,7 +52,7 @@ function sysTagStats(s) {
   }
   for (const e of reviewLog) {
     if (!e || !e.wordId) continue;
-    const word = words.find(w => w.id === e.wordId);
+    const word = byId.get(e.wordId);
     if (!word || !word.tags) continue;
     for (const t of word.tags) {
       const m = stats.get(t); if (!m) continue;
@@ -52,6 +65,7 @@ function sysTagStats(s) {
 function userTagStats(s) {
   const { words, reviewLog, tags: userTags, tagConfig } = s.state;
   const tagByName = new Map((userTags || []).map(t => [t.name, t]));
+  const byId = wordsById(words);
   const stats = new Map();
   for (const w of words) for (const t of (w.tags || [])) {
     if (!stats.has(t)) stats.set(t, { count: 0, correct: 0, total: 0, words: [] });
@@ -59,16 +73,19 @@ function userTagStats(s) {
   }
   for (const e of reviewLog) {
     if (!e || !e.wordId) continue;
-    const word = words.find(w => w.id === e.wordId);
+    const word = byId.get(e.wordId);
     if (!word || !word.tags) continue;
     for (const t of word.tags) {
       const m = stats.get(t); if (!m) continue;
       m.total++; if (e.rating >= 2) m.correct++;
     }
   }
+  // KEEPALIVE1-PERF1：原式每筆都重建 keys 陣列 + indexOf（O(n²)），且每筆重呼 getPalette 兩次
+  const palette = getPalette(s);
+  const idxOf = new Map([...stats.keys()].map((n, i) => [n, i]));
   return [...stats.entries()].map(([name, m]) => {
     const def = tagByName.get(name);
-    return { name, color: def?.color || tagConfig[name] || getPalette(s)[[...stats.keys()].indexOf(name) % getPalette(s).length], id: def?.id || null, count: m.count, retention: m.total > 0 ? m.correct / m.total : null, words: m.words };
+    return { name, color: def?.color || tagConfig[name] || palette[idxOf.get(name) % palette.length], id: def?.id || null, count: m.count, retention: m.total > 0 ? m.correct / m.total : null, words: m.words };
   }).sort((a, b) => b.count - a.count);
 }
 

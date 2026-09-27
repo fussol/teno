@@ -3,9 +3,14 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon } from '../lib/svg.js';
+import { withPageScope } from '../lib/scope-dom.js';
 import { computeStreak, countTodayReviews, getToday, toLocalDateStr, computeRetention, getDueCards } from '../core/scheduler.js';
 import { barChart, lineChart, pieChart, pieLegend } from '../lib/chart.js';
 import { STATE_NEW, STATE_LEARNING, STATE_REVIEW, STATE_RELEARNING } from '../core/fsrs.js';
+
+// KEEPALIVE1：本頁圖層根。預渲染後主頁住在 #page-<name>，不再是 #pageContainer
+// （#pageContainer 保留給動態子頁，且排在最前面 → id 撞名時 getElementById 先命中子頁）。
+const pageRoot = () => document.getElementById('page-dashboard') || document.getElementById('pageContainer');
 
 let _dashboardMode = 'flip'; // 'flip' | 'mc' | 'spell'
 let _dashboardRange = '1m'; // '1m' | '3m' | '1y' | 'all' (charts time range)
@@ -951,7 +956,12 @@ function renderDeckGrid(decks, words, cards, s, dueSet) {
   </div>`;
 }
 
+/** KEEPALIVE1：五個主頁預渲染後同時留在 DOM，onMount 內的全域查詢要導向本頁圖層
+ * （見 lib/scope-dom.js；實測不包會撈到別頁的 .exam-deck-chip / button[onclick]）。 */
 export function onMount(store) {
+  return withPageScope(pageRoot(), () => _mount(store));
+}
+function _mount(store) {
   document.querySelectorAll('.deck-card[data-deck]').forEach(el => {
     el.addEventListener('click', () => {
       store.state.browserDeckFilter = el.dataset.deck;
@@ -965,14 +975,14 @@ export function onMount(store) {
   document.querySelectorAll('[data-dash-mode]').forEach(el => {
     el.addEventListener('click', () => {
       _dashboardMode = el.dataset.dashMode;
-      const c = document.getElementById('pageContainer');
+      const c = pageRoot();
       if (c) { c.innerHTML = render(store); onMount(store); }
     });
   });
   document.querySelectorAll('[data-dash-range]').forEach(el => {
     el.addEventListener('click', () => {
       _dashboardRange = el.dataset.dashRange;
-      const c = document.getElementById('pageContainer');
+      const c = pageRoot();
       if (c) { c.innerHTML = render(store); onMount(store); }
     });
   });

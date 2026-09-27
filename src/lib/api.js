@@ -62,6 +62,48 @@ export const fetchLLM = async (url, model, prompt, apiFormat, messages) => {
   });
 };
 
+// 抽 LLM 回覆裡的批改 JSON：```json 區塊／尾段裸 JSON → 逗號清理 → 依未閉合堆疊補尾括號
+// （qwen 系常吐 }} 漏掉 ]，實測 3/3 必現），全敗回 null 由呼叫端報錯
+export const parseLLMJson = (raw, key = 'results') => {
+  const blocks = [...raw.matchAll(/```json\s*(\{[\s\S]*?\})\s*```/g)].map((m) => m[1]);
+  const tail = raw.match(new RegExp('\\{\\s*"' + key + '"[\\s\\S]*'));
+  const cands = [...(tail ? [tail[0]] : []), ...blocks];
+  for (let i = cands.length - 1; i >= 0; i--) {
+    const cleaned = cands[i].replace(/\s*`+\s*$/, '').replace(/,\s*([}\]])/g, '$1');
+    // 修復行走：qwen 常漏中間的 ]（吐 }} 應為 }] }）——缺的括號就地補，收尾補齊未閉合
+    const stack = [];
+    let out = '';
+    let inStr = false;
+    let esc = false;
+    let bad = false;
+    for (const ch of cleaned) {
+      if (inStr) {
+        out += ch;
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; out += ch; continue; }
+      if (ch === '{' || ch === '[') { stack.push(ch === '{' ? '}' : ']'); out += ch; continue; }
+      if (ch === '}' || ch === ']') {
+        if (stack[stack.length - 1] === ch) { stack.pop(); out += ch; continue; }
+        const at = stack.lastIndexOf(ch);   // 模型跳過了上層括號 → 就地補齊它們
+        if (at === -1) { bad = true; out += ch; continue; }
+        for (let k = stack.length - 1; k > at; k--) out += stack.pop();
+        stack.pop();   // 自己那層（at）由 out += ch 收掉，不可重複
+        out += ch;
+        continue;
+      }
+      out += ch;
+    }
+    if (bad) continue;
+    out += stack.reverse().join('');
+    try { return JSON.parse(out); } catch { /* 下一個候選 */ }
+  }
+  return null;
+};
+
 export const fetchGet = (url) =>
   invoke('fetch_get', { url })
 

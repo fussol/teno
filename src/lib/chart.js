@@ -204,3 +204,57 @@ function escapeXml(str) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
+/**
+ * 雷達圖（多軸 0–max）—— 插件五軸強弱用。
+ * @param {{label:string,value:number}[]} data 3–8 軸
+ * @param {{size?:number,max?:number,color?:string}} [opts]
+ */
+export function radarChart(data, opts = {}) {
+  const n = data.length;
+  if (n < 3) return '';
+  const size = opts.size || 260;
+  const max = opts.max ?? 100;
+  const cx = size / 2, cy = size / 2;
+  const r = size / 2 - 38;                     // 標籤留白
+  const color = opts.color || 'var(--accent)';
+  const gridColor = 'rgba(128,120,153,0.3)';
+  const ang = (i) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const pt = (i, rad) => [cx + rad * Math.cos(ang(i)), cy + rad * Math.sin(ang(i))];
+  const clamped = (v) => Math.max(0, Math.min(1, v / max));
+  const ringPts = (frac) => data.map((_, i) => pt(i, r * frac).map(v => v.toFixed(1)).join(',')).join(' ');
+  const valPts = data.map((d, i) => pt(i, r * clamped(d.value)).map(v => v.toFixed(1)).join(',')).join(' ');
+
+  const grid = [0.25, 0.5, 0.75, 1].map(f =>
+    `<polygon points="${ringPts(f)}" fill="none" stroke="${gridColor}" stroke-width="1"/>`).join('');
+  const spokes = data.map((_, i) => {
+    const [x, y] = pt(i, r);
+    return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${gridColor}" stroke-width="1"/>`;
+  }).join('');
+  const dots = data.map((d, i) => {
+    const [x, y] = pt(i, r * clamped(d.value));
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${color}"/>`;
+  }).join('');
+  const labels = data.map((d, i) => {
+    const [x0, y0] = pt(i, r + 20);
+    const fs = 11;
+    // ponytail: 字寬以 CJK=1em 估；左右側軸的四字標籤（文意選填/閱讀測驗）原樣必超出 viewBox 被裁掉
+    // → 夾回畫布內（留 2px 邊距）；要與射線端點精準對齊得加大 size 或縮字級，等版面要求再說
+    const w = [...String(d.label)].reduce((s, ch) => s + (ch.charCodeAt(0) > 127 ? fs : fs * 0.6), 0);
+    const anchor = Math.abs(x0 - cx) < 6 ? 'middle' : (x0 > cx ? 'start' : 'end');
+    const x = anchor === 'start' ? Math.min(x0, size - 2 - w) : anchor === 'end' ? Math.max(x0, 2 + w) : x0;
+    const y = Math.min(size - 4, Math.max(fs, y0));
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" dominant-baseline="middle"` +
+      ` font-size="${fs}" fill="rgba(128,120,153,0.95)">${escapeXml(d.label)}</text>`;
+  }).join('');
+  const values = data.map((d, i) => {
+    const [x, y] = pt(i, r * clamped(d.value) * 0.78 + (r * clamped(d.value) < 14 ? 12 : 0));
+    return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle"` +
+      ` font-size="10" font-weight="600" fill="${color}">${Math.round(d.value)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${size} ${size}" width="100%" style="max-width:${size}px;display:block;margin:0 auto" role="img">
+    ${grid}${spokes}
+    <polygon points="${valPts}" fill="${color}" fill-opacity="0.22" stroke="${color}" stroke-width="2"/>
+    ${dots}${values}${labels}
+  </svg>`;
+}

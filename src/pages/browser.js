@@ -4,6 +4,11 @@
 // ═══════════════════════════════════════════════════════════════
 
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
+import { withPageScope } from '../lib/scope-dom.js';
+
+// KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
+const pageRoot = () => document.getElementById('page-browser') || document.getElementById('pageContainer');
+
 import { cardFaceHtml } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, addImageUrlFlow, ensureThumbCSS } from '../lib/word-image.js';
 import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
@@ -215,8 +220,13 @@ function filterWords(words) {
     // 無 seed 的隨機排序每次 render 應重新洗牌（Date.now seed），不 memo。
   } else {
     // EFF：sig 用 words reference 身分（_fwWordsRef），不把陣列 join 進 sig（每次序列化 0.2ms×萬詞浪費）
-    const sig = [_query, _searchScope, _deckFilter, _tagFilter, _sortRandom, _sortSeed].join('\u0001') + '|' + (words === _fwWordsRef ? '=' : '+');
-    if (_fwSig === sig && _fwCache) return _fwCache;
+    // KEEPALIVE1-FIX1（2026-09）：原式尾巴的 `(words === _fwWordsRef ? '=' : '+')` 只表達
+    // 「跟上次是不是同一個陣列」——**兩個不同的陣列都得到 '+'**，於是
+    // 「A 陣列（空）→ 空結果入快取」之後換成 B 陣列，sig 一模一樣 → 直接回傳 A 的空結果。
+    // 實測踩到的情境：KEEPALIVE1 開機預渲染時 words 還是 []，之後重繪換上真陣列 → 字庫頁 0 筆。
+    // 改成把陣列參考也放進條件，做真正的身分比對。
+    const sig = [_query, _searchScope, _deckFilter, _tagFilter, _sortRandom, _sortSeed].join('\u0001');
+    if (_fwSig === sig && _fwWordsRef === words && _fwCache) return _fwCache;
     _fwSig = sig;
     _fwWordsRef = words;
   }
@@ -675,7 +685,11 @@ function initScrollTop() {
   onScroll();
 }
 
+/** KEEPALIVE1：包一層把 onMount 內的全域查詢限制在本頁圖層內（見 lib/scope-dom.js） */
 export function onMount(s) {
+  return withPageScope(pageRoot(), () => _mount(s));
+}
+function _mount(s) {
   initScrollTop();
   // 顯示上限：db 還原（設定記憶）＋ selector 變更寫回
   import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
@@ -781,7 +795,7 @@ export function onMount(s) {
 async function inlineEditTags(s, id) {
   const w = s.state.words.find(x => x.id === id);
   if (!w) return;
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
   const existing = document.getElementById('tagPickerModal');
   if (existing) existing.remove();
@@ -854,7 +868,7 @@ function renderListInPlace(s) {
 }
 
 function renderInPlace(s) {
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (container) {
     container.innerHTML = render(s);
     onMount(s);
@@ -895,7 +909,7 @@ function openEditModal(s, id) {
 function openModal(s, word) {
   const isEdit = !!word;
   const decks = s.state.decks;
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
   const existing = document.getElementById('wordModal');
   if (existing) existing.remove();
@@ -1665,7 +1679,7 @@ function cssEscape(str) {
 }
 
 function showMergeModal(s, existing, newData, closeAddModal) {
-  const container = document.getElementById('pageContainer');
+  const container = pageRoot();
   if (!container) return;
   const existingEl = document.getElementById('wordModal');
   if (existingEl) existingEl.remove();

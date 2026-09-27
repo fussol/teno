@@ -155,10 +155,49 @@ async function migrate(d) {
     )`);
     await d.execute('CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)');
   } catch (_) {}
+  // PLUGINLOG: 插件練習紀錄（grammar/gsat/essay）—— 入 DB 才會被備份/WebDAV 帶走。
+  // 走 audit_log 同款「JS 端 CREATE TABLE IF NOT EXISTS 冪等」先例，不動 sqlx migration。
+  try {
+    await d.execute(`CREATE TABLE IF NOT EXISTS practice_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      plugin TEXT NOT NULL,
+      qid TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT '',
+      axis TEXT NOT NULL DEFAULT '',
+      ok INTEGER NOT NULL DEFAULT 0,
+      scores TEXT NOT NULL DEFAULT ''
+    )`);
+    await d.execute('CREATE INDEX IF NOT EXISTS idx_practice_ts ON practice_log(ts)');
+  } catch (_) {}
   // A12: 容器卡假 due 清理 — state=0（new）不該有 due；只清帶 mcData/spellData 的容器卡
   try {
     await d.execute(`UPDATE cards SET due='' WHERE state=0 AND due != '' AND (mc_data IS NOT NULL OR spell_data IS NOT NULL)`);
   } catch (_) {}
+}
+
+/** PLUGINLOG: 寫一筆插件練習紀錄。回 false = DB 不可用（呼叫端自己落 localStorage）。 */
+export async function insertPractice(r) {
+  try {
+    const scores = typeof r.scores === 'string' ? (r.scores || '') : JSON.stringify(r.scores ?? null);
+    await requireDB().execute(
+      'INSERT INTO practice_log (ts, plugin, qid, mode, axis, ok, scores) VALUES (?,?,?,?,?,?,?)',
+      [r.ts | 0, r.plugin, r.qid, r.mode || '', r.axis || '', r.ok ? 1 : 0, scores]);
+    return true;
+  } catch (e) { console.warn('[db] insertPractice:', e); return false; }
+}
+
+/** PLUGINLOG: 讀某插件的紀錄（新→舊）。回 null = DB 不可用 → 呼叫端讀 localStorage。 */
+export async function selectPractice(plugin, limit = 10000) {   // ponytail: 統計/錯題本吃快取上限；要無限史再改 SQL 端聚合
+  try {
+    const rows = await requireDB().select(
+      'SELECT ts, plugin, qid, mode, axis, ok, scores FROM practice_log WHERE plugin=? ORDER BY ts DESC LIMIT ?',
+      [plugin, limit]);
+    return (rows || []).map(r => ({
+      ts: r.ts, qid: r.qid, mode: r.mode, axis: r.axis, ok: !!r.ok,
+      scores: (() => { try { return JSON.parse(r.scores); } catch { return null; } })(),
+    }));
+  } catch (e) { console.warn('[db] selectPractice:', e); return null; }
 }
 
 /** Checkpoint WAL so the main db file is fully up to date. */

@@ -24,8 +24,30 @@ const genInc = /const gen = \+\+_renderGen/.test(MAIN);
 const guardAfterLoad = /await loadPage\(page\);\s*\n\s*if \(gen !== _renderGen\) return;/.test(MAIN);
 const guardAfterRender = /if \(gen !== _renderGen\) return;[^\n]*\n\s*container\.innerHTML/.test(MAIN);
 const guardInCatch = /catch \(e\) \{\s*\n\s*if \(gen !== _renderGen\) return;/.test(MAIN);
-// 沒 guard 的 innerHTML 直寫面 = 0（三個寫入點全在 guard 後）
-const unguarded = (MAIN.match(/container\.innerHTML = (?!rendered|`<div class="empty-state")/g) || []).length;
+// T1.6（2026-09 KEEPALIVE1 改寫）：原斷言是「main.js 內 container.innerHTML 只准有兩個受 guard 保護的寫入」
+// —— 那是綁在舊 renderPage 形狀上的檢查。KEEPALIVE1 之後，動態子頁分支多了一行
+// `container.innerHTML = ''`（進子頁前清空，防上一輪殘留的 id 被 getElementById 撈到），
+// 它在 renderPage 的第一個 await 之前，屬於同步段，構造上不可能發生「過期頁晚到覆蓋」。
+// 因此把斷言改綁真正的不變式：**任何沒有 guard 的寫入，必須落在第一個 await 之前**（同步段）。
+// 保留「掃描器還看得到東西嗎」自檢（見 skill node26-test-harness §10），免得正則一失效就靜默全綠。
+const rpStart = MAIN.indexOf('async function renderPage()');
+const rpEnd = MAIN.indexOf('// ─── Subscribe store');
+const rpBody = rpStart >= 0 && rpEnd > rpStart ? MAIN.slice(rpStart, rpEnd) : '';
+// 先遮掉註解再找位置（等長遮罩：位移不變）—— 否則 renderPage 第二行的註解
+// 「await 期間有新 renderPage → 本輪作廢」會被當成第一個 await，整條檢查就廢了。
+const maskComments = (s) => s
+  .replace(/\/\*[\s\S]*?\*\//g, (m) => ' '.repeat(m.length))
+  .replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+const rpCode = maskComments(rpBody);
+const firstAwaitIdx = rpCode.indexOf('await ');
+const allWrites = [...rpCode.matchAll(/container\.innerHTML = /g)];
+const isGuardedWrite = (idx) => {
+  const after = rpCode.slice(idx + 'container.innerHTML = '.length, idx + 'container.innerHTML = '.length + 30);
+  return after.startsWith('rendered') || after.startsWith('`<div class="empty-state"');
+};
+const bareWrites = allWrites.filter(m => !isGuardedWrite(m.index));
+const lateBare = bareWrites.filter(m => firstAwaitIdx >= 0 && m.index > firstAwaitIdx);
+const scanSeesSomething = allWrites.length >= 2;   // 自檢：至少要看得到既有那兩個寫入
 
 // ── 動態模擬（race 重現）：提取 renderPage 函式本體跑 ──
 async function simulateRace(withGuard) {
@@ -75,7 +97,9 @@ if (PRE) {
   ok('T1.3 await loadPage 後 guard 丟棄', guardAfterLoad);
   ok('T1.4 render 後（innerHTML 前）guard', guardAfterRender);
   ok('T1.5 catch 面也有 guard', guardInCatch);
-  ok('T1.6 innerHTML 寫入全在 guard 保護內（無裸寫）', unguarded === 0, `unguarded=${unguarded}`);
+  ok('T1.6 掃描器自檢：看得到 innerHTML 寫入點', scanSeesSomething, `writes=${allWrites.length}`);
+  ok('T1.6 無 guard 的寫入只出現在同步段（第一個 await 之前）→ 構造上不可能過期覆蓋',
+    lateBare.length === 0, `late=${lateBare.length} bare=${bareWrites.length}${lateBare.length ? ' | ' + lateBare.map(w => w[0]).join(' | ') : ''}`);
 
   // 動態 race 模擬
   const buggy = await simulateRace(false);

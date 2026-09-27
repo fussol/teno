@@ -274,6 +274,19 @@ option{background:var(--bg-surface);color:var(--text-primary)}
 }
 .page{display:none;max-width:min(1400px,calc(100vw - 80px));margin:0 auto;width:100%}
 .page.active{display:block;animation:pageIn var(--t-slow)}
+/* ─── KEEPALIVE1：主頁預渲染圖層（2026-09） ───
+   五個主頁在 splash 期間就全部渲染好、一起留在 DOM（見 main.js），換頁只切 .active。
+   為何不用 display:none 當切換鈕：display:none → block 會把已算好的排版整棵丟棄，
+   每次換頁都要重算（實測「字庫」在 6x CPU 節流下 470–700ms，就是使用者感覺到的延遲）。
+   content-visibility:hidden 只跳過子樹的渲染，揭示時只需處理看得到的那一段
+   （字庫頁內容 63427px 高，只排版視窗內約 915px）→ 實測平均 53ms、最差 157ms。
+   @supports 讓不支援的舊 WebView 自動退回上面的 display 機制（功能不受影響，只是沒加速）。
+   注意：content-visibility:hidden 會帶 contain:size layout style paint，
+   只在「隱藏中」成立；.active 時是 visible（無 contain），行為與改動前一致。 */
+@supports (content-visibility: hidden) {
+  .page{display:block;content-visibility:hidden}
+  .page.active{content-visibility:visible}
+}
 @keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
 .page-title{
@@ -1541,3 +1554,22 @@ body.no-hints .mode-desc{display:none}
   button.card-panel-nav-btn{min-width:44px;min-height:44px}
   .content-area .page-subtitle + div[style*="flex-wrap:wrap"] .form-input{max-width:100%!important}
 }
+
+/* 插件：翻譯批改的桌機右側「批改序列」——窄螢幕/手機隱藏（結果頁仍看得到） */
+.grade-queue{display:none}
+@media(min-width:1100px){.grade-queue{display:block}}
+
+/* ─── gsat 題組：自訂下拉浮層（替代原生 select，只做題組）─── */
+.gsat-dd{position:relative;display:inline-block;vertical-align:middle}
+.gsat-dd-btn{display:inline-flex;align-items:center;gap:8px;max-width:250px;padding:5px 10px;font-size:13px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-elevated);color:var(--text-primary);cursor:pointer}
+.gsat-dd-btn:hover{border-color:var(--cyan)}
+.gsat-dd-val{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gsat-dd-btn::after{content:"";width:0;height:0;flex-shrink:0;margin-left:auto;border:4px solid transparent;border-top-color:var(--text-tertiary)}
+.gsat-dd-menu{position:absolute;z-index:500;top:calc(100% + 4px);right:0;left:auto;min-width:100%;max-width:min(300px,calc(100vw - 48px));max-height:230px;overflow:auto;padding:4px;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--shadow-md);text-align:left}
+.gsat-dd-opt{display:flex;gap:8px;align-items:baseline;width:100%;padding:7px 9px;font-size:13px;line-height:1.4;color:var(--text-primary);background:none;border:0;border-radius:6px;cursor:pointer;text-align:left}
+.gsat-dd-opt:hover{background:var(--bg-elevated)}
+.gsat-dd-opt.on{background:var(--bg-elevated);color:var(--cyan)}
+.gsat-dd-check{margin-left:auto;color:var(--cyan);flex-shrink:0}
+/* 題號空位統一格式（＿31＿ / 裸題號 → 底線空格槽） */
+.gsat-fill{display:inline-block;min-width:52px;padding:0 6px;margin:0 2px;border-bottom:2px solid var(--cyan);color:var(--cyan);font-family:var(--mono);font-size:.95em;text-align:center}
+.gsat-timer{display:inline-flex;align-items:center;gap:4px}

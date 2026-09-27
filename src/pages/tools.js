@@ -1,7 +1,15 @@
 import { icon } from '../lib/svg.js';
+import { withPageScope } from '../lib/scope-dom.js';
 import { normalizePos } from '../core/import.js'; // G-TOOL1＋COMBO1: 組合包外只剩 __lookupCambridge 用（去尾點＋短形映射＋去重）
 import { toast } from '../lib/toast.js';
-import { fetchGet, fetchLLM, lookupCambridge } from '../lib/api.js';
+import { fetchGet, fetchLLM, lookupCambridge, parseLLMJson } from '../lib/api.js';
+import { getSetting, setSetting } from '../lib/db.js';
+import { mergeBank, validateQuestion, nextQid } from '../lib/bank.js';
+import questionsRaw from '../assets/grammar/questions.jsonl?raw';
+import topicsRaw from '../assets/grammar/pattern_titles.json?raw';
+
+// KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
+const pageRoot = () => document.getElementById('page-tools') || document.getElementById('pageContainer');
 
 // OCR token 白名單（計畫 v1.3 §5，與 store.importOcrText 端同一正則）
 const _OCR_TOKEN_RE = /^[a-z][a-z'-]{1,30}$/i;
@@ -10,6 +18,254 @@ const _OCR_TOKEN_RE = /^[a-z][a-z'-]{1,30}$/i;
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c =>
     ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ─── 文法題庫管理（工具頁）：AI 出題／刪題 → 覆蓋層存 settings，文法頁載入時合併 ───
+const BANK_BASE = questionsRaw.trim().split('\n').map(l => JSON.parse(l));
+const BANK_TOPICS = JSON.parse(topicsRaw);
+let bOv = { up: {}, rm: [] };
+let bReady = null;          // 覆蓋層載入 promise（入庫前必等，id 才不撞）
+let bPreview = [];          // LLM 出題 → 預覽 → 確認入庫
+let bDel = '';              // 兩段式刪題（按一次備刪、再按才刪）
+let bEdit = null;           // 編輯器狀態：null | { id: ''=新增, form: {...} }
+let bF = { pat: '', type: '', q: '' };
+let bankS = null;           // _mount 注入：LLM 設定（同文法頁批改的解析法）
+const bankAll = () => mergeBank(BANK_BASE, bOv);
+const axisOf = (pat) => BANK_BASE.find(x => x.pattern === pat)?.axis || '句型與語序';
+const bankLoad = () => (bReady = bReady || getSetting('grammar_bank_overlay').then(o => {
+  if (o && typeof o === 'object') bOv = { up: o.up || {}, rm: o.rm || [] };
+}).catch(() => {}));
+
+function bankListHtml() {
+  const all = bankAll();
+  let rows = all;
+  if (bF.pat) rows = rows.filter(q => q.pattern === bF.pat);
+  if (bF.type) rows = rows.filter(q => q.type === bF.type);
+  if (bF.q) { const t = bF.q.toLowerCase(); rows = rows.filter(q => (q.stem || q.translation || '').toLowerCase().includes(t)); }
+  const shown = rows.slice(0, 80);
+  const head = `<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:4px">顯示 ${shown.length}/${rows.length} 筆（題庫共 ${all.length}）</div>`;
+  if (!shown.length) return head + '<p style="font-size:12px;color:var(--text-tertiary)">沒有符合的題</p>';
+  return head + shown.map(q => {
+    const text = q.type === 'mc' ? q.stem : q.translation;
+    const tag = (q.id in bOv.up) ? ' <b style="color:var(--green);font-size:10px">新</b>' : (bOv.rm.includes(q.id) ? '' : '');
+    return `<div class="tool-row" style="border-bottom:1px solid var(--border);padding:5px 0;flex-wrap:nowrap">
+      <span style="font-size:10px;font-family:var(--mono);color:var(--text-tertiary);min-width:88px">${esc(q.id)}${tag}</span>
+      <span style="flex:1;min-width:0;font-size:12px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(text)}</span>
+      <span style="font-size:10px;color:var(--text-tertiary)">${q.type === 'mc' ? '多選' : '翻譯'}</span>
+      <button class="btn btn-sm bank-edit" data-id="${esc(q.id)}" style="font-size:11px;padding:2px 10px">編輯</button>
+      <button class="btn btn-sm bank-del" data-id="${esc(q.id)}" style="font-size:11px;padding:2px 10px;color:var(--red)">${bDel === q.id ? '再按確認' : '刪'}</button>
+    </div>`;
+  }).join('');
+}
+function bankFillList() {
+  const el = document.getElementById('bankList');
+  if (el) {
+    el.innerHTML = bankListHtml();
+    el.querySelectorAll('.bank-del').forEach(b => b.addEventListener('click', bankDel));
+    el.querySelectorAll('.bank-edit').forEach(b => b.addEventListener('click', e => {
+      const id = e.currentTarget.dataset.id;
+      bankEditOpen(bankAll().find(q => q.id === id));
+    }));
+  }
+  const c = document.getElementById('bankCount');
+  if (c) c.textContent = bankAll().length;
+}
+async function bankDel(e) {
+  const id = e.currentTarget.dataset.id;
+  if (bDel !== id) { bDel = id; bankFillList(); toast('再按一次確認刪除', 'toast-warn'); return; }
+  bDel = '';
+  const nv = { up: { ...bOv.up }, rm: [...bOv.rm] };
+  if (id in nv.up) delete nv.up[id];                                          // 移除覆寫
+  if (BANK_BASE.some(q => q.id === id) && !nv.rm.includes(id)) nv.rm.push(id); // 主本題一律進 rm（改過再刪也要刪乾淨，否則復活）
+  try { await setSetting('grammar_bank_overlay', nv); }
+  catch (err) { toast('刪除寫入失敗：' + (err?.message || err), 'toast-error'); return; }
+  bOv = nv;
+  bankFillList();
+  toast('已刪除 ' + id, 'toast-success');
+}
+function bankPreviewHtml() {
+  const el = document.getElementById('bankPreview');
+  if (!el) return;
+  if (!bPreview.length) { el.innerHTML = ''; return; }
+  el.innerHTML = bPreview.map(q => {
+    if (q.type === 'mc') {
+      return `<div style="border:1px solid var(--border);border-radius:var(--r1);padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary)">
+        <div style="font-size:13px;color:var(--text-primary)">${esc(q.stem)}</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.6">${q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${esc(o)}${i === q.answer ? ' ✓' : ''}`).join('<br>')}</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${esc(q.explain)} · 難度 ${q.difficulty || 1}</div>
+      </div>`;
+    }
+    return `<div style="border:1px solid var(--border);border-radius:var(--r1);padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary)">
+      <div style="font-size:13px;color:var(--text-primary)">${esc(q.translation)}</div>
+      <div style="font-size:12px;color:var(--green);margin-top:4px">${esc(q.reference)}</div>
+      ${q.comment ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${esc(q.comment)}</div>` : ''}
+    </div>`;
+  }).join('') +
+  `<div class="tool-row" style="margin-top:6px">
+     <button class="btn btn-primary" id="bankCommit">全部入庫（${bPreview.length} 題）</button>
+     <button class="btn" id="bankDiscard">捨棄</button>
+   </div>`;
+  document.getElementById('bankCommit')?.addEventListener('click', bankCommit);
+  document.getElementById('bankDiscard')?.addEventListener('click', () => { bPreview = []; bankPreviewHtml(); });
+}
+async function bankCommit() {
+  if (!bPreview.length) return;
+  let list = bankAll();
+  const nv = { up: { ...bOv.up }, rm: [...bOv.rm] };
+  for (const q of bPreview) {
+    const id = nextQid(list, q.pattern, q.type === 'mc' ? 'mc' : 'tr');
+    const item = { ...q, id };
+    nv.up[id] = item;
+    list = [...list, item];
+  }
+  try { await setSetting('grammar_bank_overlay', nv); }
+  catch (err) { toast('入庫寫入失敗：' + (err?.message || err), 'toast-error'); return; }
+  const n = bPreview.length;
+  bOv = nv; bPreview = [];
+  bankPreviewHtml(); bankFillList();
+  toast(`已入庫 ${n} 題（重開文法頁即生效）`, 'toast-success');
+}
+async function bankGen() {
+  const pat = document.getElementById('bankPat')?.value;
+  const type = document.getElementById('bankType')?.value || 'mc';
+  const n = Number(document.getElementById('bankN')?.value || 3);
+  const btn = document.getElementById('bankGen');
+  if (!pat || !BANK_TOPICS[pat]) { toast('選一個句型', 'toast-error'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '出題中…'; }
+  try {
+    await bReady;                       // 覆蓋層先到位，nextQid 才不會撞舊 id
+    const t = BANK_TOPICS[pat];
+    const chapter = Number(pat.split('-')[0]) || 1;
+    const spec = type === 'mc'
+      ? `每題欄位：{"type":"mc","stem":"英文題幹（空格用 ______）","options":["四個選項"],"answer":0,"explain":"中文解析：正解理由＋錯誤選項為何錯","difficulty":1}
+規則：answer 是正確選項索引(0-3)、四個選項只有一個正確、difficulty 為 1-3 的整數；題幹與選項只考指定句型；禁止抄任何範例。`
+      : `每題欄位：{"type":"translate","translation":"中文題目","reference":"正確自然的英文參考譯文","comment":"句型重點（中文一句）"}
+規則：參考譯文必須正確運用指定句型、自然且文法完整；禁止抄任何範例。`;
+    const body = `你是高中英文文法命題專家。針對指定句型出 ${n} 題。
+只回 JSON：{"results":[題目陣列]}，最後附一個 \`\`\`json code block。
+${spec}
+句型：pattern=${pat}（第${chapter}章 ${t[0]}）：${t[1]}`;
+    const s = bankS;
+    const base = ((s?.state?.llmApiUrl || '').trim() || 'http://localhost:11434')
+      .replace(/\/api\/generate$/, '').replace(/\/chat\/completions$/, '');
+    const text = await fetchLLM(`${base}/api/generate`, s?.state?.llmModel || 'qwen2.5:14b', body, undefined, [{ role: 'user', content: body }]);
+    const raw = parseLLMJson(text, 'results');
+    const arr = Array.isArray(raw?.results) ? raw.results : [];
+    const ok = [], bad = [];
+    for (const it of arr) {
+      const q = { ...it, type, pattern: pat, chapter, axis: axisOf(pat) };
+      const err = validateQuestion(q);
+      if (err) bad.push(err); else ok.push(q);
+    }
+    if (!ok.length) throw new Error(bad.length ? '格式不合格：' + bad[0] : '回應裡找不到 results');
+    bPreview = ok.slice(0, n);
+    bankPreviewHtml();
+    toast(`取得 ${bPreview.length} 題${bad.length ? `，${bad.length} 題格式不合格已丟棄` : ''}`, 'toast-success');
+  } catch (e) {
+    toast('出題失敗：' + (e?.message || e), 'toast-error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '生成'; }
+  }
+}
+
+// ─── 手動新增／修改（同一張覆蓋層，存前過 validateQuestion） ───
+function bankEditOpen(q) {
+  bEdit = q
+    ? { id: q.id, form: {
+        type: q.type, pattern: q.pattern,
+        stem: q.stem || '', options: [...(q.options || [])], answer: q.answer ?? 0,
+        explain: q.explain || '', difficulty: q.difficulty || 1,
+        translation: q.translation || '', reference: q.reference || '', comment: q.comment || '',
+      } }
+    : { id: '', form: {
+        type: 'mc', pattern: bF.pat || Object.keys(BANK_TOPICS)[0],
+        stem: '', options: ['', '', '', ''], answer: 0, explain: '', difficulty: 1,
+        translation: '', reference: '', comment: '',
+      } };
+  bDel = '';
+  bankEditHtml();
+  document.getElementById('bankEdit')?.scrollIntoView({ block: 'nearest' });
+}
+// 表單 DOM → bEdit.form（切類型/儲存前收值；另一類型的既有值留著不清）
+function bankReadForm() {
+  if (!bEdit) return;
+  const g = id => document.getElementById(id)?.value;
+  const f = bEdit.form;
+  if (g('beType')) f.type = g('beType');
+  if (g('bePat')) f.pattern = g('bePat');
+  if (f.type === 'mc') {
+    if (g('beStem') != null) f.stem = g('beStem');
+    f.options = [0, 1, 2, 3].map(i => g('beO' + i) ?? '');
+    const r = document.querySelector('input[name="beAns"]:checked');
+    if (r) f.answer = Number(r.value);
+    if (g('beExp') != null) f.explain = g('beExp');
+    if (g('beDif')) f.difficulty = Number(g('beDif'));
+  } else {
+    if (g('beZh') != null) f.translation = g('beZh');
+    if (g('beRef') != null) f.reference = g('beRef');
+    if (g('beCom') != null) f.comment = g('beCom');
+  }
+}
+function bankEditHtml() {
+  const el = document.getElementById('bankEdit');
+  if (!el) return;
+  if (!bEdit) { el.innerHTML = ''; return; }
+  const f = bEdit.form;
+  const selStyle = 'font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)';
+  const inputStyle = 'flex:1;min-width:0;font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box';
+  const ta = (id, v, ph) => `<textarea id="${id}" rows="2" placeholder="${ph}" style="width:100%;font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box;resize:vertical">${esc(v)}</textarea>`;
+  const patOpts = Object.keys(BANK_TOPICS).map(p => `<option value="${p}"${p === f.pattern ? ' selected' : ''}>${p} ${esc(BANK_TOPICS[p][1])}</option>`).join('');
+  const fields = f.type === 'mc' ? `
+    <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">題幹</div>${ta('beStem', f.stem, '英文題幹（空格用 ______）')}
+    <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">選項（選一個正解）</div>
+    ${[0, 1, 2, 3].map(i => `<div class="tool-row" style="margin-bottom:4px;flex-wrap:nowrap">
+        <span style="width:16px;font-size:12px;font-weight:600;color:var(--text-secondary)">${String.fromCharCode(65 + i)}</span>
+        <input id="beO${i}" value="${esc(f.options[i] ?? '')}" style="${inputStyle}">
+        <label style="font-size:12px;color:var(--text-secondary);white-space:nowrap;display:flex;align-items:center;gap:3px">
+          <input type="radio" name="beAns" value="${i}"${f.answer === i ? ' checked' : ''}> 正解</label>
+      </div>`).join('')}
+    <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">解析（中文）</div>${ta('beExp', f.explain, '為何對、其他選項為何錯')}
+    <div class="tool-row" style="margin-top:6px"><span style="font-size:12px;color:var(--text-tertiary)">難度</span>
+      <select id="beDif" style="${selStyle}">${[1, 2, 3].map(d => `<option value="${d}"${Number(f.difficulty) === d ? ' selected' : ''}>${d}</option>`).join('')}</select></div>`
+    : `<div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">中文題目</div>${ta('beZh', f.translation, '要翻譯的中文')}
+    <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">參考譯文（英文）</div>${ta('beRef', f.reference, '正確自然的英文')}
+    <div style="font-size:12px;color:var(--text-tertiary);margin:6px 0 2px">句型重點（中文，可空）</div>${ta('beCom', f.comment, '這題考什麼')}`;
+  el.innerHTML = `
+    <div class="tool-row" style="margin-bottom:6px">
+      <b style="font-size:13px;color:var(--text-primary)">${bEdit.id ? esc(bEdit.id) : '新增題目'}</b>
+      <select id="beType" style="${selStyle}"><option value="mc"${f.type === 'mc' ? ' selected' : ''}>多選</option><option value="translate"${f.type === 'translate' ? ' selected' : ''}>翻譯</option></select>
+      <select id="bePat" style="${selStyle};max-width:100%">${patOpts}</select>
+    </div>
+    ${fields}
+    <div class="tool-row" style="margin-top:8px">
+      <button class="btn btn-primary" id="beSave">儲存</button>
+      <button class="btn" id="beCancel">取消</button>
+    </div>`;
+  document.getElementById('beSave')?.addEventListener('click', bankSaveEdit);
+  document.getElementById('beCancel')?.addEventListener('click', () => { bEdit = null; bankEditHtml(); });
+  document.getElementById('beType')?.addEventListener('change', e => { bankReadForm(); bEdit.form.type = e.target.value; bankEditHtml(); });
+}
+async function bankSaveEdit() {
+  bankReadForm();
+  const f = bEdit.form;
+  const chapter = Number(String(f.pattern).split('-')[0]) || 1;
+  const q = f.type === 'mc'
+    ? { type: 'mc', stem: (f.stem || '').trim(), options: (f.options || []).slice(0, 4).map(s => String(s).trim()),
+        answer: f.answer, explain: (f.explain || '').trim(), difficulty: Number(f.difficulty) || 1,
+        pattern: f.pattern, chapter, axis: axisOf(f.pattern) }
+    : { type: 'translate', translation: (f.translation || '').trim(), reference: (f.reference || '').trim(),
+        comment: (f.comment || '').trim(), pattern: f.pattern, chapter, axis: axisOf(f.pattern) };
+  const err = validateQuestion(q);
+  if (err) { toast('格式不合格：' + err, 'toast-error'); return; }
+  const nv = { up: { ...bOv.up }, rm: [...bOv.rm] };
+  const id = bEdit.id || nextQid(bankAll(), q.pattern, q.type === 'mc' ? 'mc' : 'tr');
+  nv.up[id] = { ...q, id };
+  try { await setSetting('grammar_bank_overlay', nv); }
+  catch (e) { toast('儲存失敗：' + (e?.message || e), 'toast-error'); return; }
+  bOv = nv;
+  bEdit = null;
+  bankEditHtml(); bankFillList();
+  toast('已儲存 ' + id, 'toast-success');
 }
 
 export function render(s) {
@@ -210,6 +466,54 @@ export function render(s) {
         <div class="tool-output" id="cambridgeResult" style="margin-top:var(--s3);display:none"></div>
       </div>
     </div>
+
+    <!-- 文法題庫管理：AI 出題／刪題 → settings 覆蓋層（文法頁載入合併，免重編譯） -->
+    <div class="section">
+      <div class="section-title">${icon('layers')} 文法題庫管理</div>
+      <div class="card" style="margin-bottom:var(--s3)">
+        <div class="card-title">${icon('wand')} AI 出題</div>
+        <div class="card-desc">選句型與題數 → LLM 依既定 schema 出題 → 預覽（✓＝正解）→ 確認入庫。寫入 DB 覆蓋層，不動打包題庫、不需重編譯。</div>
+        <div class="tool-row" style="margin-top:var(--s2)">
+          <select id="bankPat" style="font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);max-width:100%">
+            ${Object.keys(BANK_TOPICS).map(p => `<option value="${p}">${p} ${esc(BANK_TOPICS[p][1])}</option>`).join('')}
+          </select>
+          <select id="bankType" style="font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
+            <option value="mc">多選</option>
+            <option value="translate">翻譯</option>
+          </select>
+          <select id="bankN" style="font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
+            ${[1,2,3,4,5].map(n => `<option value="${n}"${n === 3 ? ' selected' : ''}>${n} 題</option>`).join('')}
+          </select>
+          <button class="btn btn-primary" id="bankGen">生成</button>
+        </div>
+        <div id="bankPreview" style="margin-top:var(--s2)"></div>
+      </div>
+      <div class="card" style="margin-bottom:var(--s3)">
+        <div class="card-title">${icon('edit')} 新增與修改</div>
+        <div class="card-desc">手動新增一題，或按下方列表的「編輯」載入修改；儲存前一樣過既定 schema 檢查，寫入同一個覆蓋層。</div>
+        <div class="tool-row" style="margin-top:var(--s2)">
+          <button class="btn" id="bankNew">${icon('plus')} 新增題目</button>
+        </div>
+        <div id="bankEdit" style="margin-top:var(--s2)"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">${icon('trash')} 刪題</div>
+        <div class="card-desc">題庫共 <b id="bankCount">…</b> 題（含 AI 新增）。刪除＝標進覆蓋層，文法頁起不再出題。</div>
+        <div class="tool-row" style="margin-top:var(--s2)">
+          <select id="bankFPat" style="font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);max-width:100%">
+            <option value="">全部句型</option>
+            ${Object.keys(BANK_TOPICS).map(p => `<option value="${p}">${p} ${esc(BANK_TOPICS[p][1])}</option>`).join('')}
+          </select>
+          <select id="bankFType" style="font-size:13px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary)">
+            <option value="">全部類型</option>
+            <option value="mc">多選</option>
+            <option value="translate">翻譯</option>
+          </select>
+          <input id="bankQ" type="text" placeholder="搜尋題幹／中文…" style="flex:1;min-width:120px;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box">
+        </div>
+        <div id="bankList" style="margin-top:var(--s2)"></div>
+      </div>
+    </div>
   `;
 }
 
@@ -276,7 +580,11 @@ function _applySrcMem() {
     if (tg) tg.textContent = '展開來源設定 ▸';
   }
 }
+/** KEEPALIVE1：包一層把 onMount 內的全域查詢限制在本頁圖層內（見 lib/scope-dom.js） */
 export function onMount(s) {
+  return withPageScope(pageRoot(), () => _mount(s));
+}
+function _mount(s) {
   document.getElementById('toolsGoSimulator')?.addEventListener('click', () => s.actions.navigate('simulator'));
   document.getElementById('toolsGoAppLog')?.addEventListener('click', () => s.actions.navigate('app-log'));
   document.getElementById('toolsGoOcr')?.addEventListener('click', () => s.actions.navigate('ocr'));
@@ -743,6 +1051,15 @@ export function onMount(s) {
       import('../lib/db.js').then(m => m.setSetting('exampleDisplayMax', String(n))).catch(() => {});
     });
   }
+
+  // 文法題庫管理：覆蓋層載入 → 列表；出題/篩選/刪題接線
+  bankS = s;
+  bankLoad().then(bankFillList);
+  document.getElementById('bankGen')?.addEventListener('click', bankGen);
+  document.getElementById('bankQ')?.addEventListener('input', e => { bF.q = e.target.value; bankFillList(); });
+  document.getElementById('bankFPat')?.addEventListener('change', e => { bF.pat = e.target.value; bankFillList(); });
+  document.getElementById('bankFType')?.addEventListener('change', e => { bF.type = e.target.value; bankFillList(); });
+  document.getElementById('bankNew')?.addEventListener('click', () => bankEditOpen(null));
 
   _initCustomSelects();
   // ponytail: inline onclick broken in WebKitGTK, use addEventListener instead

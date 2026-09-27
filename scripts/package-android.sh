@@ -6,8 +6,8 @@
 #     scripts/package-android.sh all       → APK + AAB 各一顆
 # 流程：暫時清空 bundle.resources 的 piper（Android 用原生 TTS，打完自動還原）
 #       → npx tauri android build --target aarch64（release，直接用 release keystore 簽）
-#       → aapt / apksigner / dex 驗收 → sha256 → 收進 ~/teno-dist（canonical）
-#       → 另複製一顆到 ~/teno-webdav（手機交付鏡像；伺服器防 symlink 故只能實體複製）
+#       → aapt / apksigner / dex 驗收 → sha256 → 收進 ~/teno-dist（canonical，唯一交付點）
+# 交付：只放 ~/teno-dist（2026-09-26 定案）；不再複製到 ~/teno-webdav。
 # 不跑 strip / zip -9 / debug 重簽名（舊 build-apk.sh 路線，已退役，會破壞對齊＋簽名衝突）。
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -79,16 +79,8 @@ if [ "$TARGET" = "apk" ] || [ "$TARGET" = "all" ]; then
   cp "$APK" "$DIST/teno-v${VER}.apk"
   (cd "$DIST" && sha256sum "teno-v${VER}.apk" | tee "teno-v${VER}.apk.sha256")
   ls -la "$DIST/teno-v${VER}.apk" "$DIST/teno-v${VER}.apk.sha256"
-  # 手機交付：WebDAV 空間。伺服器根目錄硬編碼 ~/teno-webdav，且 resolve_fs_path
-  # 明文防 symlink 逃逸（webdav_serve.rs:299）→ 不能用連結，只能實體複製這一顆。
-  # canonical 仍以 ~/teno-dist 為準，這裡只是給手機讀的鏡像。
-  if [ -d "$HOME/teno-webdav" ]; then
-    cp -f "$APK" "$HOME/teno-webdav/teno-v${VER}.apk"
-    (cd "$HOME/teno-webdav" && sha256sum "teno-v${VER}.apk" > "teno-v${VER}.apk.sha256")
-    find "$HOME/teno-webdav" -maxdepth 1 \( -name 'teno-v*.apk' -o -name 'teno-v*.apk.sha256' \) \
-      ! -name "*${VER}*" -delete 2>/dev/null || true
-    echo "交付鏡像：~/teno-webdav/teno-v${VER}.apk（手機讀這顆）"
-  fi
+  # 交付：一律只放 ~/teno-dist（使用者 2026-09-26 定案）。
+  # 舊的 WebDAV 鏡像（~/teno-webdav）已停用 —— 手機直接讀 ~/teno-dist 這顆。
 fi
 if [ "$TARGET" = "aab" ] || [ "$TARGET" = "all" ]; then
   find "$OUTDIR" -name "*.aab" | head -5

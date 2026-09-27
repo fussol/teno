@@ -10,6 +10,7 @@ import { initCustomSelects } from './lib/custom-select.js';
 import { invoke } from '@tauri-apps/api/core';
 import { logToDb, classifyScope } from './lib/app-log.js';
 import { ICON_PRESETS, iconImgPath } from './lib/icon-presets.js';
+import { PLUGINS, PLUGIN_PARENT } from './lib/plugins.js';
 
 // ─── G3：子頁 → 主頁 mapping（nav 高亮用）——子頁（study-v4/exam-flip/deck-browser…）
 // 屬主頁的「深度態」，active 應落在所屬主頁，而非 nav 全滅。
@@ -19,6 +20,7 @@ const SUBPAGE_PARENT = {
   'deck-browser': 'browser', 'tag-manager': 'browser',
   'import': 'tools', 'export': 'tools', 'ocr': 'tools', 'simulator': 'tools',
   'app-log': 'settings',
+  ...PLUGIN_PARENT,   // 插件子頁（grammar／gsat…）→ 學習
 };
 const resolveNavPage = (p) => (SUBPAGE_PARENT[p] || p);
 
@@ -161,6 +163,26 @@ async function loadPage(name) {
   return pages[name];
 }
 
+// ═══ KEEPALIVE1：主頁預渲染圖層 ═══
+// 使用者定調（2026-09-26）：
+//   ① 五個主頁全部事先渲染好，渲染成本攤在 splash；
+//   ② 前置作業沒做完，splash 不准退場；
+//   ③ 但超過 PRERENDER_HARD_MS 一律強制進場（不能把使用者困在登入畫面動彈不得）。
+//
+// 實測動機（6x CPU 節流 ≈ 中階 Android WebView、真實 4921 詞）：
+//   原本每次換頁 = 動態載 chunk + render() 重建字串 + innerHTML 整頁重解析 + onMount。
+//   單次 render() 冷呼叫：設定 460ms／儀表板 187ms／字庫 106ms；innerHTML 解析+排版另計
+//   （字庫 165–500ms）。加起來就是使用者感覺到的「每次跳頁等半秒到一秒」。
+//   改成圖層切換後，換頁只剩切 .active → 實測平均 53ms、最差 157ms，且 render 成本歸零。
+const MAIN_PAGES = ['dashboard', 'study', 'browser', 'tools', 'settings'];
+const PRERENDER_HARD_MS = 60_000;
+/** name → { root, dirty }；root 是留在 DOM 裡的 .page 圖層（見 prerenderMainPages） */
+const pageLayers = new Map();
+/** 目前顯示中的 .page 元素（主頁圖層，或動態子頁用的 #pageContainer） */
+let _activeRoot = null;
+/** 預渲染進行中（此時不標髒，見 markLayersDirty） */
+let _prerendering = false;
+
 // ─── Mount app ───
 const $ = (id) => document.getElementById(id);
 const app = $('app');
@@ -172,6 +194,7 @@ const PAGE_NAMES = {
   'exam-flip': '翻卡測驗', 'exam-mc': '多選測驗', 'exam-spell': '拼字測驗',
   simulator: '模擬', settings: '設定', tools: '工具', browser: '字庫',
   'deck-browser': '字本', 'app-log': '操作日誌', ocr: 'OCR 工具',
+  ...Object.fromEntries(PLUGINS.map(p => [p.id, p.label])),   // 插件頁標題
 };
 
 function renderSidebar() {
@@ -290,6 +313,10 @@ function renderAppShell() {
     <div class="main">
       <div class="topbar" id="topbar">${renderTopbar()}</div>
       <div class="content-area" id="contentArea">
+        <!-- KEEPALIVE1：順序有意義 —— #pageContainer（動態子頁）必須排在主頁圖層前面。
+             主頁與子頁有 32 組重複 id（#dropZone #scrollTopBtn 等），document.getElementById
+             取文件順序第一個；子頁排前面才會命中子頁自己那顆，否則 import/export 會抓到設定頁的元素。
+             主頁圖層由 prerenderMainPages() 依序接在後面，五頁之間實測 0 組 id 衝突。 -->
         <div class="page active" id="pageContainer"></div>
       </div>
     </div>
@@ -382,11 +409,172 @@ function bindNav() {
 // ─── Render current page ───
 let _renderGen = 0;   // G6：generation guard — 快速換頁時舊 renderPage 在 await 後丟棄
 
+/**
+ * KEEPALIVE1：預渲染五個主頁。
+ *
+ * 做法：**逐一「單獨掛進 DOM → 渲染 → onMount → 收起來」**，最後才全部一起插回。
+ * 為什麼要這麼繞：頁面模組的 onMount 是照「此刻 DOM 裡只有自己這一頁」寫的
+ * （全用 document.querySelectorAll）。一次只掛一頁，onMount 就跑在與舊架構完全相同的
+ * 條件下，不必去改五個頁面模組的選擇器。
+ * （另外 lib/scope-dom.js 仍會在 onMount 期間把查詢導向本頁圖層，兩層保險。）
+ *
+ * @param {number} deadline 硬性截止時間（ms epoch）；超過就停手，剩下的頁面之後按需即時渲染
+ * @returns {{built: string[], skipped: string[]}}
+ */
+async function prerenderMainPages(deadline) {
+  const area = $('contentArea');
+  const subEl = $('pageContainer');
+  const built = [];
+  const skipped = [];
+  _prerendering = true;               // 期間不標髒（見 store.subscribe）
+  subEl.remove();                     // 舞台清空（splash 蓋著，看不到）
+  try {
+    for (const name of MAIN_PAGES) {
+      if (Date.now() >= deadline) { skipped.push(name); continue; }
+      const root = document.createElement('div');
+      root.className = 'page';
+      root.id = 'page-' + name;
+      area.appendChild(root);         // 此刻 DOM 裡的 .page 只有這一頁
+      let ok = false;
+      try {
+        const mod = await loadPage(name);
+        if (Date.now() < deadline) {
+          root.innerHTML = mod.render(store) ?? '';
+          if (typeof mod.onMount === 'function') mod.onMount(store);
+          initCustomSelects(root);
+          pageLayers.set(name, { root, dirty: false });
+          built.push(root);
+          ok = true;
+        }
+      } catch (e) {
+        console.error('[keepalive] 預渲染失敗：', name, e);
+      }
+      if (!ok) { root.remove(); skipped.push(name); }
+    }
+  } finally {
+    for (const r of built) r.remove();          // 先全收起來…
+    area.append(subEl, ...built);               // …再按「子頁容器在最前」的順序插回
+    _prerendering = false;
+  }
+  return { built: built.map(r => r.id), skipped };
+}
+
+/** 把某一頁顯示出來（切 .active，零重建）。離開的那頁順手清掉掛在上面的浮層。 */
+function setActiveRoot(el) {
+  if (!el || _activeRoot === el) return;
+  if (_activeRoot) {
+    _activeRoot.classList.remove('active');
+    onRootDeactivate(_activeRoot);
+  }
+  _activeRoot = el;
+  el.classList.add('active');
+}
+
+/** 離開一頁時的清理。
+ *  換頁在舊架構是「整頁重繪」，這些浮層本來就會跟著消失；頁面改成保留在 DOM 之後
+ *  必須自己清，否則浮層會留在隱藏的圖層裡、下次回到該頁又冒出來。
+ *  （keydown 之類的 document 級監聽由頁面自己註冊的 window.__pageCleanup 負責，見 renderPage）
+ *
+ *  ★ 子頁容器 #pageContainer 額外要整碗清掉：它排在文件最前面（見 renderShell 註解），
+ *    裡面的元素在 getElementById 撞名時會**優先命中**。留著上一輪子頁的 #dropZone /
+ *    #scrollTopBtn 會蓋掉主頁自己那顆，讓 import/export 之類操作到錯的元素。 */
+function onRootDeactivate(root) {
+  try {
+    if (root.id === 'pageContainer') root.innerHTML = '';
+    root.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+    root.querySelectorAll('#cardPreviewModal, #deckCardPreview').forEach(el => el.remove());
+    root.querySelectorAll('.cs.o').forEach(el => el.classList.remove('o'));
+  } catch (e) { console.warn('[keepalive] 離頁清理：', e); }
+}
+
+/** 就地重繪一頁圖層（render → innerHTML → onMount）。頁面隱藏中也安全：
+ *  五個主頁的 onMount 都不讀版面尺寸（已逐檔確認無 getBoundingClientRect/clientWidth/offsetWidth），
+ *  所以隱藏時掛載不會拿到 0 尺寸。 */
+function refreshLayer(name) {
+  const layer = pageLayers.get(name);
+  const mod = pages[name];
+  if (!layer || !mod || typeof mod.render !== 'function') return;
+  try {
+    layer.root.innerHTML = mod.render(store) ?? '';
+    if (typeof mod.onMount === 'function') mod.onMount(store);
+    initCustomSelects(layer.root);
+    layer.dirty = false;
+  } catch (e) { console.error('[keepalive] 重繪失敗：', name, e); }
+}
+
+// ── 髒標記 + 閒置背景補重繪 ──
+// 主頁不再每次換頁重繪，所以資料一動就要標髒，換頁前補上。
+// 補重繪有兩條路：① 閒置時背景做（讓換頁幾乎不會遇到）② 換頁當下若還髒就同步做。
+// 有了 KEEPALIVE1-PERF1 之後重繪很便宜（儀表板 ~95ms@6x、設定 ~8ms、學習/工具 ~0ms），
+// 所以①沒趕上也不會痛。
+const IDLE_REFRESH_DELAY_MS = 800;
+let _idleRefreshTimer = null;
+let _idleRefreshHandle = null;
+
+/** 主頁圖層「內容相關」資料的指紋。
+ *
+ *  為什麼不能直接「每次 notify 就標髒」：`navigate()` 自己也會 notify，
+ *  而 notify 跑訂閱者時 `renderPage` 還排在 rAF 上（`_activeRoot` 仍是上一頁）
+ *  → 正要前往的那一頁會被標髒 → renderPage 進去看見 dirty 就同步重繪一次。
+ *  結果是**每次換頁都白付一次 render**（實測儀表板 +95ms@6x，換頁 131–168ms 裡大半是這個），
+ *  keep-alive 的成果直接還回去一半。
+ *  用指紋擋掉「純導航 / 無關 UI 變動」造成的通知，只留真的改到資料的那種。
+ *  未涵蓋：settings 頁的多數純設定鍵（那頁自己的操作都會 renderInPlace 就地更新，不受影響）。 */
+function layersSignature(s) {
+  const n = (v) => (Array.isArray(v) || typeof v === 'string' ? v.length : 0);
+  const st = s.stats || {};
+  const gs = s.goalStreak || {};
+  const d = gs.dates || {};
+  return [
+    n(s.words), n(s.decks), s.cards.size, s.cardsMc.size, s.cardsSpell.size,
+    n(s.reviewLog), n(s.examHistory), n(s.tags), n(s.systemTags),
+    s.buried.size, s.suspended.size, s.buriedMc.size, s.suspendedMc.size, s.buriedSpell.size, s.suspendedSpell.size,
+    s.dueCount, s.dueCountMc, s.dueCountSpell,
+    st.total, st.learned, st.new, st.due, st.mature, st.young, st.avgDifficulty,
+    s.newRatedToday, s.newRatedTodayMc, s.newRatedTodaySpell,
+    s.dayCutoff, s.reviewDeckFilter, n(s.filteredDecks), n(s.examSessions), n(s.backgroundTasks),
+    n(d.flip), n(d.mc), n(d.spell), gs.dailyGoal, gs.best, gs.current,
+    s.themeMode, s.themeAccent, s.themeAccentIntensity, s.uiScaleIdx, s.devMode,
+    n(s.blacklist), n(s.graylist), n(s.fieldVisBrowser), n(s.fieldVisStudy), n(s.fieldVisExam),
+    n(s.colorPalette), s.browserDeckLock === true ? 1 : 0, n(s.examples),
+  ].join(',');
+}
+/** 上次看到的資料指紋（boot 後初始化，見 init IIFE） */
+let _layerSig = null;
+
+/** 把五個圖層全部標髒（含顯示中的那頁）。
+ *  顯示中那頁標髒但不重繪（閒置補重繪會跳過它、換頁時也不會自己活起來），
+ *  等使用者離開再回來時 renderPage 才補 —— 與舊架構「回到該頁重新渲染」語意一致。 */
+function markLayersDirty() {
+  for (const [, layer] of pageLayers) layer.dirty = true;
+  scheduleIdleRefresh();
+}
+
+function scheduleIdleRefresh() {
+  if (_idleRefreshTimer) clearTimeout(_idleRefreshTimer);
+  _idleRefreshTimer = setTimeout(() => {
+    _idleRefreshTimer = null;
+    if (document.visibilityState !== 'visible') return;
+    const run = (deadline) => {
+      _idleRefreshHandle = null;
+      for (const [name, layer] of pageLayers) {
+        if (!layer.dirty || layer.root === _activeRoot) continue;
+        if (deadline && !deadline.didTimeout && deadline.timeRemaining() < 5) break;   // 時間不夠，剩下的下一輪
+        refreshLayer(name);
+      }
+      for (const [, layer] of pageLayers) {
+        if (layer.dirty && layer.root !== _activeRoot) { scheduleIdleRefresh(); break; }
+      }
+    };
+    _idleRefreshHandle = (typeof requestIdleCallback === 'function')
+      ? requestIdleCallback(run, { timeout: 2000 })
+      : setTimeout(() => run(null), 0);
+  }, IDLE_REFRESH_DELAY_MS);
+}
+
 async function renderPage() {
   const gen = ++_renderGen;          // 本輪 token；await 期間有新 renderPage → 本輪作廢
   const page = store.state.currentPage;
-  const container = $('pageContainer');
-  container.className = 'page active';
 
   // Update sidebar active state + topbar
   document.querySelectorAll('.nav-item[data-page]').forEach(el => {
@@ -400,6 +588,18 @@ async function renderPage() {
     delete window.__pageCleanup;
   }
   delete window.__navFromSidebar;   // B10: 清除 sidebar 導航標記（防跨頁殘留 → 誤觸發 exam saveOnLeave）
+
+  // ─── KEEPALIVE1：主頁 = 切圖層（零重建）；動態子頁 = 即時渲染 ───
+  const layer = pageLayers.get(page);
+  if (layer) {
+    if (layer.dirty) refreshLayer(page);   // 閒置背景沒趕上才需要，成本已壓到 ~0–95ms
+    setActiveRoot(layer.root);
+    return;
+  }
+
+  const container = $('pageContainer');
+  container.innerHTML = '';                // 進子頁前清空：防上一輪殘留的 id/markup 被 getElementById 撈到
+  setActiveRoot(container);
 
   // Load and render page
   try {
@@ -452,6 +652,18 @@ store.subscribe((state) => {
   }
 });
 
+// ─── KEEPALIVE1：資料變動 → 標記主頁圖層為髒（換頁前或閒置時才真的重繪）───
+// 用資料指紋過濾：`navigate()` 本身也會 notify，不過濾的話每次換頁都會把目標頁標髒
+// → 換頁當下必同步重繪一次（見 layersSignature 的說明）。
+// 預渲染期間也跳過（那時各頁剛建好、內容一定是最新的，標了會害第一次換頁白重繪一次）。
+store.subscribe((state) => {
+  if (_prerendering) return;
+  const sig = layersSignature(state);
+  if (sig === _layerSig) return;
+  _layerSig = sig;
+  markLayersDirty();
+});
+
 // ─── Watch for page navigation — only re-render on page change ───
 let _lastPage = 'dashboard';
 let _forceRender = false;
@@ -475,6 +687,7 @@ store.subscribe((state) => {
 (async () => {
   import('./lib/easter-eggs.js').then(m => m.initKonami());
   renderAppShell();
+  _activeRoot = $('pageContainer');    // KEEPALIVE1：初始顯示的是動態子頁容器（載入中畫面住在裡面）
 
   // Show a loading state while the store boots (DB load)
   const boot = $('pageContainer');
@@ -491,9 +704,21 @@ store.subscribe((state) => {
     console.error('[main] init error:', e);
   }
 
+  // ─── KEEPALIVE1：主頁預渲染（使用者定調：前置沒做完 splash 不退場）───
+  // 超過 PRERENDER_HARD_MS 就停手進場，剩下的頁面之後按需即時渲染（不會把使用者困在登入畫面）。
+  try {
+    const t0 = Date.now();
+    const res = await prerenderMainPages(Date.now() + PRERENDER_HARD_MS);
+    const skipped = res.skipped.length ? `（逾時略過：${res.skipped.join(',')}，之後按需渲染）` : '';
+    console.log(`[keepalive] 預渲染 ${res.built.length}/${MAIN_PAGES.length} 頁，耗時 ${Date.now() - t0}ms ${skipped}`);
+  } catch (e) {
+    console.error('[keepalive] 預渲染異常：', e);
+  }
+  _layerSig = layersSignature(store.state);   // 記錄 boot 後的資料指紋（之後只回應真正的資料變動）
+
   renderPage();
 
-  // Splash 退場：首頁 render 完成後 fade out（至少顯示 SPLASH_MIN_MS）
+  // Splash 退場：預渲染完成（或逾時）後才退場，且至少顯示 SPLASH_MIN_MS
   const splash = $('splash');
   if (splash) {
     // 背景色 + 圖片跟隨目前 launcher icon（F7：收斂雙份碼→applySplashIcon；
@@ -555,7 +780,11 @@ document.addEventListener('visibilitychange', () => {
     store._autoUnburyIfNewDay?.().catch(e => console.warn('[main] autoUnbury:', e));
     store._refreshDerivedIfNewDay?.().then((refreshed) => {
       // 僅 dashboard 重繪（學習／測驗進行中不碰，當前會話不受擾；側欄由 notify 訂閱自刷）
-      if (refreshed && store.state.currentPage === 'dashboard') renderPage();
+      // KEEPALIVE1：跨日會動到 dueCount/stats（多頁都顯示）→ 先標髒再重繪當前頁
+      if (refreshed) {
+        for (const [, layer] of pageLayers) layer.dirty = true;
+        if (store.state.currentPage === 'dashboard') renderPage();
+      }
     }).catch(e => console.warn('[main] refreshDerived:', e));
   }
 });
