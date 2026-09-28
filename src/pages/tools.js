@@ -3,8 +3,10 @@ import { withPageScope } from '../lib/scope-dom.js';
 import { normalizePos } from '../core/import.js'; // G-TOOL1＋COMBO1: 組合包外只剩 __lookupCambridge 用（去尾點＋短形映射＋去重）
 import { toast } from '../lib/toast.js';
 import { fetchGet, fetchLLM, lookupCambridge, parseLLMJson } from '../lib/api.js';
-import { getSetting, setSetting } from '../lib/db.js';
+import { getSetting, setSetting, getAllWords, saveWordsInTx, deleteWord } from '../lib/db.js';
 import { mergeBank, validateQuestion, nextQid } from '../lib/bank.js';
+import { normPerms, AI_CATS } from '../lib/aiperms.js';
+import { runTurn } from '../lib/aiagent-core.js';
 import questionsRaw from '../assets/grammar/questions.jsonl?raw';
 import topicsRaw from '../assets/grammar/pattern_titles.json?raw';
 
@@ -30,6 +32,10 @@ let bDel = '';              // 兩段式刪題（按一次備刪、再按才刪�
 let bEdit = null;           // 編輯器狀態：null | { id: ''=新增, form: {...} }
 let bF = { pat: '', type: '', q: '' };
 let bankS = null;           // _mount 注入：LLM 設定（同文法頁批改的解析法）
+let bChat = [];             // AI 助手對話軌跡（module 級：跨頁保留、不落 DB 不上雲）
+let bChatBusy = false;
+let aiPermsCur = null;      // 權限快照（UI 讀寫同一份，存 settings.ai_perms）
+let aiLastImage = null;     // 聊天最近附加的圖片（File，供 AI 的 ocr.last_image 工具）
 const bankAll = () => mergeBank(BANK_BASE, bOv);
 const axisOf = (pat) => BANK_BASE.find(x => x.pattern === pat)?.axis || '句型與語序';
 const bankLoad = () => (bReady = bReady || getSetting('grammar_bank_overlay').then(o => {
@@ -130,6 +136,32 @@ async function bankGen() {
   const type = document.getElementById('bankType')?.value || 'mc';
   const n = Number(document.getElementById('bankN')?.value || 3);
   const btn = document.getElementById('bankGen');
+  const mat = (document.getElementById('bankPrompt')?.value || '').trim();
+  // 匯入路線：以 {/[ 開頭一律當 JSON 解析（{results:[...]} 或裸陣列）→ 進預覽待確認，不打 LLM
+  if (mat.startsWith('{') || mat.startsWith('[')) {
+    let parsed;
+    try { parsed = JSON.parse(mat); }
+    catch { toast('JSON 解析失敗；若只想當材料用，把開頭的 { 或 [ 去掉', 'toast-error'); return; }
+    const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.results) ? parsed.results : null);
+    if (arr) {
+      await bReady;
+      const ok = [], bad = [];
+      for (const it of arr) {
+        const qpat = it?.pattern || pat;
+        if (!qpat || !BANK_TOPICS[qpat]) { bad.push('無句型 ' + qpat); continue; }
+        const q = { ...it, type: it.type === 'translate' ? 'translate' : (it.type === 'mc' ? 'mc' : type),
+          pattern: qpat, chapter: Number(qpat.split('-')[0]) || 1, axis: axisOf(qpat) };
+        const err = validateQuestion(q);
+        if (err) bad.push(err); else ok.push(q);
+      }
+      if (!ok.length) { toast('匯入失敗：' + (bad[0] || '沒有題目'), 'toast-error'); return; }
+      bPreview = ok;
+      bankPreviewHtml();
+      toast(`匯入 ${ok.length} 題待確認${bad.length ? `（${bad.length} 題不合格丟棄）` : ''}`, 'toast-success');
+      return;
+    }
+    // JSON 但無 results 陣列 → 當材料往下走 LLM
+  }
   if (!pat || !BANK_TOPICS[pat]) { toast('選一個句型', 'toast-error'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '出題中…'; }
   try {
@@ -144,7 +176,7 @@ async function bankGen() {
     const body = `你是高中英文文法命題專家。針對指定句型出 ${n} 題。
 只回 JSON：{"results":[題目陣列]}，最後附一個 \`\`\`json code block。
 ${spec}
-句型：pattern=${pat}（第${chapter}章 ${t[0]}）：${t[1]}`;
+${mat ? `出題材料（依材料命題，可改寫但不可偏離）：\n${mat}\n` : ''}句型：pattern=${pat}（第${chapter}章 ${t[0]}）：${t[1]}`;
     const s = bankS;
     const base = ((s?.state?.llmApiUrl || '').trim() || 'http://localhost:11434')
       .replace(/\/api\/generate$/, '').replace(/\/chat\/completions$/, '');
@@ -165,6 +197,107 @@ ${spec}
     toast('出題失敗：' + (e?.message || e), 'toast-error');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '生成'; }
+  }
+}
+
+// ─── AI 助手：io 綁定（core 純函式吃這個）＋權限 UI＋聊天 ───
+const AI_CAT_LABELS = { bank: '題庫覆蓋層', settings: '設定', words: '單字庫/圖片' };
+const AI_IO = {
+  bankAll: async () => { await bReady; return bankAll(); },
+  getOverlay: async () => { await bReady; return { up: { ...bOv.up }, rm: [...bOv.rm] }; },
+  saveOverlay: async (nv) => { await setSetting('grammar_bank_overlay', nv); bOv = nv; bankFillList(); },
+  getSetting, setSetting,
+  searchWords: async (q, limit) => {
+    const t = String(q || '').toLowerCase();
+    const ws = await getAllWords();
+    const rows = ws.filter(w => !t || String(w.word || '').toLowerCase().includes(t)
+      || String(w.definition || '').toLowerCase().includes(t)).slice(0, limit);
+    return { total: ws.length, rows };
+  },
+  saveWords: async (ws) => {
+    const withId = ws.map(w => (w.word && !w.id)
+      ? { ...w, id: 'w_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8) } : w);
+    await saveWordsInTx(withId);
+    return withId.length;
+  },
+  removeWords: async (ids) => {
+    let n = 0;
+    for (const id of ids) { try { await deleteWord(id); n++; } catch (_) {} }
+    return n;
+  },
+  ocrLastImage: async (opts) => {
+    if (!aiLastImage) throw new Error('沒有可 OCR 的圖片（先用 📎 附加圖片）');
+    const { getActiveEngine } = await import('../lib/ocr/engine.js');
+    const { engine } = await getActiveEngine();
+    const res = await engine.recognize(aiLastImage, { psm: Number(opts?.psm) || 3, dpi: 300 });
+    return String(res?.text || '');
+  },
+};
+
+function aiPermsRender(p) {
+  const el = document.getElementById('aiPermsGrid');
+  if (!el || !p) return;
+  const hd = 'text-align:center;color:var(--text-tertiary);font-size:11px';
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 40px 40px 40px;gap:6px 4px;align-items:center;font-size:12px">
+    <span></span><span style="${hd}">讀</span><span style="${hd}">寫</span><span style="${hd}">刪</span>
+    ${AI_CATS.map(c => `<span>${AI_CAT_LABELS[c]}</span>` + ['r', 'w', 'd'].map(a =>
+      `<label style="text-align:center;cursor:pointer"><input type="checkbox" data-cat="${c}" data-act="${a}"${p[c][a] ? ' checked' : ''}></label>`).join('')).join('')}
+  </div>`;
+  el.querySelectorAll('input').forEach(cb => cb.addEventListener('change', async () => {
+    const next = normPerms(Object.fromEntries(AI_CATS.map(c =>
+      [c, Object.fromEntries([...el.querySelectorAll(`input[data-cat="${c}"]`)]
+        .map(x => [x.dataset.act, x.checked]))])));
+    aiPermsCur = next;
+    try { await setSetting('ai_perms', next); toast('AI 權限已更新', 'toast-success'); }
+    catch (e) { toast('權限寫入失敗：' + (e?.message || e), 'toast-error'); aiPermsRender(aiPermsCur); }
+  }));
+}
+
+function aiChatRender() {
+  const el = document.getElementById('aiChatLog');
+  if (!el) return;
+  if (!bChat.length) {
+    el.innerHTML = '<div style="color:var(--text-tertiary);font-size:12px">還沒有對話。權限沒開時它碰不到任何資料，只能閒聊。</div>';
+    return;
+  }
+  el.innerHTML = bChat.slice(-40).map(m => {
+    if (m.role === 'user') return `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--accent);color:#fff;border-radius:10px 10px 2px 10px;font-size:13px;text-align:left;white-space:pre-wrap">${esc(m.content)}</span></div>`;
+    if (m.role === 'tool') return `<div style="margin:4px 0;font-family:var(--mono);font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border-left:2px solid var(--border);padding:3px 8px;white-space:pre-wrap">⚙ ${esc(m.content)}</div>`;
+    return `<div style="margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px 10px 10px 2px;font-size:13px;white-space:pre-wrap">${esc(m.content)}</span></div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function aiChatSend() {
+  if (bChatBusy) return;
+  const input = document.getElementById('aiChatInput');
+  const text = (input?.value || '').trim();
+  if (!text) return;
+  if (input) input.value = '';
+  bChat.push({ role: 'user', content: text });
+  aiChatRender();
+  bChatBusy = true;
+  const btn = document.getElementById('aiChatSend');
+  if (btn) { btn.disabled = true; btn.textContent = '思考中…'; }
+  try {
+    const perms = normPerms(aiPermsCur ?? await getSetting('ai_perms'));
+    aiPermsCur = perms;
+    const s = bankS;
+    const base = ((s?.state?.llmApiUrl || '').trim() || 'http://localhost:11434')
+      .replace(/\/api\/generate$/, '').replace(/\/chat\/completions$/, '');
+    await runTurn(bChat, {
+      perms,
+      io: AI_IO,
+      ctx: { hasImage: !!aiLastImage },
+      parseJson: (t, k) => parseLLMJson(t, k),
+      llm: (prompt) => fetchLLM(`${base}/api/generate`, s?.state?.llmModel || 'qwen2.5:14b', prompt, undefined, [{ role: 'user', content: prompt }]),
+    });
+  } catch (e) {
+    bChat.push({ role: 'assistant', content: '錯誤：' + (e?.message || e) });
+  } finally {
+    bChatBusy = false;
+    if (btn) { btn.disabled = false; btn.textContent = '送出'; }
+    aiChatRender();
   }
 }
 
@@ -486,6 +619,8 @@ export function render(s) {
           </select>
           <button class="btn btn-primary" id="bankGen">生成</button>
         </div>
+        <textarea id="bankPrompt" rows="3" placeholder="材料（選填）：貼課文／文法重點／單字表 → 按生成會帶進 prompt；或直接貼 API 回傳的題目 JSON（{results:[…]} 或裸陣列）→ 按生成直接匯入預覽"
+          style="width:100%;margin-top:6px;font-size:12px;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box;resize:vertical"></textarea>
         <div id="bankPreview" style="margin-top:var(--s2)"></div>
       </div>
       <div class="card" style="margin-bottom:var(--s3)">
@@ -512,6 +647,28 @@ export function render(s) {
           <input id="bankQ" type="text" placeholder="搜尋題幹／中文…" style="flex:1;min-width:120px;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box">
         </div>
         <div id="bankList" style="margin-top:var(--s2)"></div>
+      </div>
+    </div>
+
+    <!-- AI 助手：逐類別權限矩陣（預設全關 fail-closed）→ 聊天 agent 只碰打開的類別 -->
+    <div class="section">
+      <div class="section-title">${icon('sparkle')} AI 助手</div>
+      <div class="card" style="margin-bottom:var(--s3)">
+        <div class="card-title">${icon('shield')} 權限矩陣</div>
+        <div class="card-desc">預設全關＝AI 物理摸不到：資料不注入、工具不給、寫入直接拒。讀/寫/刪逐類別開；<b>ai_perms 本身 AI 永遠改不了</b>（防自我授權），只有這張表能動。</div>
+        <div id="aiPermsGrid" style="margin-top:var(--s2);max-width:340px"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">${icon('brain')} 聊天</div>
+        <div class="card-desc">用上面的權限對話與操作（分析、增刪題、讀寫設定/單字庫）；可附加文字檔（txt/md/json/csv）。工具軌跡列在對話裡；LLM 走設定頁的 API 設定。</div>
+        <div id="aiChatLog" style="max-height:320px;min-height:110px;overflow:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--r1);font-size:13px;line-height:1.6;margin-top:var(--s2)"></div>
+        <div class="tool-row" style="margin-top:var(--s2)">
+          <input id="aiChatInput" type="text" placeholder="例：幫我分析題庫覆蓋 / 刪掉 g-1-1-mc-3 / llmModel 現在是什麼"
+            style="flex:1;min-width:0;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box">
+          <button class="btn" id="aiChatAttach" title="附加檔案：文字檔直接讀、圖片給 AI 的 OCR 工具、其他格式會明說無法讀取">${icon('upload')}</button>
+          <button class="btn btn-primary" id="aiChatSend">送出</button>
+          <input type="file" id="aiChatFile" style="display:none">
+        </div>
       </div>
     </div>
   `;
@@ -1061,6 +1218,47 @@ function _mount(s) {
   document.getElementById('bankFPat')?.addEventListener('change', e => { bF.pat = e.target.value; bankFillList(); });
   document.getElementById('bankFType')?.addEventListener('change', e => { bF.type = e.target.value; bankFillList(); });
   document.getElementById('bankNew')?.addEventListener('click', () => bankEditOpen(null));
+
+  // AI 助手：權限載入（fail-closed：讀不到＝全關）＋聊天接線
+  getSetting('ai_perms').then(v => { aiPermsCur = normPerms(v); aiPermsRender(aiPermsCur); });
+  aiChatRender();
+  document.getElementById('aiChatSend')?.addEventListener('click', aiChatSend);
+  document.getElementById('aiChatInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') aiChatSend(); });
+  document.getElementById('aiChatAttach')?.addEventListener('click', () => document.getElementById('aiChatFile')?.click());
+  document.getElementById('aiChatFile')?.addEventListener('change', async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    const input = document.getElementById('aiChatInput');
+    try {
+      const buf = await f.arrayBuffer();
+      const u8 = new Uint8Array(buf);
+      // 圖片（magic bytes）→ 存給 AI 的 ocr.last_image 工具，聊天框給佔位提示
+      const isImg = (u8[0] === 0x89 && u8[1] === 0x50 && u8[2] === 0x4e && u8[3] === 0x47)  // png
+        || (u8[0] === 0xff && u8[1] === 0xd8)                                                 // jpeg
+        || (u8[0] === 0x47 && u8[1] === 0x49 && u8[2] === 0x46)                               // gif
+        || (u8[0] === 0x42 && u8[1] === 0x4d)                                                 // bmp
+        || (u8[8] === 0x57 && u8[9] === 0x45 && u8[10] === 0x42 && u8[11] === 0x50);          // webp
+      if (isImg) {
+        aiLastImage = f;
+        if (input) input.value = `【圖片 ${f.name}】`;
+        toast('圖片已附加：指示 AI 用 OCR 讀取（如「照這張圖出題」）', 'toast-success');
+        return;
+      }
+      // 其他格式 → 試著當文字解；解不動（NUL byte／大量亂碼）→ 明說無法讀取
+      let text = new TextDecoder('utf-8').decode(buf);
+      const probe = text.slice(0, 4000);
+      const hasNul = probe.includes(String.fromCharCode(0));
+      const garbage = (probe.match(/\uFFFD/g) || []).length;
+      if (hasNul || garbage > Math.max(8, probe.length * 0.02)) {
+        toast(`${f.name}：無法讀取（此格式不支援，先轉文字或圖片）`, 'toast-error');
+        return;
+      }
+      if (text.length > 20000) text = text.slice(0, 20000) + '\n…（超過 2 萬字已截斷）';
+      if (input) input.value = `【檔案 ${f.name}】\n${text}`;
+      toast(`已附加 ${f.name}（${text.length} 字），補一句指示再送出`, 'toast-success');
+    } catch (err) { toast('讀檔失敗：' + (err?.message || err), 'toast-error'); }
+  });
 
   _initCustomSelects();
   // ponytail: inline onclick broken in WebKitGTK, use addEventListener instead
