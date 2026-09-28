@@ -335,5 +335,22 @@ c10.querySelector('[data-prev]').click(); await sleep(40);
 const tiC = c10.querySelector('#gsatTrInput');
 ok(tiC && tiC.value === 'submitted sentence.', '⑩ 送出後回頭顯示送出的字', tiC ? JSON.stringify(tiC.value) : 'no textarea');
 
+// ⑪ 批改史跨 module 還原：saveTr 落鏡像＋DB（settings.gsat_tr）優先回填 → 新 module 報告卡顯示批改；pending 轉 error
+const trQs11 = qs97.filter(q => q.type === 'translate');
+const tr10saved = JSON.parse(localStorage.getItem('teno:gsat:tr') || '{}');
+ok(tr10saved[trQs11[0]?.id]?.text === 'submitted sentence.', '⑪ saveTr 批改史落鏡像（⑩ 送出字跨 module 帶走）', JSON.stringify(tr10saved).slice(0, 200));
+localStorage.setItem('teno:gsat:tr', JSON.stringify({
+  [trQs11[0].id]: { status: 'done', text: 'graded sentence.', out: { review: { content: 88, grammar: 77, natural: 66 } } },
+  [trQs11[1].id]: { status: 'pending', text: 'interrupted.' },
+}));
+localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: qs97.length - 1, g: true,
+  results: qs97.map((q, i) => ({ qid: q.id, ok: i % 2 === 0, picked: 'A', ...(q.type === 'translate' ? { tr: true } : {}) })) }));
+const g11 = await import(GSAT + '?seg=11');
+const c11 = document.getElementById('pageContainer');
+c11.innerHTML = ''; c11.innerHTML = g11.render(); g11.onMount(store); await sleep(300);
+const h11 = c11.innerHTML;
+ok(h11.includes('你的答案：graded sentence.'), '⑪ 批改史跨 module 還原（done → 報告批改卡）', h11.includes('錯題報告') ? '' : '未進報告頁');
+ok(h11.includes('批改失敗：批改中斷（App 關閉）'), '⑪ pending 批改 → 轉 error 不留轉圈');
+
 console.log(`\n${pass}/${pass + fail} PASS`);
 process.exit(fail ? 1 : 0);

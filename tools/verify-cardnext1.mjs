@@ -44,9 +44,14 @@ chk('清單無 split-badge', !sel.includes('.split-badge'));
 chk('清單保留英文欄（word/pron/example）', sel.includes('.card-panel-word') && sel.includes('.card-panel-pron') && sel.includes('.card-panel-example'));
 chk('card-panel-example 走 extractEnglish', /card-panel-example'\)\)\s*\n?\s*\? extractEnglish/.test(tts));
 
-console.log('[C4] 翻卡正面無圖');
-chk('study-v4 image 綁 isAns', /isAns && visShow\('study', 'image'\)/.test(s4));
-chk('study-v4 無裸 image 渲染', !/^\s*\$\{visShow\('study', 'image'\)/m.test(s4));
+console.log('[C4] 翻卡正面無圖（S4PRE1：圖只在背面塊 .s4-a）');
+const s4q = s4.indexOf('class="s4-q"');
+const s4a = s4.indexOf('class="s4-a"');
+const s4b = s4.indexOf('class="study-buttons"');
+const s4img = s4.indexOf('wordImageSlotHTML(w.id)');
+chk('study-v4 雙塊結構（q 先、a 後、buttons 在 a 內）', s4q > 0 && s4a > s4q && s4b > s4a, `q=${s4q} a=${s4a} b=${s4b}`);
+chk('study-v4 image 只在 .s4-a 內（正面塊無圖）', s4img > s4a && s4img < s4b, `img=${s4img}`);
+chk('study-v4 image 綁 visShow 條件', /visShow\('study', 'image'\) \? wordImageSlotHTML/.test(s4));
 
 console.log('[C5] 圖片在單字上方（六頁）');
 for (const [name, src, ctx] of [['study-v4', s4, 'study'], ['study-mc', smc, 'study'], ['study-spell', ssp, 'study'], ['exam-flip', ef, 'exam'], ['exam-mc', emc, 'exam'], ['exam-spell', esp, 'exam']]) {

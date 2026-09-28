@@ -1,22 +1,11 @@
 import { icon } from '../lib/svg.js';
+import { PLUGINS } from '../lib/plugins.js';
 
-const MODES = [
-  {
-    id: 'exam-flip', label: '翻卡測驗', icon: 'galleryHorizontalEnd',
-    desc: '看定義回想單字，核對正確性',
-    color: 'var(--cyan)',
-  },
-  {
-    id: 'exam-mc', label: '多選測驗', icon: 'form',
-    desc: '從四個選項選出正確釋義',
-    color: 'var(--green)',
-  },
-  {
-    id: 'exam-spell', label: '拼字測驗', icon: 'edit',
-    desc: '聽發音拼寫單字，字母級驗證',
-    color: 'var(--orange)',
-  },
-];
+// 題目 hub：文法翻譯／作文批改／學測題庫 三入口（2026-09-28 使用者指定自學習頁獨立成同級頁）。
+// 排版＝study/exam 同形；手機切換走 mobile-mode-tabs（跟切換測驗同一方法）。
+const pluginModes = PLUGINS.map(p => ({
+  id: p.id, label: p.label, icon: p.icon, desc: p.desc, color: p.color, getDue: () => null,
+}));
 
 function modeCard(s, m) {
   return `
@@ -26,23 +15,23 @@ function modeCard(s, m) {
       </div>
       <div style="flex:1;min-width:0">
         <div style="font-size:15px;font-weight:600;color:var(--text-primary)">${m.label}</div>
+        <div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">${m.desc}</div>
       </div>
-      <div style="font-size:12px;color:var(--text-tertiary);flex-shrink:0">開始測驗 ›</div>
     </div>
   `;
 }
 
 export function render(s) {
   return `
-    <div class="page-title">${icon('scrollText')} 測驗</div>
-    <div class="page-subtitle">選擇測驗模式，不影響學習進度</div>
+    <div class="page-title">${icon('target')} 題目</div>
+    <div class="page-subtitle">文法、作文與學測題庫</div>
     <div class="mobile-mode-tabs" style="display:none;gap:8px;margin-bottom:16px">
       <button class="btn btn-sm" style="flex:1" data-nav="study">${icon('bookOpen')} 學習</button>
-      <button class="btn btn-primary btn-sm" style="flex:1" data-nav="exam">${icon('scrollText')} 測驗</button>
-      <button class="btn btn-sm" style="flex:1" data-nav="topics">${icon('target')} 題目</button>
+      <button class="btn btn-sm" style="flex:1" data-nav="exam">${icon('scrollText')} 測驗</button>
+      <button class="btn btn-primary btn-sm" style="flex:1" data-nav="topics">${icon('target')} 題目</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px;max-width:600px">
-      ${MODES.map(m => modeCard(s, m)).join('')}
+      ${pluginModes.map(m => modeCard(s, m)).join('')}
     </div>
     <style>
       @media (max-width: 768px) { .mobile-mode-tabs { display: flex !important; } }

@@ -567,16 +567,10 @@ function bindCardEvents(s, w, st) {
   document.addEventListener('keydown', _cardKeyHandler);
   _cardKeyBound = true;
   window.__pageCleanup = () => {
-    if (_cardKeyHandler) {
-      document.removeEventListener('keydown', _cardKeyHandler);
-      _cardKeyHandler = null;
-      _cardKeyBound = false;
-    }
     if (_bCardOutside) { document.removeEventListener('click', _bCardOutside); _bCardOutside = null; }
     if (_bTagDocHandler) { document.removeEventListener('click', _bTagDocHandler); _bTagDocHandler = null; }
-    if (_autoTimer) { clearTimeout(_autoTimer); _autoTimer = null; }
-    const modal = document.getElementById('cardPreviewModal');
-    if (modal) modal.remove();
+    // SQUEEZE1: 走 closeCardPreview 還原 sidebar/.main margin（原只 remove 面板 → 返回換頁後整頁留 50vw 擠壓）
+    closeCardPreview();
     _cardState = null;
   };
 }

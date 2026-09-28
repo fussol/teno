@@ -20,7 +20,7 @@ const SUBPAGE_PARENT = {
   'deck-browser': 'browser', 'tag-manager': 'browser',
   'import': 'tools', 'export': 'tools', 'ocr': 'tools', 'simulator': 'tools',
   'app-log': 'settings',
-  ...PLUGIN_PARENT,   // 插件子頁（grammar／gsat…）→ 學習
+  ...PLUGIN_PARENT,   // 插件子頁（grammar／gsat…）→ 題目
 };
 const resolveNavPage = (p) => (SUBPAGE_PARENT[p] || p);
 
@@ -192,6 +192,7 @@ const PAGE_NAMES = {
   'study-v4': '翻卡學習', 'study-mc': '多選學習', 'study-spell': '拼字學習',
   exam: '測驗',
   'exam-flip': '翻卡測驗', 'exam-mc': '多選測驗', 'exam-spell': '拼字測驗',
+  topics: '題目',
   simulator: '模擬', settings: '設定', tools: '工具', browser: '字庫',
   'deck-browser': '字本', 'app-log': '操作日誌', ocr: 'OCR 工具',
   ...Object.fromEntries(PLUGINS.map(p => [p.id, p.label])),   // 插件頁標題
@@ -219,6 +220,7 @@ function renderSidebar() {
     homeItem,
     { id: 'study', label: '學習', icon: 'bookOpen', badge: totalDue > 0 ? totalDue : null },
     { id: 'exam', label: '測驗', icon: 'scrollText' },
+    { id: 'topics', label: '題目', icon: 'target' },
     { id: 'browser',   label: '字庫', icon: 'list' },
     { id: 'settings', label: '設定', icon: 'settings' },
     { id: 'tools',    label: '工具', icon: 'tools',

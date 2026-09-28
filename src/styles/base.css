@@ -1283,6 +1283,14 @@ body.no-hints .mode-desc{display:none}
 .study-undo-btn:hover{border-color:var(--accent);color:var(--accent)}
 .study-undo-btn:active{opacity:.6}
 
+/* S4PRE1（2026-09-28）：翻卡背面預建——正面時 .s4-a/.s4-undo 已在 DOM（display:none），
+   按「顯示答案」只切 .is-ans（零 innerHTML 重建）；評分/undo 換卡走全量重繪路徑。 */
+.study-wrap .s4-q,.study-wrap .s4-a{width:100%;display:flex;flex-direction:column;align-items:center}
+.study-wrap .s4-a,.study-wrap .s4-undo{display:none}
+.study-wrap.is-ans .s4-q{display:none}
+.study-wrap.is-ans .s4-a{display:flex}
+.study-wrap.is-ans .s4-undo{display:block}
+
 /* MC options */
 .study-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:560px;margin-top:20px}
 .study-opt{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--bg-surface);color:var(--text-primary);font-size:14px;font-weight:500;cursor:pointer;font-family:var(--font);text-align:left;transition:background-color .15s,color .15s,border-color .15s,opacity .15s,transform .15s,box-shadow .15s}

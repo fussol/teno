@@ -1,4 +1,4 @@
-import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload } from './api.js'
+import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload, webdavPatchUpload } from './api.js'
 
 let timer = null;
 let lastBackupMtime = 0;
@@ -85,7 +85,10 @@ async function tick() {
       const { getSetting } = await import('./db.js');
       const flag = await getSetting('webdavAutoUpload');
       if (flag === 1 || flag === true || flag === '1') {
-        const msg = await webdavUpload();
+        // 差量優先（同手動鈕）；NO_BASE/PAGE_SIZE/PATCH_TOO_BIG 等任一失敗落整包
+        let msg;
+        try { msg = await webdavPatchUpload(); }
+        catch (_) { msg = await webdavUpload(); }
         console.log('[auto-backup] webdav:', msg);
       }
     } catch (e) {

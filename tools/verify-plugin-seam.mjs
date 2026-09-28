@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// ═ VERIFY-PLUGIN-SEAM：學習介面插件入口接縫 ═
+// ═ VERIFY-PLUGIN-SEAM：題目頁插件入口接縫 ═
 // 規則：入口宣告只在 src/lib/plugins.js 一處；main.js 的 PAGE_NAMES／SUBPAGE_PARENT
-// 與 study.js 的入口卡片都必須從它展開（不許再三處硬編碼）。
+// 與 topics.js 的入口卡片都必須從它展開（不許再三處硬編碼）。
 // 用法: node tools/verify-plugin-seam.mjs
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,13 +21,15 @@ const ok = (label, cond, detail) => {
 const plug = read('src/lib/plugins.js');
 const main = read('src/main.js');
 const study = read('src/pages/study.js');
+const topics = read('src/pages/topics.js');
 
 const ids = [...plug.matchAll(/id:\s*'([a-z0-9-]+)'/g)].map(m => m[1]);
 ok('plugins.js 匯出 PLUGINS', /export const PLUGINS\s*=/.test(plug));
 ok('至少一個插件入口', ids.length > 0, `ids=${ids}`);
 ok('SUBPAGE_PARENT 從 PLUGIN_PARENT 展開', /\.\.\.PLUGIN_PARENT/.test(main));
 ok('PAGE_NAMES 從 PLUGINS 展開', /\.\.\.Object\.fromEntries\(PLUGINS\.map/.test(main));
-ok('study.js 卡片從 PLUGINS 展開', /PLUGINS\.map\(p => \(\{/.test(study) && /\[\.\.\.MODES, \.\.\.pluginModes\]/.test(study));
+ok('topics.js 卡片從 PLUGINS 展開', /PLUGINS\.map\(p => \(\{/.test(topics) && /pluginModes\.map/.test(topics));
+ok('study.js 不再放插件卡片（入口只在題目頁）', !/PLUGINS/.test(study) && !/pluginModes/.test(study));
 ok('main.js import plugins', /from '.\/lib\/plugins\.js'/.test(main));
 
 for (const id of ids) {
@@ -107,7 +109,7 @@ ok('診斷行已刪（messages 實證完畢）', !/\[fetchLLM\] msgs/.test(read(
 ok('批改 JSON：共享 parser 補括號（三頁齊）', /parseLLMJson/.test(gs) && /parseLLMJson/.test(g) && /parseLLMJson/.test(read('src/pages/essay.js')) && /stack\.push/.test(read('src/lib/api.js')));
 ok('gsat: 中譯英進題庫＋背景批改', /gsat_translate/.test(gs) && /ggrade/.test(gs) && /TR_OFFICIAL/.test(gs));
 ok('gsat: 作答函式齊（防區塊誤刪）', /function startPaper/.test(gs) && /function startSingle/.test(gs) && /function groupInfo/.test(gs) && /function gradePanel/.test(gs) && /let setSeq/.test(gs) && /const trGrades/.test(gs) && /role: 'user'/.test(gs));
-ok('study.js 三頁入口齊（plugins.js 展開）', ids.length >= 3, `ids=${ids}`);
+ok('topics.js 三頁入口齊（plugins.js 展開）', ids.length >= 3, `ids=${ids}`);
 
 // 題庫完整性：id 唯一、欄位齊、pattern 有標題（1-9 分裂句併入）
 const qs = read('src/assets/grammar/questions.jsonl').split('\n').filter(Boolean).map(l => JSON.parse(l));

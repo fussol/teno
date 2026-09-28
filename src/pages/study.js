@@ -1,6 +1,5 @@
 import { icon } from '../lib/svg.js';
 import { withPageScope } from '../lib/scope-dom.js';
-import { PLUGINS } from '../lib/plugins.js';
 
 // KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
 const pageRoot = () => document.getElementById('page-study') || document.getElementById('pageContainer');
@@ -26,11 +25,6 @@ const MODES = [
     color: 'var(--orange)',
   },
 ];
-
-/** 插件入口卡片：沒有排程數字（待複習數對插件不適用），其餘排版同 MODES。 */
-const pluginModes = PLUGINS.map(p => ({
-  id: p.id, label: p.label, icon: p.icon, desc: p.desc, color: p.color, getDue: () => null,
-}));
 
 function modeCard(s, m) {
   const due = m.getDue(s);
@@ -58,9 +52,10 @@ export function render(s) {
     <div class="mobile-mode-tabs" style="display:none;gap:8px;margin-bottom:16px">
       <button class="btn btn-primary btn-sm" style="flex:1" data-nav="study">${icon('bookOpen')} 學習</button>
       <button class="btn btn-sm" style="flex:1" data-nav="exam">${icon('scrollText')} 測驗</button>
+      <button class="btn btn-sm" style="flex:1" data-nav="topics">${icon('target')} 題目</button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px;max-width:600px">
-      ${[...MODES, ...pluginModes].map(m => modeCard(s, m)).join('')}
+      ${MODES.map(m => modeCard(s, m)).join('')}
     </div>
     <style>
       @media (max-width: 768px) { .mobile-mode-tabs { display: flex !important; } }
@@ -76,5 +71,6 @@ function _mount(s) {
   document.querySelectorAll('.mode-card[data-page]').forEach(el => {
     el.addEventListener('click', () => s.actions.navigate(el.dataset.page));
   });
-  document.querySelector('[data-nav="exam"]')?.addEventListener('click', () => s.actions.navigate('exam'));
+  document.querySelectorAll('[data-nav]').forEach(el =>
+    el.addEventListener('click', () => s.actions.navigate(el.dataset.nav)));
 }

@@ -619,6 +619,48 @@ fn validate_download(buf: &[u8]) -> Result<Vec<u8>, String> {
     Ok(db_bytes)
 }
 
+// ─── VERSION-GATE：下載版本閘（多裝置同步的向下相容） ───────────────
+// SQLite 檔頭 offset 64 = user_version（u32le；stampDbVersion 只升不降
+// ＝「最後開過這庫的 app 版本」指紋）。遠端 > 本機 → 拒寫：舊 App 開新庫
+// 會被 sqlx VersionMissing 拒啟動（brick），下載當下就要擋，不能等下次
+// 啟動才爆。force 也不放行（放行 = 開不了機）；向上方向（遠端較舊）不擋
+// ——既有 migrate/preensure 自動升級軌全覆蓋。
+fn remote_user_version(db: &[u8]) -> Result<u32, String> {
+    if db.len() < 68 || !db.starts_with(b"SQLite format 3\0") {
+        return Err("不是有效的 SQLite 資料庫".into());
+    }
+    Ok(u32::from_le_bytes([db[64], db[65], db[66], db[67]]))
+}
+
+/// JS versionInt 同式：5.17.71 → 5_017_071（stampDbVersion 寫的就是這格式）
+fn version_int(v: &str) -> u32 {
+    let parts: Vec<&str> = v.split(|c| c == '.' || c == '-').collect();
+    let g = |i: usize| parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+    g(0) * 1_000_000 + g(1) * 1_000 + g(2)
+}
+
+fn version_str(v: u32) -> String {
+    format!("{}.{}.{}", v / 1_000_000, (v % 1_000_000) / 1_000, v % 1_000)
+}
+
+fn check_remote_version(remote: u32, mine: u32) -> Result<(), String> {
+    if remote > mine {
+        return Err(format!(
+            "REMOTE_DB_NEWER:遠端資料庫由 {} 產生，本機 {} 較舊，無法安全開啟（sqlx 會拒啟動）。請先升級 App 再下載（本地資料未動）。",
+            version_str(remote),
+            version_str(mine)
+        ));
+    }
+    Ok(())
+}
+
+fn guard_remote_db(app_handle: &tauri::AppHandle, db: &[u8]) -> Result<(), String> {
+    // 殘缺檔不是本閘的責任（交給既有驗包守門拒）；格式對才讀指紋
+    let Ok(remote) = remote_user_version(db) else { return Ok(()) };
+    let mine = version_int(&app_handle.package_info().version.to_string());
+    check_remote_version(remote, mine)
+}
+
 #[tauri::command]
 pub async fn webdav_save_config(
     app_handle: tauri::AppHandle,
@@ -886,6 +928,8 @@ pub async fn webdav_download(
     if db_bytes.len() < 100 || !db_bytes.starts_with(b"SQLite format 3\0") {
         return Err("遠端內容不是有效的 SQLite 資料庫，本機資料未變".into());
     }
+    // VERSION-GATE：遠端庫比本機 App 新 → 拒寫（force 也擋；開不了機比蓋錯更糟）
+    guard_remote_db(&app_handle, &db_bytes)?;
     write_downloaded(&app_handle, &db_bytes, &log_bytes)?;
     save_base_copy(&app_handle, &db_bytes);
     // 成功才前進 base（兩邊指紋都記：本地＝剛寫下的遠端）
@@ -1276,6 +1320,8 @@ pub async fn webdav_patch_download(app_handle: tauri::AppHandle) -> Result<Strin
         return Err("PATCH_VERIFY_FAIL:套完 hash 對不上，本地未動，請走整包".into());
     }
     // 落地（跟整包下載同範式：tmp＋清 WAL＋rename；log 段不動）
+    // VERSION-GATE：同整包下載——差量套完的成品庫也要過版本閘
+    guard_remote_db(&app_handle, &new_raw)?;
     write_downloaded(&app_handle, &new_raw, &[])?;
     save_base_copy(&app_handle, &new_raw);
     let prev = load_sync_state(&app_handle);
@@ -1822,5 +1868,26 @@ mod tests {
         assert!(cloud_join("http://x:8080", "../etc").is_err());
         assert!(cloud_join("http://x:8080", ".hidden").is_err());
         assert_eq!(cloud_join("http://x:8080", "logs/").unwrap(), "http://x:8080/logs/");
+    }
+
+    #[test]
+    fn version_gate() {
+        // 檔頭指紋：offset 64 = user_version（u32le）
+        let mut db = b"SQLite format 3\0".to_vec();
+        db.resize(100, 0);
+        db[64..68].copy_from_slice(&5_017_072u32.to_le_bytes());
+        assert_eq!(remote_user_version(&db).unwrap(), 5_017_072);
+        assert!(remote_user_version(&db[..67]).is_err()); // 截斷
+        assert!(remote_user_version(b"GARBAGE-NOT-SQLITE-AT-ALL!!!!!!!!!!").is_err());
+        // 版本格式＝JS versionInt 同式（stampDbVersion 寫入口徑）
+        assert_eq!(version_int("5.17.72"), 5_017_072);
+        assert_eq!(version_int("5.17.71-beta.1"), 5_017_071);
+        assert_eq!(version_str(5_017_072), "5.17.72");
+        // 三向：遠端新→拒（含訊息前綴）、同版/遠端舊→放行（向上走 migrate 自動升級）
+        let e = check_remote_version(5_017_072, 5_017_071).unwrap_err();
+        assert!(e.starts_with("REMOTE_DB_NEWER:"), "{e}");
+        assert!(e.contains("5.17.72") && e.contains("5.17.71"), "{e}");
+        assert!(check_remote_version(5_017_071, 5_017_071).is_ok());
+        assert!(check_remote_version(5_017_070, 5_017_071).is_ok());
     }
 }

@@ -101,18 +101,37 @@ const keyHint = `<p style="font-size:11px;color:var(--text-tertiary);margin:8px 
 const keyHintTr = `<p style="font-size:11px;color:var(--text-tertiary);margin:8px 0 0">鍵盤：Ctrl+Enter 送出跳題 · Esc 首頁（← → 移游標）</p>`;
 // 中譯英背景批改：qid -> {status, out/text/err}
 
-// 作答＋批改記憶：qid -> {status,out/text/err}（localStorage 足夠；要跟 DB 備份走再進 settings）
+// 作答＋批改記憶：qid -> {status,out/text/err}——settings.gsat_tr 為準（跟整庫 WebDAV 同步/備份走），
+// localStorage 當鏡像＋DB 未就緒降級（同 gsat_progress 規範）
+const TR_SET = 'gsat_tr';
+const TR_LS = 'teno:gsat:tr';
+const sanitizeTr = (o) => {
+  // App 關掉時還在 pending 的批次 → 轉 error，不留永久轉圈
+  for (const k of Object.keys(o)) if (o[k]?.status === 'pending') o[k] = { status: 'error', err: '批改中斷（App 關閉）', text: o[k].text };
+  return o;
+};
 const trStore = (() => {
+  try { return sanitizeTr(JSON.parse(localStorage.getItem(TR_LS) || '{}')); } catch { return {}; }
+})();
+let trDirty = false;   // 本 session 寫過 → DB 回填時本地優先（session 內的最新）
+const trLoaded = (async () => {
+  // DB 優先（另一台下載整庫後本機 LS 是舊的）：dirty 則本地覆蓋＋DB 補缺，非 dirty 整包蓋上回寫鏡像
   try {
-    const o = JSON.parse(localStorage.getItem('teno:gsat:tr') || '{}');
-    // App 關掉時還在 pending 的批次 → 轉 error，不留永久轉圈
-    for (const k of Object.keys(o)) if (o[k]?.status === 'pending') o[k] = { status: 'error', err: '批改中斷（App 關閉）', text: o[k].text };
-    return o;
-  } catch { return {}; }
+    const dbVal = await getSetting(TR_SET);
+    if (dbVal && typeof dbVal === 'object') {
+      sanitizeTr(dbVal);
+      if (trDirty) Object.assign(dbVal, trStore);
+      for (const k of Object.keys(trStore)) delete trStore[k];
+      Object.assign(trStore, dbVal);
+      try { localStorage.setItem(TR_LS, JSON.stringify(trStore)); } catch {}
+    }
+  } catch { /* DB 未就緒 → localStorage 鏡像照舊 */ }
 })();
 const saveTr = (qid, entry) => {
   trStore[qid] = entry;
-  try { localStorage.setItem('teno:gsat:tr', JSON.stringify(trStore)); } catch { /* 溢位：記到這為止 */ }
+  trDirty = true;
+  try { localStorage.setItem(TR_LS, JSON.stringify(trStore)); } catch { /* 溢位：記到這為止 */ }
+  setSetting(TR_SET, trStore).catch(() => {});
 };
 const trGrades = {};
 // 中譯英草稿：qid -> 未送出的字（per-qid，換題/回頭不丟；送出的字在 trGrades[qid].text）
@@ -156,6 +175,7 @@ function existingSave() {
 }
 
 async function restoreProgress() {
+  await trLoaded;   // 批改史先就位（DB 優先回填），不然 trGrades 掛空擋
   let p = null;
   try {
     const dbVal = await getSetting(SET_KEY);
@@ -200,6 +220,7 @@ function clearProgress() {
 
 // ── 作答 ──
 async function startPaper(y, full = false) {
+  await trLoaded;   // 同 restore：批改史先就位
   // 規則：同卷進度直接續作（不問）；換別卷＝覆蓋存檔（未完成/報告都算）→ 點頭才換。
   if (full) {
     const old = existingSave();
@@ -306,7 +327,7 @@ function homeView() {
       <div style="font-size:11px;opacity:.75">${n} 題${done ? ` · 答過 ${done} 題` : ''}</div>
     </button>`;
   }).join('');
-  return `<div class="page-title"><button class="btn btn-sm" data-back="study" style="margin-right:8px">${icon('arrowLeft')} 返回</button>${icon('scrollText')} 學測題庫</div>
+  return `<div class="page-title"><button class="btn btn-sm" data-back="topics" style="margin-right:8px">${icon('arrowLeft')} 返回</button>${icon('scrollText')} 學測題庫</div>
     <div class="page-subtitle">97–115 年 · ${ALL.length} 題 · 官方 5 大題 · 整卷依原序作答</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;max-width:640px;margin-left:auto;margin-right:auto">${cards}</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;max-width:640px;margin-left:auto;margin-right:auto">

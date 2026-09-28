@@ -13,6 +13,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mulberry32, hashCode } from '../src/lib/rng.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -68,6 +69,15 @@ const renderSavedSessionsStub = () => '';
 const bindSpeakClickStub = () => {};
 const splitFieldsHtmlStub = () => '';
 const fmtExampleStub = () => '';
+// CARDNEXT1/IMG1 後新增的 import（import 被剝 → 補 stub；缺＝ReferenceError）
+const bindExNextStub = () => {};
+const mountWordImagesStub = async () => {};
+const wordImageSlotHTMLStub = () => '';
+const WORD_IMAGE_CSSStub = '';
+const wordExampleStub = () => '';
+const studyExampleHtmlStub = () => '';
+const extraFieldsHtmlStub = () => '';
+const visShowStub = () => false;   // 關可選渲染分支（b10 斷言不涉版面）
 
 // ---------- 真實 buildSession（src/core/exam-session.js） ----------
 function loadBuildSession() {
@@ -95,8 +105,10 @@ function loadPage(file, exportNames, { stripB10 = false } = {}) {
   }
   const getters = exportNames.map(n => `get ${n}() { return typeof ${n} !== 'undefined' ? ${n} : undefined; }`).join(',');
   const factory = new Function('icon', 'toast', 'renderSavedSessions', 'buildSession', 'bindSpeakClick', 'splitFieldsHtml', 'fmtExample', 'document', 'window',
+    'bindExNext', 'mountWordImages', 'wordImageSlotHTML', 'WORD_IMAGE_CSS', 'wordExample', 'studyExampleHtml', 'extraFieldsHtml', 'visShow', 'mulberry32', 'hashCode',
     src + `\n;return { ${getters} };`);
-  return factory(iconStub, toastStub, renderSavedSessionsStub, buildSessionReal, bindSpeakClickStub, splitFieldsHtmlStub, fmtExampleStub, documentStub, windowStub);
+  return factory(iconStub, toastStub, renderSavedSessionsStub, buildSessionReal, bindSpeakClickStub, splitFieldsHtmlStub, fmtExampleStub, documentStub, windowStub,
+    bindExNextStub, mountWordImagesStub, wordImageSlotHTMLStub, WORD_IMAGE_CSSStub, wordExampleStub, studyExampleHtmlStub, extraFieldsHtmlStub, visShowStub, mulberry32, hashCode);
 }
 
 // ---------- FakeStore：store.js:1777-1784 saveExamSession 逐行複刻 + 呼叫紀錄 ----------

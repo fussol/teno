@@ -442,7 +442,7 @@ export function render(s) {
           <input id="exampleCount" type="number" value="2" min="1"
             style="width:50px;font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);text-align:center">
           <label style="font-size:12px;white-space:nowrap">句＆顯示最多</label>
-          <input id="exampleDisplayMax" type="number" value="0" min="0"
+          <input id="exampleDisplayMax" type="number" value="${window.__maxExampleLines ?? 0}" min="0"
             style="width:50px;font-size:12px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);text-align:center">
           <label style="font-size:12px;white-space:nowrap">句(0=全顯示)</label>
         </div>
@@ -1040,7 +1040,8 @@ function _mount(s) {
   document.getElementById('cambridgeWord')?.addEventListener('keydown', e => { if (e.key === 'Enter') window.__lookupCambridge(); });
   const exampleDisplayMax = document.getElementById('exampleDisplayMax');
   if (exampleDisplayMax) {
-    window.__maxExampleLines = parseInt(exampleDisplayMax.value, 10) || 0;
+    // EXRACE1：不再從 input 預設值回寫全域——input 掛載時從全域渲染，
+    // 寫回只在使用者 input 事件發生（下方 listener）。歸零窗口＝例句限數失效根因。
     import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
       const n = parseInt(v, 10);
       if (n > 0) { window.__maxExampleLines = n; exampleDisplayMax.value = n; }

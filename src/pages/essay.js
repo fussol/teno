@@ -19,7 +19,7 @@ let storeRef = null;
 
 function header() {
   return `<div class="page-title">
-    <button class="btn btn-sm" data-back="study" style="margin-right:8px">${icon('arrowLeft')} 返回</button>
+    <button class="btn btn-sm" data-back="topics" style="margin-right:8px">${icon('arrowLeft')} 返回</button>
     ${icon('edit')} 作文批改
   </div>`;
 }

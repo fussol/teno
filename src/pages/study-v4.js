@@ -57,40 +57,51 @@ function renderCard(s) {
   const w = session.current.word;
   const isAns = state === 'ANSWER';
   const cnt = getCounts();
+  const pron = (visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : '';
 
-  return `<div class="study-wrap">
+  // S4PRE1：正面時就把背面建好（.s4-a 預設 display:none，靠 CSS 顯隱）——
+  // 按「顯示答案」只切 is-ans、零 innerHTML 重建；onMount 也趁此時預載圖檔。
+  return `<div class="study-wrap${isAns ? ' is-ans' : ''}" data-wid="${w.id}">
     <div class="study-progress">
       <span class="study-counts">
         <span class="study-count-new">${cnt.newCount??0}新</span>
         <span class="study-count-learn">${cnt.learnCount??0}學</span>
         <span class="study-count-review">${cnt.reviewCount??0}複</span>
       </span>
-      ${isAns ? `<button id="undoBtn" class="study-undo-btn" title="Ctrl+Z 復原上一張">↩ 復原</button>` : ''}
+      <button id="undoBtn" class="study-undo-btn s4-undo" title="Ctrl+Z 復原上一張">↩ 復原</button>
     </div>
-    <div class="study-card">
-      ${(isAns && visShow('study', 'image')) ? wordImageSlotHTML(w.id) : ''}
-      <div class="study-word-row">
-        <div class="study-word">${e(w.word)}</div>
+    <div class="s4-q">
+      <div class="study-card">
+        <div class="study-word-row">
+          <div class="study-word">${e(w.word)}</div>
+        </div>
+        ${pron}
       </div>
-      ${(isAns && visShow('study', 'definition')) ? splitFieldsHtml(w.pos, w.definition) || '' : ''}
-      ${(visShow('study', 'pron') && w.pron) ? `<div class="study-pron">${e(w.pron)}</div>` : ''}
-      ${(isAns && visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
-      ${(isAns && visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
-      ${(isAns && visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
-      ${isAns ? extraFieldsHtml(w, e, 'study', session?.current?.card) : ''}
-      ${(isAns && visShow('study', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${e(w.description)}</div>` : ''}
+      <button class="study-flip-btn" id="s4FlipBtn">顯示答案</button>
     </div>
-    ${!isAns
-      ? `<button class="study-flip-btn" id="s4FlipBtn">顯示答案</button>`
-      : `<div class="study-buttons">
-          ${[[0,'Again','var(--red)'],[1,'Hard','var(--orange)'],[2,'Good','var(--green)'],[3,'Easy','var(--cyan)']].map(([r,lbl,c])=>`
-            <button data-r4="${r}" class="study-btn" style="background:${c}">
-              <span class="study-btn-lbl">${lbl}</span>
-              <span class="study-btn-time">${intervals[r]||''}</span>
-            </button>
-          `).join('')}
-        </div>`
-    }
+    <div class="s4-a">
+      <div class="study-card">
+        ${visShow('study', 'image') ? wordImageSlotHTML(w.id) : ''}
+        <div class="study-word-row">
+          <div class="study-word">${e(w.word)}</div>
+        </div>
+        ${visShow('study', 'definition') ? splitFieldsHtml(w.pos, w.definition) || '' : ''}
+        ${pron}
+        ${(visShow('study', 'example') && wordExample(w)) ? studyExampleHtml(w) : ''}
+        ${(visShow('study', 'related') && w.related?.length) ? `<div class="study-chips" style="margin-top:10px"><span class="study-chips-label">相似</span>${w.related.map(r => `<span class="chip-accent">${e(r)}</span>`).join('')}</div>` : ''}
+        ${(visShow('study', 'forms') && w.forms?.length) ? `<div class="study-chips"><span class="study-chips-label">變化</span>${w.forms.map(f => `<span class="chip-subtle">${e(f)}</span>`).join('')}</div>` : ''}
+        ${extraFieldsHtml(w, e, 'study', session?.current?.card)}
+        ${(visShow('study', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${e(w.description)}</div>` : ''}
+      </div>
+      <div class="study-buttons">
+        ${[[0,'Again','var(--red)'],[1,'Hard','var(--orange)'],[2,'Good','var(--green)'],[3,'Easy','var(--cyan)']].map(([r,lbl,c])=>`
+          <button data-r4="${r}" class="study-btn" style="background:${c}">
+            <span class="study-btn-lbl">${lbl}</span>
+            <span class="study-btn-time">${intervals[r]||''}</span>
+          </button>
+        `).join('')}
+      </div>
+    </div>
 
   </div>`;
 }
@@ -107,5 +118,16 @@ export function onMount(s) {
 
 function rip(s) {
   const c = document.getElementById('pageContainer');
+  const wrap = c?.querySelector('.study-wrap');
+  // S4PRE1：同一張卡的背面已於正面預建 → 翻卡只切顯隱（零重建）。
+  // 條件不成立（評分換卡／undo 回別張／完成畫面）→ 全量重繪。
+  if (state === 'ANSWER' && wrap?.dataset.wid === session?.current?.word?.id && wrap.querySelector('.s4-a')) {
+    wrap.classList.add('is-ans');
+    wrap.querySelectorAll('.study-buttons [data-r4]').forEach(b => {
+      const t = b.querySelector('.study-btn-time');
+      if (t) t.textContent = intervals[b.dataset.r4] || '';
+    });
+    return;
+  }
   if (c) { c.innerHTML = render(s); onMount(s); }
 }

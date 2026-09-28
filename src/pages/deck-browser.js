@@ -1719,15 +1719,9 @@ function bindCardEvents(s, w, idx, total, st) {
   document.addEventListener('keydown', _cardKeyHandler);
   _cardKeyBound = true;
   window.__pageCleanup = () => {
-    if (_cardKeyHandler) {
-      document.removeEventListener('keydown', _cardKeyHandler);
-      _cardKeyHandler = null;
-      _cardKeyBound = false;
-    }
     if (_dCardOutside) { document.removeEventListener('click', _dCardOutside); _dCardOutside = null; }
-    if (_autoTimer) { clearTimeout(_autoTimer); _autoTimer = null; }
-    const modal = document.getElementById('deckCardPreview');
-    if (modal) modal.remove();
+    // SQUEEZE1: 走 closeCardPreview 還原 sidebar/.main margin（原只 remove 面板 → 返回換頁後整頁留 50vw 擠壓）
+    closeCardPreview();
     _cardState = null;
   };
 }

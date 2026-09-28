@@ -144,7 +144,7 @@ function scoreChips(rv) {
 
 function header(title, back = true) {
   return `<div class="page-title">
-    ${back ? `<button class="btn btn-sm" data-back="study" style="margin-right:8px">${icon('arrowLeft')} 返回</button>` : ''}
+    ${back ? `<button class="btn btn-sm" data-back="topics" style="margin-right:8px">${icon('arrowLeft')} 返回</button>` : ''}
     ${icon('bookOpen')} ${title}
   </div>`;
 }

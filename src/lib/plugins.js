@@ -1,5 +1,5 @@
-// 插件入口註冊表 —— 學習介面的「隨插隨拔」接縫。
-// 新增一個學習介面入口＝這裡加一筆 + src/pages/<id>.js（main.js 的 PAGE_NAMES／
+// 插件入口註冊表 —— 題目頁的「隨插隨拔」接縫。
+// 新增一個題目入口＝這裡加一筆 + src/pages/<id>.js（main.js 的 PAGE_NAMES／
 // SUBPAGE_PARENT 都從這裡展開，不再三處硬編碼）。
 export const PLUGINS = [
   {
@@ -25,5 +25,5 @@ export const PLUGINS = [
   },
 ];
 
-/** 插件子頁 → 所屬主頁（nav 高亮）；入口全放學習介面（使用者 2026-09-27 指定）。 */
-export const PLUGIN_PARENT = Object.fromEntries(PLUGINS.map(p => [p.id, 'study']));
+/** 插件子頁 → 所屬主頁（nav 高亮）；入口集中題目頁（使用者 2026-09-28 指定，與學習／測驗同級）。 */
+export const PLUGIN_PARENT = Object.fromEntries(PLUGINS.map(p => [p.id, 'topics']));
