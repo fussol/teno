@@ -130,7 +130,7 @@ export function render(s) {
       `).join('')}
     </div>
 
-    ${filtered.length === 0 ? renderEmpty(words.length) : renderList(filtered, s, s.state.tagConfig)}
+    <div id="browserListWrap">${filtered.length === 0 ? renderEmpty(words.length) : renderList(filtered, s, s.state.tagConfig)}</div>
     <button class="scroll-top-btn" id="scrollTopBtn">${icon('chevronU')}</button>
   `;
 }
@@ -340,8 +340,10 @@ function warmSearchIndex(words) {
   if (_siWarmRef === words || _siWordsRef === words) return;
   if (words.length <= 1000) return;
   _siWarmRef = words;
+  // timeout 500（原 3000）：舊值＝開頁 3 秒內沒 idle 就得在首次搜尋同步付 ~824ms 索引費
+  // （prof2 實測最壞 1044ms）；收到 500ms 後最壞=開頁後半秒內按 Enter，實務不可能。
   const idle = (typeof requestIdleCallback === 'function')
-    ? (f) => requestIdleCallback(f, { timeout: 3000 })
+    ? (f) => requestIdleCallback(f, { timeout: 500 })
     : (f) => setTimeout(f, 200);
   idle(() => { if (_siWordsRef !== words) searchIndex(words); });
 }
@@ -782,7 +784,7 @@ function bindListEvents(s) {
       const next = (w.tags || []).filter(t => t !== tag);
       s.actions.editWord(wordId, { tags: next }).then(() => {
         toast(`已移除標籤「${tag}」`, 'toast-success');
-        renderListInPlace(s);
+        renderListInPlace(s, { keepScroll: 1 });   // 清單中原地編輯，不跳頂
       }).catch(() => {});
       return;
     }
@@ -853,9 +855,10 @@ function _mount(s) {
     document.getElementById('browserSearchBtn')?.addEventListener('click', doSearch);
   }
 
-  document.getElementById('browserScopeToggle')?.addEventListener('click', () => {
+  document.getElementById('browserScopeToggle')?.addEventListener('click', (e) => {
     _searchScope = _searchScope === 'worddef' ? 'all' : 'worddef';
-    renderInPlace(s);
+    e.currentTarget.textContent = _searchScope === 'worddef' ? '單字+定義' : '全部欄位';   // 純文字鈕，原地換
+    renderListInPlace(s);
   });
 
   const tagTrigger = document.getElementById('browserTagTrigger');
@@ -869,7 +872,7 @@ function _mount(s) {
         _tagFilter = opt.dataset.tagValue || null;
         document.getElementById('browserTagLabel').textContent = _tagFilter || '標籤：全部';
         tagMenu.style.display = 'none';
-        renderInPlace(s);
+        renderListInPlace(s);
       });
     });
     // G11：outside-click 具名＋冪等（onMount 重複註冊不疊加）
@@ -885,23 +888,24 @@ function _mount(s) {
   document.querySelectorAll('.exam-deck-chip[data-deck]').forEach(el => {
     el.addEventListener('click', () => {
       _deckFilter = el.dataset.deck || null;
-      renderInPlace(s);
+      document.querySelectorAll('.exam-deck-chip[data-deck]').forEach(c =>   // selected 是純 class 狀態
+        c.classList.toggle('selected', (c.dataset.deck || null) === _deckFilter));
+      renderListInPlace(s);
     });
   });
 
   const sortBtn = document.getElementById('browserSortToggle');
   if (sortBtn) sortBtn.addEventListener('click', () => {
     _sortRandom = !_sortRandom;
-    renderInPlace(s);
+    scrollListTop();    // 順序變了＝舊位置無意義（#1A）
+    renderInPlace(s);   // ponytail: seed 輸入框出現/消失＝結構變動，此處留全渲染
   });
 
   const seedInput = document.getElementById('browserSeed');
   if (seedInput) {
     const onSeedChange = () => {
       _sortSeed = seedInput.value;
-      renderInPlace(s);
-      const el = document.getElementById('browserSeed');
-      if (el) el.focus();
+      renderListInPlace(s);   // 輸入框不在更新面 → 焦點原生保留（舊 focus 迴補已廢）
     };
     seedInput.addEventListener('change', onSeedChange);
     seedInput.addEventListener('keydown', e => { if (e.key === 'Enter') onSeedChange(); });
@@ -960,22 +964,30 @@ async function inlineEditTags(s, id) {
 // EFF：搜尋/過濾變更只更新清單區（wordList+結果列），不整頁 innerHTML 重建 —
 // 整頁重建會：500 卡重解析＋onMount 全 listener 重綁＋scroll 跳頂＋focus 搶救，
 // 是打字卡頓主因。工具列（搜尋框/標籤/排序）不在更新面 → focus 零搶救、listener 零重綁。
-function renderListInPlace(s) {
-  const listEl = document.getElementById('wordList');
-  const headEl = document.getElementById('browserListHead');
-  if (!listEl || !headEl) { renderInPlace(s); return; }   // 結構變動 fallback 全渲染
+// #1A：結果集/順序變更一律回頂端（原本深位要同步墊 2000 列還原位置＝D2 4s 主因；
+// 回頂後 initialRows 讀到 scrollTop=0 → 只渲染視窗量）。inline auto 繞 smooth 同 setScrollNow。
+function scrollListTop() {
+  const area = document.getElementById('contentArea');
+  if (!area) return;
+  const sb = area.style.scrollBehavior;
+  area.style.scrollBehavior = 'auto';
+  area.scrollTop = 0;
+  area.style.scrollBehavior = sb;
+}
+function renderListInPlace(s, opts) {
+  const wrap = document.getElementById('browserListWrap');
+  if (!wrap) { renderInPlace(s); return; }   // 結構變動 fallback 全渲染
+  if (!opts?.keepScroll) scrollListTop();    // keepScroll：清單中原地資料編輯（tag chip 移除）留位置
   const { words } = s.state;
   const filtered = filterWords(words);
-  const display = filtered;   // WINDOW1：一律全顯示（無上限裁切）
-  const sysTags = s.state.systemTags || [];
-  const deckNames = (s.state.decks || []).map(d => d.name);
-  headEl.innerHTML = `<span style="font-size:12px;color:var(--text-tertiary);font-weight:500">${display.length} 筆結果</span>`;
-  const first = display.slice(0, initialRows(display.length));
-  _chunkRest = display.slice(first.length);
-  _chunkMeta = { tagColors: s.state.tagConfig, sysTags, deckNames };
-  listEl.innerHTML = first.map(w => wordRowHtml(w, s.state.tagConfig, sysTags, deckNames)).join('');
-  fillChunks();   // 就地補（sentinel 已在帶內時 IO/捲動事件都不會再觸發 → 直接查一次）
-  bindListEvents(s);   // 清單區 listener 重綁（delegation 一次搞定，見下）
+  if (!filtered.length) {
+    _chunkRest = []; _chunkMeta = null;   // 空態：sentinel 隨錨消失，停掉分段補渲染
+    wrap.innerHTML = renderEmpty(words.length);   // 舊版只把 list 清空＝0 結果無文案（併修）
+    return;
+  }
+  wrap.innerHTML = renderList(filtered, s, s.state.tagConfig);   // head+list+sentinel+chunk 狀態一次就位
+  fillChunks();                 // 就地補（sentinel 已在帶內時 IO/捲動事件都不會再觸發 → 直接查一次）
+  bindListEvents(s);            // 清單區 delegation 重綁（工具列/chips 聽器不在更新面，零重綁）
 }
 
 function renderInPlace(s) {
