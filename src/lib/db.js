@@ -289,7 +289,7 @@ export async function getAllWords() {
     word: r.word,
     definition: r.definition || '',
     pos: r.part_of_speech || '',
-    pron: r.pronunciation || '',
+    pron: normPron(r.pronunciation),
     example: r.example || '',
     deck: r.deck || 'Default',
     tags: parseJSON(r.tags, []),
@@ -327,6 +327,15 @@ const WORD_UPSERT_SQL = `INSERT INTO words (id, word, definition, part_of_speech
       synonym=excluded.synonym, antonym=excluded.antonym,
       derivative=excluded.derivative, examples=excluded.examples,
       etymology=excluded.etymology, syllables=excluded.syllables, phrases=excluded.phrases`;
+/** 發音統一 `/.../` 包覆（舊資料裸音標/已包過 → 讀寫兩側都收斂到同一格式；
+ *  [ ] ( ) 自帶界定的保留原樣）。widget 端 TenoWidget.pickWord 同口徑鏡像。 */
+function normPron(p) {
+  p = (p || '').trim();
+  if (!p) return '';
+  if (/^[[(].*[)\]]$/.test(p)) return p;
+  return `/${p.replace(/^\/+|\/+$/g, '')}/`;
+}
+
 /** 參數順序必須與 WORD_UPSERT_SQL 的 $1..$20 一致 */
 function wordUpsertParams(word) {
   return [
@@ -334,7 +343,7 @@ function wordUpsertParams(word) {
     word.word || '',
     word.definition || '',
     word.pos || '',
-    word.pron || '',
+    normPron(word.pron),
     word.example || '',
     word.deck || 'Default',
     JSON.stringify(word.tags || []),
@@ -680,7 +689,7 @@ export async function getAllAdditions() {
     word: r.word,
     definition: r.definition || '',
     pos: r.part_of_speech || '',
-    pron: r.pronunciation || '',
+    pron: normPron(r.pronunciation),
     examples: parseJSON(r.examples, []),
     deck: r.deck || 'Default',
   }));

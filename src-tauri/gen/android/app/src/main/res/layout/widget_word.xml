@@ -27,8 +27,9 @@
                 android:layout_weight="1"
                 android:text="—"
                 android:textColor="#87CEEB"
-                android:textSize="18sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
+                android:letterSpacing="0.02"
                 android:singleLine="true"
                 android:ellipsize="end" />
             <ImageView
@@ -41,10 +42,22 @@
                 android:src="@drawable/ic_refresh" />
         </LinearLayout>
         <TextView
+            android:id="@+id/wwPron"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:text=""
+            android:textColor="#87CEEB"
+            android:textSize="12sp"
+            android:letterSpacing="0.03"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:visibility="gone" />
+        <TextView
             android:id="@+id/wwMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="3dp"
             android:text=""
             android:textColor="#9A9AA6"
             android:textSize="11sp"
@@ -58,7 +71,19 @@
             android:text=""
             android:textColor="#C8C8D0"
             android:textSize="12sp"
-            android:maxLines="3"
+            android:maxLines="2"
             android:ellipsize="end" />
+        <TextView
+            android:id="@+id/wwEx"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text=""
+            android:textColor="#9A9AA6"
+            android:textSize="11sp"
+            android:textStyle="italic"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

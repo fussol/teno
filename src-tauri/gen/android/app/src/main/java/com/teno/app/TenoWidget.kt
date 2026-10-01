@@ -70,6 +70,7 @@ object TenoWidget {
         val goalDone: Int = -1,   // goal_streak.current（今日已完成）
         val goalTotal: Int = -1,  // goal_streak.daily_goal（缺表 → -1 = 不顯示進度）
         val goalBest: Int = -1,   // goal_streak.best（最佳連勝天數）
+        val learned: Int = -1,    // 已學卡數（cards 總數；缺表 → -1 不顯示）
     ) {
         /** 新卡今日額度 = getDueCards newQueue 扣 ratedNewToday（不負、超過額度歸 0）。 */
         val newToday: Int
@@ -81,7 +82,18 @@ object TenoWidget {
             }
     }
 
-    data class PickedWord(val word: String, val def: String, val meta: String)
+    data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String) {
+        /** 通知組字用（已含 /…/ 的音標＋詞性）。 */
+        val meta: String get() = listOf(pron, pos).filter { it.isNotEmpty() }.joinToString("   ")
+    }
+
+    /** 發音統一 `/.../` 包覆 — db.js normPron 同口徑（舊資料裸音標/已包過都收斂；[ ] ( ) 界定保留）。 */
+    internal fun normPron(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        if ((t.startsWith("[") && t.endsWith("]")) || (t.startsWith("(") && t.endsWith(")"))) return t
+        return "/" + t.trim('/') + "/"
+    }
 
     /** widget 用色（theme.js generateAccentVars 同口徑）。 */
     data class ThemeColors(
@@ -232,7 +244,13 @@ object TenoWidget {
                 db.rawQuery("SELECT daily_goal, current, best FROM goal_streak WHERE id = 1", null).use { c ->
                     if (c.moveToFirst()) { goalTotal = c.getInt(0); goalDone = c.getInt(1); goalBest = c.getInt(2) }
                 }
-                Counts(newQ, learn, review, rated, cardsPerDay, boundary, goalDone, goalTotal, goalBest)
+                var learned = -1
+                try {
+                    db.rawQuery("SELECT COUNT(*) FROM cards", null).use { c ->
+                        if (c.moveToFirst()) learned = c.getInt(0)
+                    }
+                } catch (_: Exception) {}
+                Counts(newQ, learn, review, rated, cardsPerDay, boundary, goalDone, goalTotal, goalBest, learned)
             }
         } catch (_: Exception) { null }
     }
@@ -248,16 +266,13 @@ object TenoWidget {
                         if (!c.moveToFirst()) return@use null
                         val w = c.getString(0) ?: ""
                         val d = if (c.isNull(1)) "" else c.getString(1)
-                        val pron = if (c.isNull(2)) "" else c.getString(2)
+                        val pron = normPron(if (c.isNull(2)) "" else c.getString(2))
                         val pos = if (c.isNull(3)) "" else c.getString(3)
-                        prefs(ctx).edit().putLong("lastWordId", c.getLong(4)).apply()
-                        val meta = listOf(
-                            if (pron.isNotEmpty()) "/$pron/" else "",
-                            pos,
-                        ).filter { it.isNotEmpty() }.joinToString("   ")
-                        PickedWord(w, d, meta)
+                        val ex = if (c.isNull(4)) "" else c.getString(4)
+                        prefs(ctx).edit().putLong("lastWordId", c.getLong(5)).apply()
+                        PickedWord(w, d, pron, pos, ex)
                     }
-                val cols = "word, definition, pronunciation, part_of_speech, rowid"
+                val cols = "word, definition, pronunciation, part_of_speech, example, rowid"
                 q("SELECT $cols FROM words WHERE word != '' AND rowid != ? ORDER BY RANDOM() LIMIT 1",
                     arrayOf(last.toString()))
                     ?: q("SELECT $cols FROM words WHERE word != '' ORDER BY RANDOM() LIMIT 1", null)
@@ -398,6 +413,7 @@ object TenoWidget {
             rv.setTextViewText(R.id.wsReviewNum, "–")
             rv.setTextViewText(R.id.wsGoal, "")
             rv.setViewVisibility(R.id.wsBar, View.GONE)
+            rv.setViewVisibility(R.id.wsCaption, View.GONE)
         } else {
             rv.setTextViewText(R.id.wsTitle, "Teno · 今日到期")
             rv.setTextViewText(R.id.wsNewNum, counts.newToday.toString())
@@ -415,6 +431,15 @@ object TenoWidget {
                 rv.setViewVisibility(R.id.wsBar, View.GONE)
                 rv.setTextViewText(R.id.wsGoal, "")
             }
+            val caps = buildList {
+                if (counts.goalBest >= 0) add("連勝 ${counts.goalBest} 天")
+                if (counts.learned >= 0) add("已學 ${counts.learned} 字")
+            }
+            if (caps.isEmpty()) rv.setViewVisibility(R.id.wsCaption, View.GONE)
+            else {
+                rv.setViewVisibility(R.id.wsCaption, View.VISIBLE)
+                rv.setTextViewText(R.id.wsCaption, caps.joinToString("　·　"))
+            }
         }
         launchPending(ctx)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
         return rv
@@ -424,18 +449,31 @@ object TenoWidget {
         val rv = RemoteViews(ctx.packageName, R.layout.widget_word)
         rv.setInt(R.id.wgBg, "setColorFilter", t.surface)
         rv.setInt(R.id.wwWord, "setTextColor", t.accent)
+        rv.setInt(R.id.wwPron, "setTextColor", t.accent2)
         rv.setInt(R.id.wwMeta, "setTextColor", t.text2)
         rv.setInt(R.id.wwDef, "setTextColor", t.text2)
+        rv.setInt(R.id.wwEx, "setTextColor", t.text2)
         rv.setInt(R.id.wwRefresh, "setColorFilter", t.accent)
         val w = pickWord(ctx)
         rv.setTextViewText(R.id.wwWord, w?.word ?: "—")
         rv.setTextViewText(R.id.wwDef, w?.def ?: "開啟 Teno 匯入字庫")
-        val meta = w?.meta ?: ""
-        if (meta.isEmpty()) {
-            rv.setViewVisibility(R.id.wwMeta, View.GONE)
-        } else {
+        val pron = w?.pron ?: ""
+        if (pron.isEmpty()) rv.setViewVisibility(R.id.wwPron, View.GONE)
+        else {
+            rv.setViewVisibility(R.id.wwPron, View.VISIBLE)
+            rv.setTextViewText(R.id.wwPron, pron)
+        }
+        val pos = w?.pos ?: ""
+        if (pos.isEmpty()) rv.setViewVisibility(R.id.wwMeta, View.GONE)
+        else {
             rv.setViewVisibility(R.id.wwMeta, View.VISIBLE)
-            rv.setTextViewText(R.id.wwMeta, meta)
+            rv.setTextViewText(R.id.wwMeta, pos)
+        }
+        val ex = w?.example ?: ""
+        if (ex.isEmpty()) rv.setViewVisibility(R.id.wwEx, View.GONE)
+        else {
+            rv.setViewVisibility(R.id.wwEx, View.VISIBLE)
+            rv.setTextViewText(R.id.wwEx, ex)
         }
         rv.setOnClickPendingIntent(R.id.wwRefresh, pi(ctx, ACTION_ROTATE))
         launchPending(ctx)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
