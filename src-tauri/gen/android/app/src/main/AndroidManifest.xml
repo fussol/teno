@@ -3,6 +3,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!-- Widget 與通知（WIDGET1）：每日／抽字鬧鐘 + 通知 + 可選常駐前台服務。
+         USE_EXACT_ALARM：33+ 安裝即核准（側載通路；上架 Play 要拿掉改走 SCHEDULE_EXACT_ALARM 稽核）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
@@ -280,5 +289,49 @@
             android:name="android.support.FILE_PROVIDER_PATHS"
             android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- WIDGET1：桌面兩顆獨立 Widget（狀態／抽字，設定在 App 內、顏色跟主題設定走） -->
+        <receiver
+            android:name=".TenoStatusWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label_status">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/teno_widget_info_status" />
+        </receiver>
+        <receiver
+            android:name=".TenoWordWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label_word">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/teno_widget_info_word" />
+        </receiver>
+
+        <!-- 鬧鐘（抽字輪播／日界線刷新／每日通知）＋開機重武裝。exported=false：
+             只收系統廣播（BOOT，系統可送）與自家 PendingIntent。 -->
+        <receiver
+            android:name=".TenoRefreshReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 可選常駐前台服務（預設關；開啟才有低耗電常駐通知，系統要求） -->
+        <service
+            android:name=".TenoResidentService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="使用者主動開啟的桌面 Widget 定期刷新（15 分鐘以上間隔的本機排程）" />
+        </service>
     </application>
 </manifest>

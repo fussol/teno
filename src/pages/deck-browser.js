@@ -119,9 +119,33 @@ function searchIndex(words) {
   return m;
 }
 
+// HOTFIX50K：sort key 輕索引（同 browser.js）— 空查詢不建 hay 重索引
+let _skWordsRef = null;
+let _skMap = null;
+function sortKeys(words) {
+  if (_skWordsRef === words && _skMap) return _skMap;
+  const m = new Map();
+  for (const w of words) m.set(w, (w.word || '').toLowerCase());
+  _skWordsRef = words; _skMap = m;
+  return m;
+}
+
+// HOTFIX50K：閒置預建 hay 索引（同 browser.js）
+let _siWarmRef = null;
+function warmSearchIndex(words) {
+  if (_siWarmRef === words || _siWordsRef === words) return;
+  if (words.length <= 1000) return;
+  _siWarmRef = words;
+  const idle = (typeof requestIdleCallback === 'function')
+    ? (f) => requestIdleCallback(f, { timeout: 3000 })
+    : (f) => setTimeout(f, 200);
+  idle(() => { if (_siWordsRef !== words) searchIndex(words); });
+}
+
 function filterDeckWords(words) {
+  warmSearchIndex(words);   // HOTFIX50K：閒置預建（ref 不變時第一行即回）
   const q = _query.trim().toLowerCase();
-  const idx = searchIndex(words);
+  const idx = q ? searchIndex(words) : null;   // HOTFIX50K：空查詢不建 hay 索引
   const scope = _searchScope === 'worddef' ? ['word', 'definition'] : null;
   const filtered = words.filter(w => {
     if (_tagFilter && !(w.tags || []).includes(_tagFilter)) return false;
@@ -144,7 +168,12 @@ function filterDeckWords(words) {
     }
     return copy;
   }
-  return copy.sort((a, b) => (a.word || '').localeCompare(b.word || ''));
+  // HOTFIX50K：同 browser.js — 預算 sort key + 碼位比較，免 localeCompare 萬詞重排
+  const skm = sortKeys(words);
+  const keyed = copy.map(w => [skm.get(w) || '', w]);
+  keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  for (let i = 0; i < copy.length; i++) copy[i] = keyed[i][1];
+  return copy;
 }
 
 function renderDeckList(words, tagColors, sysTags, deckNames) {

@@ -6,7 +6,7 @@
 import { createStore } from './lib/store.js';
 import { icon } from './lib/svg.js';
 import { computeStreak } from './core/scheduler.js';
-import { initCustomSelects } from './lib/custom-select.js';
+import { initCustomSelects, closeAll } from './lib/custom-select.js';
 import { invoke } from '@tauri-apps/api/core';
 import { logToDb, classifyScope } from './lib/app-log.js';
 import { ICON_PRESETS, iconImgPath } from './lib/icon-presets.js';
@@ -182,6 +182,19 @@ const pageLayers = new Map();
 let _activeRoot = null;
 /** 預渲染進行中（此時不標髒，見 markLayersDirty） */
 let _prerendering = false;
+// ─── KEEPALIVE2：子頁 keep-alive／捲動記憶（stashSubpage/tryWarmEnter/applySub）───
+/** 容器內子頁名（apply 設、stash 清） */
+let _activeSub = null;
+/** 產生當前 DOM 的 render 字串（暖命中新鮮度指紋） */
+let _activeSubHtml = null;
+/** apply 時的 container.firstElementChild（投毒偵測：ghost 蓋版後身分不符 → 不快取） */
+let _activeSubRoot = null;
+/** 目前顯示頁名（捲動 key；boot 無名 → null，存點 guard 掉 undefined 鍵） */
+let _activeRootName = null;
+/** name → { nodes, html }；FIFO 上限 6 */
+const _subCache = new Map();
+/** 頁名 → scrollTop（存點一律在 remove('active') 之前，見 setActiveRoot） */
+const _scrollPos = new Map();
 
 // ─── Mount app ───
 const $ = (id) => document.getElementById(id);
@@ -461,15 +474,31 @@ async function prerenderMainPages(deadline) {
   return { built: built.map(r => r.id), skipped };
 }
 
-/** 把某一頁顯示出來（切 .active，零重建）。離開的那頁順手清掉掛在上面的浮層。 */
-function setActiveRoot(el) {
-  if (!el || _activeRoot === el) return;
+/** 瞬時捲動（inline auto 繞過 .content-area 的 scroll-behavior:smooth —— Chrome 對 scrollTop
+ *  賦值也套 smooth，直接設會動畫跨幀） */
+function setScrollNow(area, y) {
+  const sb = area.style.scrollBehavior;
+  area.style.scrollBehavior = 'auto';
+  area.scrollTop = y;
+  area.style.scrollBehavior = sb;
+}
+
+/** 把某一頁顯示出來（切 .active，零重建）。離開的那頁順手清掉掛在上面的浮層。
+ *  KEEPALIVE2：帶頁名 —— 存/還原捲動都 keyed by 頁名；存點必須在 remove('active')
+ *  之前（display:none 當幀會把 scrollHeight 壓塌、scrollTop 被 clamp 成 0 不可逆）。 */
+function setActiveRoot(el, name) {
+  if (!el) return;
+  if (_activeRoot === el) { if (name) _activeRootName = name; return; }   // 子→子：stash 已存，這裡只換名
+  const area = $('contentArea');
+  if (_activeRoot && area && _activeRootName != null) _scrollPos.set(_activeRootName, area.scrollTop);
   if (_activeRoot) {
     _activeRoot.classList.remove('active');
     onRootDeactivate(_activeRoot);
   }
   _activeRoot = el;
   el.classList.add('active');
+  if (name) _activeRootName = name;
+  if (area) setScrollNow(area, _scrollPos.get(name) ?? 0);
 }
 
 /** 離開一頁時的清理。
@@ -482,7 +511,8 @@ function setActiveRoot(el) {
  *    #scrollTopBtn 會蓋掉主頁自己那顆，讓 import/export 之類操作到錯的元素。 */
 function onRootDeactivate(root) {
   try {
-    if (root.id === 'pageContainer') root.innerHTML = '';
+    // KEEPALIVE2：子頁容器改走 stashSubpage（存捲動＋移出快取＋整碗清在 finally）
+    if (root.id === 'pageContainer') { stashSubpage(); return; }
     root.querySelectorAll('.modal-overlay').forEach(el => el.remove());
     root.querySelectorAll('#cardPreviewModal, #deckCardPreview').forEach(el => el.remove());
     root.querySelectorAll('.cs.o').forEach(el => el.classList.remove('o'));
@@ -574,6 +604,116 @@ function scheduleIdleRefresh() {
   }, IDLE_REFRESH_DELAY_MS);
 }
 
+/** KEEPALIVE2 丁：每頁捲動還原（瞬時，見 setScrollNow） */
+function restoreScroll(name) {
+  const a = $('contentArea');
+  if (a) setScrollNow(a, _scrollPos.get(name) ?? 0);
+}
+
+/** KEEPALIVE2 乙：髒層先上屏、下一幀前補繪（補繪可能壓縮高度 → 還原捲動） */
+function deferRefresh(name) {
+  requestAnimationFrame(() => {
+    const l = pageLayers.get(name);
+    if (l && l.dirty) {
+      refreshLayer(name);
+      if (_activeRootName === name) restoreScroll(name);
+    }
+  });
+}
+
+// [K2-BEGIN] — KEEPALIVE2 核心（tools/verify-keepalive2.mjs 抽真碼跑 jsdom 動態腿；中間勿插非 K2 碼）
+
+/** 離場時把 select 的使用者選取寫回 option[selected] 內容屬性（property 級變更 clone 不帶）。 */
+function k2SyncSelectOptions(root) {
+  const sels = root.querySelectorAll ? root.querySelectorAll('select') : [];
+  for (const sel of sels) {
+    const idx = sel.selectedIndex;
+    if (idx < 0) continue;
+    const opts = sel.options;
+    for (let i = 0; i < opts.length; i++) {
+      if (i === idx) opts[i].setAttribute('selected', '');
+      else opts[i].removeAttribute('selected');
+    }
+  }
+}
+
+/** clone 後拆掉 custom-select 綁定痕跡（data-cs＋前兄弟 .cs-wrap），重建時視為新 select。 */
+function k2StripSelects(sel) {
+  delete sel.dataset.cs;
+  const prev = sel.previousElementSibling;
+  if (prev && prev.classList && prev.classList.contains('cs-wrap')) prev.remove();
+}
+
+/** 離場唯一收斂點。同步段只做 O(1)：存捲動、快照頂層節點引用、清容器；
+ *  浮層清理／搬移／select 同步／clone 快取全交 rIC（Profiler：同步段曾吃掉導航 400–600ms）。 */
+function stashSubpage() {
+  const container = $('pageContainer');
+  try {
+    closeAll();                                // 實測 0.1ms，保同步（menu 狀態收斂與快取無關）
+    const name = _activeSub;                 // 快照：idle 只吃參數，禁讀模組變數（讀了會配到新頁）
+    const html = _activeSubHtml;
+    if (name && container.firstElementChild && container.firstElementChild === _activeSubRoot) {
+      const refs = [...container.childNodes];   // 引用快照：清空後仍活著，不搬不查（µs 級）
+      const idle = () => k2CacheIdle(name, html, refs);
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(idle, { timeout: 1000 });
+      else setTimeout(idle, 200);
+    }
+  } finally {
+    container.innerHTML = '';
+    _activeSub = null;
+    _activeSubHtml = null;
+    _activeSubRoot = null;
+    container.classList.remove('leaving');
+  }
+}
+
+/** idle：浮層剝除 → 選取寫回 → clone → strip → 快取（FIFO 6）。idle 沒跑完就回訪 = 走冷路徑，無 pending 佇列。 */
+function k2CacheIdle(name, html, refs) {
+  const holder = document.createElement('div');
+  const OVERLAY = '.modal-overlay, #cardPreviewModal, #deckCardPreview';
+  for (const n of refs) {
+    if (n.nodeType !== 1) { holder.append(n); continue; }
+    if (n.matches(OVERLAY)) continue;              // 頂層浮層不入快取
+    n.querySelectorAll(OVERLAY).forEach(el => el.remove());
+    n.querySelectorAll('.cs.o').forEach(el => el.classList.remove('o'));
+    holder.append(n);
+  }
+  k2SyncSelectOptions(holder);
+  const nodes = [...holder.childNodes].map(n => n.cloneNode(true));
+  nodes.forEach(n => n.querySelectorAll?.('select[data-cs]')?.forEach(s => k2StripSelects(s)));
+  _subCache.set(name, { nodes, html });
+  if (_subCache.size > 6) _subCache.delete(_subCache.keys().next().value);
+}
+
+/** 暖命中 → 換入快取 DOM。html 不等（資料已變）→ 刪 entry 走冷路徑；命中即消耗。 */
+function tryWarmEnter(page, rendered, gen, mod) {
+  if (page === _activeSub) return false;      // forceRender 同頁：照舊重建
+  const entry = _subCache.get(page);
+  if (!entry) return false;
+  if ((rendered ?? '') !== entry.html) { _subCache.delete(page); return false; }
+  if (gen !== _renderGen) return false;
+  const container = $('pageContainer');
+  stashSubpage();
+  container.replaceChildren(...entry.nodes);
+  _subCache.delete(page);
+  applySub(page, entry.html, mod);
+  return true;
+}
+
+/** warm/cold 共用上屏：記帳 → 開點擊 → 上屏（setActiveRoot 同幀切 .active）→ 還原捲動 → onMount → select 重建。 */
+function applySub(page, html, mod) {
+  const container = $('pageContainer');
+  _activeSub = page;
+  _activeSubHtml = html;
+  _activeSubRoot = container.firstElementChild;
+  container.classList.remove('leaving');
+  setActiveRoot(container, page);
+  restoreScroll(page);
+  if (typeof mod.onMount === 'function') mod.onMount(store);
+  initCustomSelects(container);
+}
+// [K2-END]
+
 async function renderPage() {
   const gen = ++_renderGen;          // 本輪 token；await 期間有新 renderPage → 本輪作廢
   const page = store.state.currentPage;
@@ -591,37 +731,54 @@ async function renderPage() {
   }
   delete window.__navFromSidebar;   // B10: 清除 sidebar 導航標記（防跨頁殘留 → 誤觸發 exam saveOnLeave）
 
-  // ─── KEEPALIVE1：主頁 = 切圖層（零重建）；動態子頁 = 即時渲染 ───
+  // KEEPALIVE2：捲動存點固定在導航起點（此處樹乾淨 —— `.leaving`/髒化之後再讀 scrollTop
+  // 會強制整棵大樹版面計算，實測 deck 1.57MB 下 316ms）。stash 不再讀 scrollTop。
+  if (_activeSub) {
+    const a = $('contentArea');
+    if (a) _scrollPos.set(_activeSub, a.scrollTop);
+  }
+
+  // ─── KEEPALIVE1：主頁 = 切圖層（零重建）；KEEPALIVE2：髒層先上屏後補繪 ───
   const layer = pageLayers.get(page);
   if (layer) {
-    if (layer.dirty) refreshLayer(page);   // 閒置背景沒趕上才需要，成本已壓到 ~0–95ms
-    setActiveRoot(layer.root);
+    setActiveRoot(layer.root, page);
+    if (layer.dirty) deferRefresh(page);
     return;
   }
 
   const container = $('pageContainer');
-  container.innerHTML = '';                // 進子頁前清空：防上一輪殘留的 id/markup 被 getElementById 撈到
-  setActiveRoot(container);
+  container.classList.add('leaving');            // 舊頁可見期間不可點（子→子；主→子時容器尚未上屏）
 
   // Load and render page
   try {
     const mod = await loadPage(page);
     if (gen !== _renderGen) return;   // G6：await 期間已換頁 → 舊頁丟棄，不覆蓋新頁
     if (typeof mod.render === 'function') {
-      const rendered = mod.render(store);
-      if (gen !== _renderGen) return;   // render 期間（可能含 await）換頁 → 同樣丟棄
+      const rendered = mod.render(store);        // 只 render 一次（暖 miss 不重跑）
+      if (tryWarmEnter(page, rendered, gen, mod)) return;
+      stashSubpage();
+      if (gen !== _renderGen) return;
       container.innerHTML = rendered ?? '';
-      if (typeof mod.onMount === 'function') mod.onMount(store);
-      initCustomSelects(container);
+      applySub(page, rendered ?? '', mod);
+    } else {
+      stashSubpage();
+      container.classList.remove('leaving');
+      setActiveRoot(container, page);
     }
   } catch (e) {
     if (gen !== _renderGen) return;   // 錯誤處理也受 guard：過期錯誤不洗掉新頁
     console.error('Page load error:', e);
+    stashSubpage();
     container.innerHTML = `<div class="empty-state">
       ${icon('info')}
       <h3>載入失敗</h3>
       <p>${e.message}</p>
     </div>`;
+    container.classList.remove('leaving');
+    _activeSub = null;
+    _activeSubHtml = null;
+    setActiveRoot(container, page);
+    restoreScroll(page);
   }
 }
 
@@ -716,9 +873,25 @@ store.subscribe((state) => {
   } catch (e) {
     console.error('[keepalive] 預渲染異常：', e);
   }
+
+  // ─── KEEPALIVE2：熱子頁 chunk 預載 ───
+  // 實測（6x）：deck 圖層 1.57MB 活著時首次 import ocr 求值 105→455ms；stash 後置再 +90ms。
+  // splash 期間 DOM 乾淨、載入成本最低，先把驗證過的四頁裝好 → 換頁 loadPage 全走快取。
+  // ponytail: 只鎖這四頁；其他子頁冷進仍按需載入，有實測 jank 再擴充清單。
+  try {
+    const t0 = Date.now();
+    for (const p of ['deck-browser', 'ocr', 'import', 'app-log']) await loadPage(p);
+    console.log(`[keepalive] 子頁預載完成，耗時 ${Date.now() - t0}ms`);
+  } catch (e) {
+    console.error('[keepalive] 子頁預載異常：', e);
+  }
+
   _layerSig = layersSignature(store.state);   // 記錄 boot 後的資料指紋（之後只回應真正的資料變動）
 
   renderPage();
+
+  // WIDGET1：開 App 即推（Android 桌面 widget 同步今日到期數；其他平台 no-op）
+  invoke('widget_refresh').catch(() => {});
 
   // Splash 退場：預渲染完成（或逾時）後才退場，且至少顯示 SPLASH_MIN_MS
   const splash = $('splash');
@@ -778,6 +951,8 @@ document.addEventListener('keydown', (e) => {
 // ─── A5: 跨天自動 unbury — Android 背景化過夜 resume 的補檢查（guard 一天一次）───
 // ─── A-DASH1: 同場補 refreshDerived＋dashboard 重繪（開著 app 過換日線，首頁額度／到期數不再是昨天）───
 document.addEventListener('visibilitychange', () => {
+  // WIDGET1：離開（學完回桌面）與回來都推一次 — widget 數字跟著剛完成的作答更新
+  invoke('widget_refresh').catch(() => {});
   if (document.visibilityState === 'visible') {
     store._autoUnburyIfNewDay?.().catch(e => console.warn('[main] autoUnbury:', e));
     store._refreshDerivedIfNewDay?.().then((refreshed) => {

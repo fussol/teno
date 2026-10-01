@@ -15,7 +15,7 @@ import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal } from '../lib/api.js';
+import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal, widgetGetStatus, widgetSaveConfig, widgetRefresh, widgetRequestPerms } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -594,6 +594,72 @@ function renderSettingsContent(s) {
         </details>
       </div>
     </div>
+
+    <!-- 桌面 Widget（Android 原生 AppWidget；桌面不顯示） -->
+    ${isAndroid ? `
+    <div class="section">
+      <div class="section-title">${icon('home')} 桌面 Widget</div>
+      <div class="config-section">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">抽字間隔</div>
+            <div class="config-field-hint">抽字 widget 的自動換字間隔；狀態 widget 到期即時更新。手機深度休眠時可能稍有延遲（開下方常駐可縮小）</div>
+          </div>
+          <select id="widgetRotate" class="form-input" style="width:auto">
+            <option value="15">15 分</option>
+            <option value="60">1 時</option>
+            <option value="180">3 時</option>
+            <option value="1440">每天</option>
+          </select>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">背景常駐</div>
+            <div class="config-field-hint">每日＋開 App 刷新已足夠省電；只有要很密的間隔才需開（系統要求會有一則低耗電常駐通知，可關）</div>
+          </div>
+          <input type="checkbox" id="widgetResident">
+        </div>
+        <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+          <button class="btn btn-sm" id="widgetRefreshBtn">${icon('clock')} 立即刷新</button>
+          <button class="btn btn-sm btn-secondary" id="widgetPermBtn">${icon('shield')} 授權</button>
+        </div>
+        <div id="widgetPermStatus" style="margin-top:var(--s2);font-size:12px;color:var(--text-tertiary)"></div>
+      </div>
+    </div>
+
+    <!-- 提醒通知（獨立於 widget，無 widget 也能用） -->
+    <div class="section">
+      <div class="section-title">${icon('clock')} 提醒通知</div>
+      <div class="config-section">
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">間隔提醒</div>
+            <div class="config-field-hint">每隔 X 分鐘從下方勾選的內容隨機抽一則推播（1 分鐘～1 天；深度休眠時可能稍有延遲）</div>
+          </div>
+          <div style="display:flex;gap:var(--s2);align-items:center">
+            <input type="checkbox" id="widgetNotifyOn">
+            <input type="number" id="widgetNotifyInterval" class="form-input" style="width:6em" min="1" max="1440" step="1" value="60">
+            <span style="font-size:12px;color:var(--text-tertiary)">分鐘</span>
+          </div>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">顯示內容</div>
+            <div class="config-field-hint">每次到點從勾選項目隨機抽一則；至少勾一項才會推播</div>
+          </div>
+          <div style="display:flex;gap:var(--s3);flex-wrap:wrap">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyContentDue"> 今日到期</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyContentWord"> 隨機字卡</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyContentGoal"> 今日進度</label>
+          </div>
+        </div>
+        <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
+          <button class="btn btn-sm btn-secondary" id="notifPermBtn">${icon('shield')} 授權</button>
+        </div>
+        <div id="notifPermStatus" style="margin-top:var(--s2);font-size:12px;color:var(--text-tertiary)"></div>
+      </div>
+    </div>
+    ` : ''}
 
     <!-- Danger Zone -->
     <div class="section">
@@ -1529,6 +1595,81 @@ function _mount(s) {
   }).catch(() => {});
 
   // SIMPLIFY1：設定欄位失焦即存＋自動測連線（取代原本「儲存」「測試連線」兩顆按鈕）
+  // ─── WIDGET1：桌面 Widget／提醒通知（Android；設定即存→Kotlin 重武裝鬧鐘）───
+  (function bindWidget() {
+    if (!isAndroid) return;
+    const rot = document.getElementById('widgetRotate');
+    if (!rot) return;
+    const nOn = document.getElementById('widgetNotifyOn');
+    const nInt = document.getElementById('widgetNotifyInterval');
+    const cDue = document.getElementById('notifyContentDue');
+    const cWord = document.getElementById('notifyContentWord');
+    const cGoal = document.getElementById('notifyContentGoal');
+    const res = document.getElementById('widgetResident');
+    const wEl = document.getElementById('widgetPermStatus');
+    const nEl = document.getElementById('notifPermStatus');
+    let loaded = false;
+    const collect = () => ({
+      rotateMin: parseInt(rot.value, 10) || 60,
+      notifyOn: !!nOn.checked,
+      notifyIntervalMin: Math.min(1440, Math.max(1, parseInt(nInt.value, 10) || 60)),
+      notifyDue: !!cDue.checked,
+      notifyWord: !!cWord.checked,
+      notifyGoal: !!cGoal.checked,
+      residentOn: !!res.checked,
+    });
+    // 狀態字串分兩區：widget 區看 DB／精確鬧鐘；通知區看通知權限
+    const wText = (st) => {
+      if (!st?.supported) return '';
+      const parts = [];
+      parts.push(st.dbOk ? 'DB 就緒' : 'DB 尚未建立（先開一次 App）');
+      if (!st.exactAlarmOk) parts.push('精確鬧鐘未授權 → 換字間隔可能延遲');
+      return parts.join('　');
+    };
+    const nText = (st) => {
+      if (!st?.supported) return '';
+      return st.notifGranted ? '通知權限 ✓' : '通知未授權（按「授權」）';
+    };
+    const paint = (st) => {
+      if (wEl) wEl.textContent = wText(st);
+      if (nEl) nEl.textContent = nText(st);
+    };
+    (async () => {
+      try {
+        const st = await widgetGetStatus();
+        if (!st?.supported) return;
+        if (st.rotateMin) rot.value = String(st.rotateMin);
+        nOn.checked = !!st.notifyOn;
+        nInt.value = String(st.notifyIntervalMin ?? 60);
+        cDue.checked = st.notifyDue !== false;
+        cWord.checked = st.notifyWord !== false;
+        cGoal.checked = st.notifyGoal !== false;
+        res.checked = !!st.residentOn;
+        paint(st);
+      } catch (e) { console.warn('[widget] status:', e); }
+      loaded = true;
+    })();
+    const save = async () => {
+      if (!loaded) return;   // 初值回填完成前不寫（避免把預設蓋掉）
+      try {
+        const st = await widgetSaveConfig(collect());
+        paint(st);
+      } catch (e) { console.warn('[widget] save:', e); }
+    };
+    for (const el of [rot, nOn, nInt, cDue, cWord, cGoal, res]) el.addEventListener('change', save);
+    document.getElementById('widgetRefreshBtn')?.addEventListener('click', async () => {
+      try { await widgetRefresh(); toast('Widget 已刷新'); }
+      catch (e) { console.warn('[widget] refresh:', e); toast('Widget 刷新失敗'); }
+    });
+    // 兩顆「授權」鈕走同命令（一次要通知＋精確鬧鐘），狀態字串各區各顯示
+    const requestPerms = async () => {
+      try { paint(await widgetRequestPerms()); }
+      catch (e) { console.warn('[widget] perms:', e); }
+    };
+    document.getElementById('widgetPermBtn')?.addEventListener('click', requestPerms);
+    document.getElementById('notifPermBtn')?.addEventListener('click', requestPerms);
+  })();
+
   (function bindWebdavAutoSave() {
     const urlEl = document.getElementById('webdavUrl');
     const userEl = document.getElementById('webdavUser');

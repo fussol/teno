@@ -1,4 +1,7 @@
 <resources>
     <string name="app_name">"Teno"</string>
     <string name="main_activity_title">"Teno"</string>
+    <string name="widget_desc">"今日到期狀態／抽字"</string>
+    <string name="widget_label_status">"Teno 狀態"</string>
+    <string name="widget_label_word">"Teno 抽字"</string>
 </resources>

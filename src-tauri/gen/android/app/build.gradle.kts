@@ -44,14 +44,16 @@ android {
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
+            // 測試包（WIDGET1）：獨立 app id＝系統視為不同 app（不覆蓋主力包、資料沙箱分開）；
+            // 名稱由 app/src/debug/res 覆寫成「Teno 測試」。主力 release 完全不動。
+            // applicationIdSuffix 由 tauri CLI 依 bundle.android.debugApplicationIdSuffix 每次建置時正規化回寫。
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
-            packaging {                jniLibs.keepDebugSymbols.add("*/arm64-v8a/*.so")
-                jniLibs.keepDebugSymbols.add("*/armeabi-v7a/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86/*.so")
-                jniLibs.keepDebugSymbols.add("*/x86_64/*.so")
-            }
+            // ponytail: 測試包不帶 native 符號（拿掉 keepDebugSymbols＝AGP 預設 strip，.so 274MB→~60MB）
+            // 要 native backtrace 時把 packaging{ jniLibs.keepDebugSymbols... } 加回 debug block 即可
         }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")

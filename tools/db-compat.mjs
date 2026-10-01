@@ -43,26 +43,24 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const LIB_RS = join(ROOT, 'src-tauri/src/lib.rs');
-const CURRENT_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+const CURRENT_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 const MIN_DOWNGRADE_TARGET = 10;
 
 // ─── lib.rs 抽 SQL ───
 function loadMigrations() {
   const rs = readFileSync(LIB_RS, 'utf8');
   const unesc = (s) => s.replace(/\\"/g, '"').replace(/\\n/g, '\n');
-  const v13sql = rs.match(/const V13_SQL: &str = "(.*?)";/s)?.[1];
-  const v13desc = rs.match(/const V13_DESC: &str =\s*"(.*?)";/s)?.[1];
-  if (!v13sql || !v13desc) throw new Error('抽不出 V13_SQL/V13_DESC（lib.rs 結構變了，先修工具再跑）');
-  const v1sql = rs.match(/const V1_SQL: &str = "(.*?)";/s)?.[1];
-  const v1desc = rs.match(/const V1_DESC: &str =\s*"(.*?)";/s)?.[1];
+  // const 引用型 sql（V1_SQL/V11_SQL/V13_SQL/V15_SQL…）統一抓
+  const grab = (name) => rs.match(new RegExp(`const ${name}: &str =\\s*"([\\s\\S]*?)"`))?.[1];
   const get = (ver) => {
     const m = rs.match(new RegExp(`version: ${ver},[\\s\\S]*?sql: ([\\s\\S]*?),\\s*kind: MigrationKind::Up`));
     if (!m) throw new Error(`抽不出 migration v${ver}`);
     let expr = m[1].trim();
-    if (expr === 'V13_SQL') return { sql: unesc(v13sql), desc: v13desc };
-    if (expr === 'V1_SQL') {
-      if (!v1sql || !v1desc) throw new Error('抽不出 V1_SQL/V1_DESC，先修工具');
-      return { sql: unesc(v1sql), desc: v1desc };
+    if (/^V\d+_SQL$/.test(expr)) {
+      const sql = grab(expr);
+      const desc = grab(expr.replace('_SQL', '_DESC'));
+      if (!sql || !desc) throw new Error(`抽不出 ${expr}，先修工具`);
+      return { sql: unesc(sql), desc: unesc(desc) };
     }
     const lit = expr.match(/^"(.*)"$/s)?.[1];
     if (lit == null) throw new Error(`migration v${ver} 的 sql 不是字面量（改用變數了，先修工具）`);
@@ -94,8 +92,8 @@ function splitStmts(sql) {
 }
 const isBenignErr = (e) => /duplicate column|already exists/i.test(String(e?.message || e));
 
-// v1 語意基線（核對用，非 SQL 全文——v1 全文含 `//` 行內註解，SQLite 重放必炸，
-// 故 v1 只做「驗證＋補 index＋重蓋 checksum」，絕不重放）。
+// v1 語意基線（核對用，非 SQL 全文）。v1 行內註解曾是 `//`（SQLite 必炸＝新裝必死），
+// 2026-09-30 已修成 `--`；preensure 仍走「驗證＋補 index＋重蓋 checksum」不重放 v1（對舊庫安全）。
 // 來源：src-tauri/src/lib.rs migration v1（表名＋index 名，穩定識別符）。
 const V1_TABLES = ['words', 'cards', 'decks', 'folders', 'additions', 'edits', 'review_log', 'exam_history', 'settings', 'goal_streak'];
 const V1_INDEXES = [

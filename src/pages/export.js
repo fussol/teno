@@ -5,8 +5,13 @@
 import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
 import { buildCSV, buildShareCSV } from '../core/import.js';
-import { exportCsvDialog, exportSharePack } from '../lib/api.js';
+import { exportCsvDialog, exportSharePack, webdavCloudList, webdavCloudGet } from '../lib/api.js';
 import { isAndroid, downloadBlob } from '../lib/platform.js';
+import { getSetting, setSetting } from '../lib/db.js';
+import {
+  BUILTIN_PACKS, importBuiltin, exportBuiltinPackJson, exportOverlayPackJson,
+  parsePack, applyPack, cachePack, listCachedPacks, cachedPackJson, dropCachedPack,
+} from '../lib/sharepack.js';
 
 let _deckFilter = null;
 let _editingShelf = null;
@@ -71,6 +76,43 @@ export function render(s) {
       <div class="section-title">${icon('upload')} 分享</div>
       <div class="config-section">
         ${share}
+      </div>
+    </div>
+    <!-- SHAREPACK2: 分享包＝公開資料專區（零個人化；隨附包預存不預載，點匯入才寫題庫） -->
+    <div class="section">
+      <div class="section-title">${icon('box')} 分享包</div>
+      <div class="config-section">
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:var(--s2)">
+          公開題包專區 · 不含進度／批改／自建題 · 隨附包檔案跟著 App 走，點「匯入」才寫進題庫；「圖書館」下載＝預儲存，再到下面匯入
+        </div>
+        ${BUILTIN_PACKS.map(p => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border-subtle)">
+          <span style="flex:1;font-size:13px;color:var(--text-primary)">${escapeHtml(p.title)}<br><span style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(p.desc)}</span></span>
+          <button class="btn btn-xs" data-sp-export="${p.id}" style="font-size:11px">${icon('upload')} 匯出</button>
+          <button class="btn btn-primary btn-xs" data-sp-import="${p.id}" style="font-size:11px">匯入</button>
+        </div>`).join('')}
+        <div style="margin-top:12px;font-size:12px;font-weight:600;color:var(--text-secondary)">已下載（預儲存）</div>
+        <div id="spCache"><span style="font-size:12px;color:var(--text-tertiary)">讀取中…</span></div>
+        <div style="margin-top:12px;font-size:12px;font-weight:600;color:var(--text-secondary)">公開圖書館（WebDAV 資料夾，同備份系統設定）</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+          <input id="spLibPath" type="text" placeholder="/Teno-Library/" style="flex:1;min-width:0;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box">
+          <button class="btn btn-xs" id="spLibBrowse">${icon('search')} 瀏覽</button>
+        </div>
+        <div id="spLibList" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <!-- SHAREPACK2: 我的題目＝個人覆蓋層單獨匯出（進度不走這裡，.db 全包） -->
+    <div class="section">
+      <div class="section-title">${icon('pencil')} 我的題目</div>
+      <div class="config-section">
+        <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:var(--s2)">
+          個人自建／編輯的文法題（覆蓋層）· 不含任何進度 · 匯入＝併入現有自建題，不互相覆蓋
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn" id="spOvExport">${icon('upload')} 匯出我的題目</button>
+          <button class="btn" id="spOvImport">從檔案匯入</button>
+          <input type="file" id="spOvFile" accept=".json,application/json" style="display:none">
+        </div>
       </div>
     </div>
   `;
@@ -167,6 +209,107 @@ export function onMount(s, renderFn) {
   };
   if (shelfNewBtn) shelfNewBtn.addEventListener('click', createShelf);
   if (shelfNewInput) shelfNewInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') createShelf(); });
+
+  // ── SHAREPACK2: 分享包（隨附包匯入/匯出、已下載預儲存、圖書館瀏覽下載）＋我的題目 ──
+  const spErr = (e) => (e?.message || e);
+  const renderSpCache = async () => {
+    const box = document.getElementById('spCache');
+    if (!box) return;
+    try {
+      const list = await listCachedPacks();
+      if (!list.length) { box.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary)">尚無</span>'; return; }
+      box.innerHTML = list.map(c => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border-subtle)">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-primary)" title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</span>
+          <span class="muted" style="font-size:11px">${new Date(c.at).toLocaleDateString('zh-TW')}</span>
+          <button class="btn btn-primary btn-xs" data-sp-cache-import="${escapeAttr(c.name)}" style="font-size:11px">匯入</button>
+          <button class="btn btn-xs" data-sp-cache-del="${escapeAttr(c.name)}" style="font-size:11px;color:var(--red)">刪除</button>
+        </div>`).join('');
+      box.querySelectorAll('[data-sp-cache-import]').forEach(b => b.addEventListener('click', async () => {
+        try {
+          const json = await cachedPackJson(b.dataset.spCacheImport);
+          if (!json) throw new Error('找不到預儲存');
+          await applyPack(json);
+          toast('已匯入', 'toast-success');
+        } catch (e) { toast('匯入失敗：' + spErr(e), 'toast-error'); }
+      }));
+      box.querySelectorAll('[data-sp-cache-del]').forEach(b => b.addEventListener('click', async () => {
+        await dropCachedPack(b.dataset.spCacheDel);
+        renderSpCache();
+      }));
+    } catch (e) { box.innerHTML = `<span style="font-size:12px;color:var(--red)">${escapeHtml(spErr(e))}</span>`; }
+  };
+  document.querySelectorAll('[data-sp-import]').forEach(b => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await importBuiltin(b.dataset.spImport);
+      toast('已匯入題庫', 'toast-success');
+    } catch (e) { toast('匯入失敗：' + spErr(e), 'toast-error'); b.disabled = false; }
+  }));
+  document.querySelectorAll('[data-sp-export]').forEach(b => b.addEventListener('click', async () => {
+    try {
+      const json = await exportBuiltinPackJson(b.dataset.spExport);
+      const d = new Date().toISOString().slice(0, 10);
+      await downloadBlob(json, `teno-pack-${b.dataset.spExport}-${d}.json`, 'application/json');
+      toast('已匯出題包', 'toast-success');
+    } catch (e) { toast('匯出失敗：' + spErr(e), 'toast-error'); }
+  }));
+  const spPath = document.getElementById('spLibPath');
+  if (spPath) {
+    getSetting('webdavLibraryPath').then(v => { spPath.value = v || '/Teno-Library/'; }).catch(() => { spPath.value = '/Teno-Library/'; });
+    spPath.addEventListener('change', () => setSetting('webdavLibraryPath', spPath.value.trim() || '/Teno-Library/').catch(() => {}));
+  }
+  document.getElementById('spLibBrowse')?.addEventListener('click', async () => {
+    const box = document.getElementById('spLibList');
+    if (!box) return;
+    const p = (spPath?.value || '').trim().replace(/^\/+|\/+$/g, '');
+    box.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary)">讀取中…</span>';
+    try {
+      const data = JSON.parse(await webdavCloudList(p || null));
+      const es = (Array.isArray(data.entries) ? data.entries : []).filter(e => !e.isdir && /\.json$/i.test(e.name));
+      if (!es.length) { box.innerHTML = '<span style="font-size:12px;color:var(--text-tertiary)">此目錄沒有題包檔（.json）</span>'; return; }
+      box.innerHTML = es.map((e, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border-subtle)">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-primary)">${escapeHtml(e.name)}</span>
+          <span class="muted" style="font-size:11px">${e.size >= 1048576 ? (e.size / 1048576).toFixed(1) + ' MB' : e.size >= 1024 ? Math.round(e.size / 1024) + ' KB' : e.size + ' B'}</span>
+          <button class="btn btn-xs" data-sp-lib-dl="${i}" style="font-size:11px">下載</button>
+        </div>`).join('');
+      box.querySelectorAll('[data-sp-lib-dl]').forEach(b => b.addEventListener('click', async () => {
+        const e = es[parseInt(b.dataset.spLibDl, 10)];
+        if (!e) return;
+        b.disabled = true;
+        try {
+          const json = await webdavCloudGet((p ? p + '/' : '') + e.name);
+          parsePack(json);                 // 預儲存前先驗格式（壞包不落地）
+          await cachePack(e.name, json);
+          toast(`已預儲存 ${e.name}，到上面「已下載」匯入`, 'toast-success');
+          renderSpCache();
+        } catch (err) { toast('下載失敗：' + spErr(err), 'toast-error'); b.disabled = false; }
+      }));
+    } catch (e) {
+      box.innerHTML = `<span style="font-size:12px;color:var(--red)">${escapeHtml(spErr(e))}</span>`;
+    }
+  });
+  document.getElementById('spOvExport')?.addEventListener('click', async () => {
+    try {
+      const json = await exportOverlayPackJson();
+      const d = new Date().toISOString().slice(0, 10);
+      await downloadBlob(json, `teno-pack-grammar-overlay-${d}.json`, 'application/json');
+      toast('已匯出自建題', 'toast-success');
+    } catch (e) { toast('匯出失敗：' + spErr(e), 'toast-error'); }
+  });
+  const ovFile = document.getElementById('spOvFile');
+  document.getElementById('spOvImport')?.addEventListener('click', () => ovFile?.click());
+  ovFile?.addEventListener('change', async () => {
+    const f = ovFile.files?.[0];
+    ovFile.value = '';
+    if (!f) return;
+    try {
+      await applyPack(await f.text());
+      toast('已併入我的題目', 'toast-success');
+    } catch (e) { toast('匯入失敗：' + spErr(e), 'toast-error'); }
+  });
+  renderSpCache();
 }
 
 export function renderShelfBlock(s) {

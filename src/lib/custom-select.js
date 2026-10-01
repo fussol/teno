@@ -216,7 +216,7 @@ function addOption(opt, select, label, menu, wrap) {
   menu.appendChild(item);
 }
 
-function closeAll() {
+export function closeAll() {
   document.querySelectorAll('.cs-menu.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('.cs-wrap.open').forEach(w => w.classList.remove('open'));
   _csOpenWraps.clear();   // G5: 同步清空追蹤集合

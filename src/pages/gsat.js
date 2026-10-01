@@ -6,14 +6,11 @@ import { getSetting, setSetting } from '../lib/db.js';
 import { fetchLLM, parseLLMJson } from '../lib/api.js';
 import { toast } from '../lib/toast.js';
 import { radarChart, lineChart, barChart } from '../lib/chart.js';
-import gsatRaw from '../assets/gsat/gsat.jsonl?raw';
-import gsatTrRaw from '../assets/gsat/gsat_translate.jsonl?raw';
 import gsatTrPromptRaw from '../assets/gsat/gsat_tr_grading.md?raw';
+import { importBuiltin, packGateHtml } from '../lib/sharepack.js';
 
-const ALL = [
-  ...gsatRaw.trim().split('\n').map(l => JSON.parse(l)),
-  ...gsatTrRaw.trim().split('\n').map(l => JSON.parse(l)),   // 中譯英（非選擇）也進學測題庫
-];
+// SHAREPACK2：題庫不預載——settings.gsat_bank 匯入後才有；未匯入＝gate 卡
+let ALL = [];
 
 // section 有 17 種編碼變體（占/佔、（）/()、分/%）→ 正規化成官方大題＋配分
 const catOf = (sec = '') => {
@@ -28,25 +25,46 @@ const catOf = (sec = '') => {
 const wOf = (sec = '') => { const m = sec.match(/(\d+)\s*[分%]/); return m ? Number(m[1]) : 0; };
 
 // 每題自帶其文章（詞彙除外）→ 題組 = 連續同文章字串，groupInfo 自動切段
-const QUESTIONS = ALL
-  .map(q => ({ ...q, cat: catOf(q.section), w: q.w ?? wOf(q.section) }))   // 中譯英每題 4 分（section 寫的是大題 8 分）
-  .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.no) - Number(b.no));
-
-const BY_ID = new Map(QUESTIONS.map(q => [q.id, q]));
+let QUESTIONS = [];
+let BY_ID = new Map();
 const CATS = ['詞彙', '綜合測驗', '文意選填', '篇章結構', '閱讀測驗', '中譯英'];
-const YEARS = [...new Set(QUESTIONS.map(q => Number(q.year)))].sort((a, b) => a - b);
+let YEARS = [];
+let YEAR_TOTAL = {};
+let coreState = 'loading';   // loading | ready | none（未匯入）
 const yearOf = (qid) => Number(String(qid || '').split('-')[1]);
 const noSort = (arr) => arr.sort((a, b) => Number(a.no) - Number(b.no));   // no 是 JSON number
 
-// 各年配分（同大題同年去重取值；正常情況每年總和 72）
-const YEAR_TOTAL = {};
-for (const y of YEARS) {
-  const per = {};
-  for (const q of QUESTIONS.filter(x => Number(x.year) === y)) {
-    // 中譯英題目 w=4/句，但年配分是大題 8 分；其餘取題配分
-    per[q.cat] = q.cat === '中譯英' ? 8 : Math.max(per[q.cat] || 0, q.w);
+function rebuild() {
+  QUESTIONS = ALL
+    .map(q => ({ ...q, cat: catOf(q.section), w: q.w ?? wOf(q.section) }))   // 中譯英每題 4 分（section 寫的是大題 8 分）
+    .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.no) - Number(b.no));
+  BY_ID = new Map(QUESTIONS.map(q => [q.id, q]));
+  YEARS = [...new Set(QUESTIONS.map(q => Number(q.year)))].sort((a, b) => a - b);
+  // 各年配分（同大題同年去重取值；正常情況每年總和 72）
+  YEAR_TOTAL = {};
+  for (const y of YEARS) {
+    const per = {};
+    for (const q of QUESTIONS.filter(x => Number(x.year) === y)) {
+      // 中譯英題目 w=4/句，但年配分是大題 8 分；其餘取題配分
+      per[q.cat] = q.cat === '中譯英' ? 8 : Math.max(per[q.cat] || 0, q.w);
+    }
+    YEAR_TOTAL[y] = Object.values(per).reduce((s, v) => s + v, 0);
   }
-  YEAR_TOTAL[y] = Object.values(per).reduce((s, v) => s + v, 0);
+}
+
+/** hydrate bank {mc,tr}——頁面匯入與測試種子共用同一入口 */
+export function setGsatBank(bank) {
+  ALL = [...(bank.mc || []), ...(bank.tr || [])];
+  rebuild();
+  coreState = ALL.length ? 'ready' : 'none';
+}
+async function loadGsatBank() {
+  if (coreState === 'ready') return;
+  try {
+    const bank = await getSetting('gsat_bank');
+    if (bank && Array.isArray(bank.mc) && bank.mc.length) { setGsatBank(bank); return; }
+  } catch { /* DB 未就緒 → gate */ }
+  coreState = 'none';
 }
 
 let view = 'home';        // home | year | quiz | result | wrong | stats
@@ -807,6 +825,14 @@ function statsView() {
 }
 
 export function render() {
+  if (coreState === 'loading') {
+    return `<span data-page="gsat" data-gsid="${GID}" hidden></span>
+      <div class="page-title">${icon('scrollText')} 學測題庫</div>
+      <div class="page-subtitle">載入中…</div>`;
+  }
+  if (coreState !== 'ready') {
+    return packGateHtml({ page: 'gsat', title: '學測題庫', iconName: 'scrollText', desc: '97–115 年學測英文 · 官方 5 大題整卷作答＋錯題本＋統計' });
+  }
   const body = (() => {
     switch (view) {
       case 'year': return yearView();
@@ -837,6 +863,18 @@ function reRender() {
 function mountBindings() {
   document.querySelectorAll('[data-back]').forEach(el =>
     el.addEventListener('click', () => storeRef?.actions.navigate(el.dataset.back)));
+  document.querySelector('[data-gate-import]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      setGsatBank(await importBuiltin('gsat'));
+      toast('學測題庫已匯入', 'toast-success');
+      reRender();
+    } catch (err) {
+      toast('匯入失敗：' + (err?.message || err), 'toast-error');
+      btn.disabled = false;
+    }
+  });
   document.querySelectorAll('[data-home]').forEach(el =>
     el.addEventListener('click', () => { view = 'home'; reRender(); }));
   document.querySelectorAll('[data-cat]').forEach(el =>
@@ -997,10 +1035,13 @@ let docBound = false;
 export function onMount(s) {
   storeRef = s;
   view = 'home';
-  Promise.all([
-    restoreProgress().then(ok => { resumed = ok; }),
-    loadPractice('gsat'),
-  ]).finally(() => reRender());
+  // SHAREPACK2：題庫先就位（restore 的題序校驗要 BY_ID），再還原進度
+  loadGsatBank()
+    .then(() => Promise.all([
+      restoreProgress().then(ok => { resumed = ok; }),
+      loadPractice('gsat'),
+    ]))
+    .finally(() => reRender());
   mountBindings();
   if (docBound) return;
   docBound = true;

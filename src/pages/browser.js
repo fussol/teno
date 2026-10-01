@@ -20,10 +20,7 @@ import { isMobile } from '../lib/platform.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
 import { fetchGet, fetchLLM, lookupCambridge, lookupMerriam } from '../lib/api.js';
 import { merriamToFields } from '../lib/merriam.js';
-import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capList, limitNote, limitSelectHtml } from '../lib/display-limit.js';
-
-// 字庫顯示上限（可調＋記憶：存 db settings.browserDisplayLimit；0=全部）
-let _displayLimit = DISPLAY_LIMIT_DEFAULT;
+import { HARD_LIST_CAP } from '../lib/display-limit.js';   // 深位重繪同步上限（＝字本牆同值；單一真值源）
 
 let _query = '';
 let _deckFilter = null;
@@ -57,6 +54,23 @@ let _sortRandom = false;
 let _sortSeed = '';
 let _rulerSpacing = 3;
 let _editing = null;      // word id being edited
+
+// WINDOW1：分段補渲染（append-only，已渲染列永不移除 → keepalive 捲動記憶永遠有效）
+// 常數由 probe-velocity.mjs 實測推導（6x 節流＝保守，真機餘裕更大）：
+//   append 成本（中位）50列=67ms / 100=132ms / 200=258ms；列高 avg118/p95 135
+//   fling 極速 vWin50=16645px/s（Android ScaledMaximumFlingVelocity 8000dp/s 更低→測值上界）
+//   吞吐 50列/67ms≈88000px/s ≫ fling → 手勢是瓶頸、算力不是。
+// CHUNK=50：一補 ≈4 幀；FETCH_MARGIN=2500px ≥ 16645×0.067×2.2（補批期間 fling 只走 1115px）。
+// 若未來裝置吞吐跌破 2×v_fling → v_design=min(v_fling, 吞吐/2) 等比放大 MARGIN。
+const CHUNK = 50;
+const FETCH_MARGIN = 2500;
+let _chunkRest = [];      // 尚未渲染的剩餘列
+let _chunkMeta = null;    // {tagColors, sysTags, deckNames} — 補批 wordRowHtml 用
+let _chunkScrollBound = false;
+// 深位重繪：同步渲染設上限（HARD_LIST_CAP，回舊牆成本），蓋不住目標位時記下目標、
+// 由 pump 每幀補一批長高，蓋住後 setScrollNow 還原（見 finishRestore）。
+let _pendingRestore = 0;
+let _pumpRaf = 0;
 
 
 export function render(s) {
@@ -166,23 +180,117 @@ function wordRowHtml(w, tagColors, sysTags, deckNames) {
   </div>`;
 }
 
+// WINDOW1：初始渲染列數 — 只渲染 CHUNK 級，除非「深捲動覆蓋」需要更多：
+// ① 本頁正顯示（.active）→ 覆蓋 contentArea 當前捲動+視窗（搜尋/上限切換/髒重繪不跳位）
+// ② 圖層隱藏中重繪（idle refresh）→ 保住舊渲染列數（display:none 高度不可靠，用列數）
+// ③ 首次/無舊清單 → CHUNK。上限被 displayLen clamp。
+function initialRows(displayLen) {
+  _pendingRestore = 0;
+  if (displayLen <= CHUNK) return displayLen;
+  const old = document.getElementById('wordList');
+  if (!old || !old.children.length) return CHUNK;
+  const area = document.getElementById('contentArea');
+  if (area && old.closest('.page.active')) {
+    let sum = 0, n = 0;
+    for (const c of old.children) { sum += c.offsetHeight || 0; if (++n >= 20) break; }
+    const avg = (n ? sum / n : 118) || 118;
+    const target = area.scrollTop;
+    const need = Math.ceil((target + area.clientHeight) * 1.15 / avg) + CHUNK;
+    // 同步上限＝HARD_LIST_CAP（2000≈935ms@6x，HOTFIX 實測）— 深位不再無界同步渲染
+    const n0 = Math.min(displayLen, Math.max(CHUNK, Math.min(need, HARD_LIST_CAP)));
+    _pendingRestore = need > n0 ? target : 0;   // 蓋不住 → pump 長高後還原
+    return n0;
+  }
+  // 隱藏圖層重繪：不 pump（存點由 _scrollPos 於回頁時還原，超出即 clamp，同 HOTFIX50K 語意）
+  return Math.min(displayLen, Math.max(CHUNK, Math.min(old.children.length + CHUNK, HARD_LIST_CAP)));
+}
+
+// 補一批：sentinel 進入視窗底 + FETCH_MARGIN 帶 → 追加 CHUNK 列。
+// 迴補到 sentinel 離帶為止（捲動事件會被節流/合併、一次跳很遠 → 單次事件要補到夠）
+function appendBatch() {
+  const listEl = document.getElementById('wordList');
+  if (!listEl || !_chunkMeta || !_chunkRest.length) return false;
+  const batch = _chunkRest.splice(0, CHUNK);
+  if (!batch.length) return false;
+  listEl.insertAdjacentHTML('beforeend', batch.map(w => wordRowHtml(w, _chunkMeta.tagColors, _chunkMeta.sysTags, _chunkMeta.deckNames)).join(''));
+  return true;
+}
+
+function fillChunks() {
+  const sentinel = document.getElementById('wordListSentinel');
+  // active 守衛：contentArea 捲動監聽是全域的，別頁捲動也會進來 — 隱藏圖層
+  // getBoundingClientRect 全 0（top=0 恒在帶內）→ 沒這關會把剩餘列在別頁補完
+  if (sentinel && sentinel.closest('.page.active') && _chunkMeta && _chunkRest.length) {
+    const zone = window.innerHeight + FETCH_MARGIN;
+    // guard=4：正常捲動/跳底 1-2 批即離帶（每批 +5900px > 帶寬 2500px）；
+    // 但重繪後 scrollTop 尚未 clamp 時 sentinel.top 是負值 → 迴圈會「補到目標深度」＝
+    // 同步無界（實測 550 列/4.7s）→ 硬砍 4 批，其餘交 finishRestore pump 逐幀補。
+    let guard = 0;
+    while (_chunkRest.length && guard++ < 4 && sentinel.getBoundingClientRect().top <= zone) appendBatch();
+  }
+  finishRestore();
+}
+
+// 深位還原 pump：內容蓋住目標位 → 瞬間還原；沒蓋住且還有剩 → 每幀補一批（UI 幀間喘氣，
+// 避免深位重繪一次同步幾千列＝當機）；補完仍蓋不住（目標超出結果集）或離頁 → 放棄。
+function finishRestore() {
+  if (!_pendingRestore) return;
+  const area = document.getElementById('contentArea');
+  const listEl = document.getElementById('wordList');
+  if (!area || !listEl || !listEl.closest('.page.active')) {
+    _pendingRestore = 0;
+    if (_pumpRaf) { cancelAnimationFrame(_pumpRaf); _pumpRaf = 0; }
+    return;
+  }
+  if (area.scrollHeight - area.clientHeight >= _pendingRestore) {
+    const sb = area.style.scrollBehavior;          // 同 main.js setScrollNow：繞過 smooth
+    area.style.scrollBehavior = 'auto';
+    area.scrollTop = _pendingRestore;
+    area.style.scrollBehavior = sb;
+    _pendingRestore = 0;
+    return;
+  }
+  if (!_chunkRest.length) { _pendingRestore = 0; return; }
+  if (_pumpRaf) return;
+  _pumpRaf = requestAnimationFrame(() => {
+    _pumpRaf = 0;
+    if (!appendBatch()) { _pendingRestore = 0; return; }
+    finishRestore();
+  });
+}
+
+// 觸發源＝捲動監聽（不用 IntersectionObserver：fill 自身 mutation 把 sentinel 推出帶外、
+// 下一幀捲動又帶回帶內 → IO 觀察不到 false 轉換 → 永不再觸發【實測卡死 59→109】）。
+// contentArea 是外殼（永不重建）→ 綁一次即可；scroll 事件對程式化 scrollTop 同樣觸發。
+function armChunking() {
+  if (!_chunkScrollBound) {
+    const area = document.getElementById('contentArea');
+    if (!area) return;
+    let raf = 0;
+    area.addEventListener('scroll', () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; fillChunks(); });
+    }, { passive: true });
+    _chunkScrollBound = true;
+  }
+  fillChunks();   // 掛載即查一次（深還原後視窗已在帶內、或清單短於視窗都靠這下觸發）
+}
+
 function renderList(words, s, tagColors) {
   const sysTags = s.state.systemTags || [];
   const deckNames = (s.state.decks || []).map(d => d.name);
-  const display = capList(words, _displayLimit);
+  const display = words;   // WINDOW1：一律全顯示（DOM 由分段補渲染控管，上限 UI 已移除）
+  const first = display.slice(0, initialRows(display.length));
+  _chunkRest = display.slice(first.length);
+  _chunkMeta = { tagColors, sysTags, deckNames };
   return `
-    <div id="browserListHead" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--s3)">
-      <span style="font-size:12px;color:var(--text-tertiary);font-weight:500">
-        ${limitNote(words, _displayLimit)}
-      </span>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary)">
-        上限
-        ${limitSelectHtml('browserLimitSelect', _displayLimit)}
-      </label>
+    <div id="browserListHead" style="display:flex;align-items:center;margin-bottom:var(--s3)">
+      <span style="font-size:12px;color:var(--text-tertiary);font-weight:500">${display.length} 筆結果</span>
     </div>
     <div class="word-list" id="wordList">
-      ${display.map(w => wordRowHtml(w, tagColors, sysTags, deckNames)).join('')}
+      ${first.map(w => wordRowHtml(w, tagColors, sysTags, deckNames)).join('')}
     </div>
+    <div id="wordListSentinel" style="height:1px"></div>
   `;
 }
 
@@ -213,7 +321,33 @@ function searchIndex(words) {
   return m;
 }
 
+// HOTFIX50K：sort key 另立輕索引（只有 word.toLowerCase）— 空查詢路徑（預設開頁）
+// 不再為過濾建 hay 重索引（萬詞 example/description lowercase+Map，實測 A 冷渲染主因）。
+let _skWordsRef = null;
+let _skMap = null;
+function sortKeys(words) {
+  if (_skWordsRef === words && _skMap) return _skMap;
+  const m = new Map();
+  for (const w of words) m.set(w, (w.word || '').toLowerCase());
+  _skWordsRef = words; _skMap = m;
+  return m;
+}
+
+// HOTFIX50K：閒置預建 hay 索引 — 開頁即排程，首次搜尋不必付全量建索引費
+// （萬詞 hay 實測 ~0.5s@6x；原本卡在第一次 Enter 搜尋裡）。
+let _siWarmRef = null;
+function warmSearchIndex(words) {
+  if (_siWarmRef === words || _siWordsRef === words) return;
+  if (words.length <= 1000) return;
+  _siWarmRef = words;
+  const idle = (typeof requestIdleCallback === 'function')
+    ? (f) => requestIdleCallback(f, { timeout: 3000 })
+    : (f) => setTimeout(f, 200);
+  idle(() => { if (_siWordsRef !== words) searchIndex(words); });
+}
+
 function filterWords(words) {
+  warmSearchIndex(words);   // HOTFIX50K：閒置預建（ref 不變時第一行即回）
   // G17: memoization — 萬級詞庫 render 每次全量 filter+sort 太貴。
   // words 為 immutable reference，條件不變時直接回傳上次結果。
   if (_sortRandom && !_sortSeed) {
@@ -231,7 +365,7 @@ function filterWords(words) {
     _fwWordsRef = words;
   }
   const q = _query.trim().toLowerCase();
-  const idx = searchIndex(words);
+  const idx = q ? searchIndex(words) : null;   // HOTFIX50K：空查詢不建 hay 索引
   const scope = _searchScope === 'worddef' ? ['word', 'definition'] : null;
   const filtered = words.filter(w => {
     if (_deckFilter && w.deck !== _deckFilter) return false;
@@ -256,7 +390,13 @@ function filterWords(words) {
     _fwCache = copy;
     return copy;
   }
-  copy.sort((a, b) => (a.word || '').localeCompare(b.word || ''));
+  // HOTFIX50K：localeCompare 萬詞 sort 每次重排 ~0.8–1.5s@6x（實測搜尋 36% 佔比）。
+  // 頂級比較器走預先算好的 sort key（sortKeys 建時一次，隨 words ref 失效），
+  // 碼位比較取代 locale 比較；ASCII 詞序與 localeCompare 同，罕見變音符號為已知差異。
+  const skm = sortKeys(words);
+  const keyed = copy.map(w => [skm.get(w) || '', w]);
+  keyed.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  for (let i = 0; i < copy.length; i++) copy[i] = keyed[i][1];
   _fwCache = copy;
   return copy;
 }
@@ -685,11 +825,6 @@ export function onMount(s) {
 }
 function _mount(s) {
   initScrollTop();
-  // 顯示上限：db 還原（設定記憶）＋ selector 變更寫回
-  import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
-    const n = normalizeDisplayLimit(v);
-    if (n !== _displayLimit) { _displayLimit = n; renderInPlace(s); }
-  }).catch(() => {});
   // 例句限數：db 還原（與工具頁同一設定鍵）— 沒這段 window 變數永遠 undefined＝無限
   import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
     const n = Math.max(0, parseInt(v, 10) || 0);
@@ -707,14 +842,6 @@ function _mount(s) {
       }
     } catch (_) {}
   }).catch(() => {});
-  document.getElementById('browserLimitSelect')?.addEventListener('change', async (e) => {
-    _displayLimit = normalizeDisplayLimit(e.target.value);
-    renderInPlace(s);
-    try {
-      const { setSetting } = await import('../lib/db.js');
-      await setSetting(DISPLAY_LIMIT_KEY, String(_displayLimit));
-    } catch (_) {}
-  });
   const searchInput = document.getElementById('browserSearch');
   if (searchInput) {
     // 搜尋改「Enter / 搜尋鈕」觸發（元首令 2026-08-31）— 不再輸入即時過濾
@@ -784,6 +911,7 @@ function _mount(s) {
   if (addBtn) addBtn.addEventListener('click', () => openAddModal(s));
 
   bindWordEvents(s);
+  armChunking();   // WINDOW1：分段補渲染（renderInPlace/applySub/髒重繪的 onMount 都會走到）
 }
 
 async function inlineEditTags(s, id) {
@@ -838,27 +966,16 @@ function renderListInPlace(s) {
   if (!listEl || !headEl) { renderInPlace(s); return; }   // 結構變動 fallback 全渲染
   const { words } = s.state;
   const filtered = filterWords(words);
-  const display = capList(filtered, _displayLimit);
+  const display = filtered;   // WINDOW1：一律全顯示（無上限裁切）
   const sysTags = s.state.systemTags || [];
   const deckNames = (s.state.decks || []).map(d => d.name);
-  headEl.innerHTML = `
-    <span style="font-size:12px;color:var(--text-tertiary);font-weight:500">
-      ${limitNote(filtered, _displayLimit)}
-    </span>
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary)">
-      上限
-      ${limitSelectHtml('browserLimitSelect', _displayLimit)}
-    </label>`;
-  listEl.innerHTML = display.map(w => wordRowHtml(w, s.state.tagConfig, sysTags, deckNames)).join('');
+  headEl.innerHTML = `<span style="font-size:12px;color:var(--text-tertiary);font-weight:500">${display.length} 筆結果</span>`;
+  const first = display.slice(0, initialRows(display.length));
+  _chunkRest = display.slice(first.length);
+  _chunkMeta = { tagColors: s.state.tagConfig, sysTags, deckNames };
+  listEl.innerHTML = first.map(w => wordRowHtml(w, s.state.tagConfig, sysTags, deckNames)).join('');
+  fillChunks();   // 就地補（sentinel 已在帶內時 IO/捲動事件都不會再觸發 → 直接查一次）
   bindListEvents(s);   // 清單區 listener 重綁（delegation 一次搞定，見下）
-  document.getElementById('browserLimitSelect')?.addEventListener('change', async (e) => {
-    _displayLimit = normalizeDisplayLimit(e.target.value);
-    try {
-      const { setSetting } = await import('../lib/db.js');
-      await setSetting(DISPLAY_LIMIT_KEY, String(_displayLimit));
-    } catch (_) {}
-    renderListInPlace(s);
-  });
 }
 
 function renderInPlace(s) {

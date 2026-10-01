@@ -23,17 +23,27 @@ export function normalizeDisplayLimit(v) {
   return n;
 }
 
-/** 依上限裁切（0 = 全部，回原陣列引用） */
-export function capList(words, limit) {
+/** 依上限裁切（0 = 全部，但受 HARD_LIST_CAP 硬上限保護）
+ *  — 現僅字本 deck-browser 使用；字庫 browser 已改 WINDOW1 分段補渲染、一律全顯示（不經此函式）
+ *  ponytail: 全部(0) 在萬級詞庫=無界 DOM（50k 列 innerHTML 實測 >180s 當機）
+ *  → 字本硬上限 2000 列；升級路徑=字本也改分段補渲染。 */
+export const HARD_LIST_CAP = 2000;
+
+function effectiveLimit(limit) {
   const L = normalizeDisplayLimit(limit);
-  if (L === 0 || words.length <= L) return words;
+  return L === 0 ? HARD_LIST_CAP : L;
+}
+
+export function capList(words, limit) {
+  const L = effectiveLimit(limit);
+  if (words.length <= L) return words;
   return words.slice(0, L);
 }
 
 /** 結果列文案 */
 export function limitNote(words, limit) {
-  const L = normalizeDisplayLimit(limit);
-  if (L === 0 || words.length <= L) return `${words.length} 筆結果`;
+  const L = effectiveLimit(limit);
+  if (words.length <= L) return `${words.length} 筆結果`;
   return `${words.length} 筆結果，顯示前 ${L} 筆（使用搜尋縮小範圍）`;
 }
 

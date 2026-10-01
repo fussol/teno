@@ -273,7 +273,10 @@ option{background:var(--bg-surface);color:var(--text-primary)}
   scroll-behavior:smooth;
 }
 .page{display:none;max-width:min(1400px,calc(100vw - 80px));margin:0 auto;width:100%}
-.page.active{display:block;animation:pageIn var(--t-slow)}
+/* KEEPALIVE2：380ms→200ms（換頁零延遲）；easing token 必帶（裸 duration 會退回預設 ease） */
+.page.active{display:block;animation:pageIn 200ms var(--ease-standard)}
+/* KEEPALIVE2：子頁重建期間（leaving）擋舊頁點擊 */
+#pageContainer.leaving{pointer-events:none}
 /* ─── KEEPALIVE1：主頁預渲染圖層（2026-09） ───
    五個主頁在 splash 期間就全部渲染好、一起留在 DOM（見 main.js），換頁只切 .active。
    為何不用 display:none 當切換鈕：display:none → block 會把已算好的排版整棵丟棄，

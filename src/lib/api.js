@@ -325,6 +325,8 @@ export const webdavCloudList = (path) =>
   invoke('webdav_cloud_list', path ? { path } : {})
 export const webdavCloudDelete = (path) =>
   invoke('webdav_cloud_delete', { path })
+export const webdavCloudGet = (path) =>
+  invoke('webdav_cloud_get', { path })
 export const webdavServerListLocal = (path) =>
   invoke('webdav_server_list_local', path ? { path } : {})
 export const webdavServerDeleteLocal = (path) =>
@@ -354,3 +356,16 @@ export const optimizeFsrs = (reviews) =>
 // mode: 'simulate' | 'workload' | 'optimal'
 export const simulateFsrs = (req) =>
   invoke('simulate_fsrs', { req })
+
+// ─── 桌面 Widget 與通知（Android 原生 AppWidget；桌面端回 supported:false）───
+export const widgetGetStatus = () =>
+  invoke('widget_get_status')
+
+export const widgetSaveConfig = (cfg) =>
+  invoke('widget_save_config', { cfg })
+
+export const widgetRefresh = () =>
+  invoke('widget_refresh')
+
+export const widgetRequestPerms = () =>
+  invoke('widget_request_perms')

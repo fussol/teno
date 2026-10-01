@@ -1,76 +1,164 @@
-// SHAREPACK1 驗收：單字套含圖打包（words.csv＋media/＋manifest.json）。
-// 重點：圖零 IPC（Rust 直讀 DB）、CSV image 欄留空、匯入 manifest 對 id 掛圖、
-// 守門（zip 500MB／單圖 10MB）、token 綁定、取消靜默。
-import { readFileSync, existsSync } from 'node:fs';
+#!/usr/bin/env node
+// ═══════════════════════════════════════════════════════════════
+// SHAREPACK2 防回歸 — 分享包（公開題包專區）
+//
+// 用法:
+//   node --experimental-test-module-mocks tools/verify-sharepack.mjs
+//
+// 涵蓋：
+//   1) 包格式 {v:1,kind,title,data}：roundtrip、壞包四路拒收、packCount
+//   2) 隨附包：fetchBuiltinData 讀 public/packs/*、importBuiltin 寫 DB key
+//   3) applyPack：gsat/core 覆寫、overlay upsert 合併（不互踩）
+//   4) 預儲存：cachePack 只收公開包（overlay 拒收）、list/get/drop
+//   5) 匯出：exportBuiltinPackJson / exportOverlayPackJson（空層拒匯）
+//   6) gate HTML：有匯入鈕、有頁標記、不留「已匯入」痕跡
+// ═══════════════════════════════════════════════════════════════
+import { register } from 'node:module';
+import { mock } from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
 
-const R = (p) => readFileSync(p, 'utf8');
-const PROJ = '/home/jupiter/teno 修檢版';
-let pass = 0, fail = 0;
-const ok = (name, cond, extra = '') => {
-  if (cond) { pass++; console.log(`✅ ${name}`); }
-  else { fail++; console.log(`❌ ${name} ${extra}`); }
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+register('./raw-loader.mjs', import.meta.url);
+
+// ── fake DB（沿用 a10 harness 的 FakeDatabase）──
+class FakeDatabase {
+  constructor() {
+    this.db = new DatabaseSync(':memory:');
+    this._initSchema();
+  }
+  static load() {
+    if (!FakeDatabase._singleton) FakeDatabase._singleton = new FakeDatabase();
+    return FakeDatabase._singleton;
+  }
+  _initSchema() {
+    this.db.exec(`CREATE TABLE cards (
+      word_id TEXT PRIMARY KEY, due TEXT, stability REAL, difficulty REAL,
+      elapsed_days REAL, scheduled_days REAL, reps INTEGER, lapses INTEGER,
+      state INTEGER, step INTEGER, last_review TEXT, buried INTEGER, suspended INTEGER,
+      mc_data TEXT, spell_data TEXT)`);
+    this.db.exec(`CREATE TABLE review_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, word_id TEXT, rating INTEGER, duration INTEGER,
+      elapsed_days REAL, scheduled_days REAL, difficulty REAL,
+      mode TEXT NOT NULL DEFAULT 'flip', card_state INTEGER, new_state INTEGER, reviewed_at TEXT)`);
+    this.db.exec(`CREATE TABLE words (
+      id TEXT PRIMARY KEY, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT,
+      example TEXT, deck TEXT, tags TEXT, image TEXT, description TEXT, created_at TEXT,
+      related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT)`);
+    this.db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
+    this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
+    this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
+    this.db.exec('CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT)');
+    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT)');
+    this.db.exec('CREATE TABLE additions (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, examples TEXT, deck TEXT, added_at TEXT)');
+    this.db.exec('CREATE TABLE exam_history (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, correct INTEGER, question_type TEXT, examined_at TEXT)');
+    this.db.exec('CREATE TABLE filtered_decks (id TEXT PRIMARY KEY, name TEXT, search_query TEXT, max_cards INTEGER, order_by TEXT, color TEXT, created_at TEXT, last_used TEXT)');
+  }
+  _bind(sql, params = []) {
+    if (!params || params.length === 0) return {};
+    const obj = {};
+    for (let i = 0; i < params.length; i++) obj['$' + (i + 1)] = params[i];
+    return obj;
+  }
+  async execute(sql, params = []) { this.db.prepare(sql).run(this._bind(sql, params)); }
+  async select(sql, params = []) { return this.db.prepare(sql).all(this._bind(sql, params)); }
+  async close() { this.db.close(); }
+}
+
+mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
+mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+mock.module('../src/lib/toast.js', { exports: { toast() {} } });
+
+// fetch polyfill → 直讀 public/（頁面走 HTTP、node 走同一路徑檔案）
+globalThis.fetch = async (url) => {
+  const f = path.join(ROOT, 'public', String(url).replace(/^\/+/, ''));
+  if (!fs.existsSync(f)) return { ok: false, status: 404, text: async () => { throw new Error('404'); } };
+  return { ok: true, status: 200, text: async () => fs.readFileSync(f, 'utf8') };
 };
 
-// ── Rust 命令註冊 ──
-const lib = R(`${PROJ}/src-tauri/src/lib.rs`);
-ok('mod share_pack 註冊', /mod share_pack;/.test(lib));
-ok('export_share_pack 註冊', /share_pack::export_share_pack/.test(lib));
-ok('import_share_pack_dialog 註冊', /share_pack::import_share_pack_dialog/.test(lib));
-ok('get_share_media 註冊', /share_pack::get_share_media/.test(lib));
+let pass = 0, fail = 0;
+const ok = (cond, name, extra = '') => { if (cond) { pass++; console.log('PASS ' + name); } else { fail++; console.log('FAIL ' + name + (extra ? ' — ' + extra : '')); } };
+const rejects = async (fn) => { try { await fn(); return false; } catch { return true; } };
 
-const rs = R(`${PROJ}/src-tauri/src/share_pack.rs`);
-// ── 匯出：零 IPC 打包 ──
-ok('匯出直讀 teno.db（唯讀）', /SQLITE_OPEN_READ_ONLY/.test(rs));
-ok('匯出讀 word_images 表', /FROM word_images/.test(rs));
-ok('匯出讀 words 取 word+deck（manifest 用）', /FROM words WHERE id IN/.test(rs));
-ok('data URL 解碼（不經 IPC）', /decode_data_url\(t\)/.test(rs));
-ok('直連下載落地（Tenor 時效）', /download_bytes\(t\)/.test(rs));
-ok('zip 佈局 words.csv', /start_file\("words\.csv"/.test(rs));
-ok('zip 佈局 manifest.json', /start_file\("manifest\.json"/.test(rs));
-ok('zip 佈局 media/ 前綴', /start_file\(format!\("media\//.test(rs));
-ok('words.csv 帶 BOM（Excel 相容）', /0xEF, 0xBB, 0xBF/.test(rs));
-ok('回 JSON {path,images,skipped}', /"images": media_len,/.test(rs) && /"skipped": skipped,/.test(rs));
-ok('打包核心抽出成純函式（可端到端測）', /pub\(crate\) fn pack_from_db\(/.test(rs));
-ok('真 SQLite→zip 端到端測試（位元組一致）', /fn pack_from_real_db_roundtrip\(/.test(rs) && /包內圖位元組要跟原圖一致/.test(rs));
-ok('閉環：打包輸出餵匯入端解析器', /inspect_pack_bytes\(&packed\.bytes\)/.test(rs));
-ok('懸空 FK（圖有列無字）記 skipped', /assert_eq!\(packed\.skipped, 3/.test(rs));
-// ── 匯入：解包＋逐張取圖 ──
-ok('缺 words.csv 拒收', /缺少 words\.csv/.test(rs));
-ok('zip 上限 500MB', /MAX_PACK_BYTES/.test(rs));
-ok('單圖上限 10MB', /MAX_MEDIA_BYTES/.test(rs));
-ok('media/ 前綴守門（防穿越）', /media\/\{safe_name\}/.test(rs));
-ok('token 綁定 temp（apkg F-RACE1 同形）', /resolve_pack_tmp/.test(rs));
-ok('Android content:// 走 cache（apkg 同路）', /copy_uri_to_cache/.test(rs));
-// ── 純函式 ──
-ok('檔名 ASCII 安全＋穿越只取副檔名', /safe_media_name/.test(rs) && /extension\(\)/.test(rs));
-ok('mime 白名單（png/jpg/gif/webp/bmp/svg/avif）', /"avif"/.test(rs));
-// ── 前端 ──
-const api = R(`${PROJ}/src/lib/api.js`);
-ok('api: exportSharePack', /exportSharePack/.test(api));
-ok('api: importSharePackDialog', /importSharePackDialog/.test(api));
-ok('api: getShareMedia', /getShareMedia/.test(api));
+const sp = await import('../src/lib/sharepack.js');
+const dbMod = await import('../src/lib/db.js');
+await dbMod.initDB();
+const { PACK_KINDS, BUILTIN_PACKS, packToJson, parsePack, packCount, fetchBuiltinData,
+  importBuiltin, applyPack, exportBuiltinPackJson, exportOverlayPackJson,
+  cachePack, listCachedPacks, cachedPackJson, dropCachedPack, packGateHtml } = sp;
 
-const exp = R(`${PROJ}/src/pages/export.js`);
-ok('匯出：書櫃整櫃打包鈕', /data-shelf-pack/.test(exp));
-ok('匯出：每本打包鈕', /data-share-pack-deck/.test(exp));
-ok('匯出：篩選區含圖打包鈕', /sharePackRunBtn/.test(exp));
-ok('匯出：CSV image 欄留空（避舊欄遷移）', /image: ''/.test(exp));
+// ── 1) 包格式 ──
+ok(PACK_KINDS.join() === 'pack-gsat,pack-grammar-core,pack-grammar-overlay', '1 種類固定三種（gsat/core/overlay）');
+ok(BUILTIN_PACKS.length === 2 && BUILTIN_PACKS.every(p => p.id && p.kind && p.title), '隨附包清單 2 筆（id/kind/title 齊）');
+const rt = parsePack(packToJson('pack-gsat', { mc: [{ id: 'x' }], tr: [] }, '標題'));
+ok(rt.v === 1 && rt.kind === 'pack-gsat' && rt.title === '標題' && rt.data.mc.length === 1, 'roundtrip：packToJson → parsePack');
+ok(await rejects(async () => parsePack('not json')), '壞包拒收：非 JSON');
+ok(await rejects(async () => parsePack(JSON.stringify({ v: 1, kind: 'pack-x', data: {} }))), '壞包拒收：未知 kind');
+ok(await rejects(async () => parsePack(JSON.stringify({ v: 2, kind: 'pack-gsat', data: { mc: [] } }))), '壞包拒收：未知版本 v2');
+ok(await rejects(async () => parsePack(JSON.stringify({ v: 1, kind: 'pack-gsat', data: { tr: [] } }))), '壞包拒收：gsat 缺 mc');
+ok(await rejects(async () => parsePack(JSON.stringify({ v: 1, kind: 'pack-grammar-core', data: { topics: {} } }))), '壞包拒收：core 缺 qs');
+ok(await rejects(async () => parsePack(JSON.stringify({ v: 1, kind: 'pack-grammar-overlay', data: [] }))), '壞包拒收：overlay data 非物件');
+ok(packCount(parsePack(packToJson('pack-gsat', { mc: [{}, {}, {}], tr: [{}, {}] }))) === 5, 'packCount：gsat = mc+tr');
+ok(packCount(parsePack(packToJson('pack-grammar-core', { qs: [{}] }))) === 1, 'packCount：core = qs 題數');
+ok(packCount(parsePack(packToJson('pack-grammar-overlay', { up: { a: 1, b: 2 }, rm: ['x'] }))) === 3, 'packCount：overlay = up+rm');
 
-const imp = R(`${PROJ}/src/pages/import.js`);
-ok('匯入：分享包頁籤', /data-mode="pack"/.test(imp));
-ok('匯入：renderPackSection', /function renderPackSection/.test(imp));
-ok('匯入：映射 UI 重用（renderMapping）', /renderMapping\(s\) \+ renderPreview\(s, true\) \+ renderPackImportBar/.test(imp));
-ok('匯入：取消靜默（/取消/）', /if \(\/取消\/\.test\(msg\)\) return;.*pickPack/s.test(imp));
-ok('匯入：manifest word+deck 對 id', /byKey\.set\(String\(w\.word/.test(imp));
-ok('匯入：舊字也掛圖（state 全量查）', /s\.state\.words \|\| \[\]/.test(imp) && /importPackImages/.test(imp));
-ok('匯入：逐張失敗只跳過（try/catch per job）', /pack image skip/.test(imp));
-ok('匯入：500+ 張確認', /jobs\.length > 500/.test(imp));
-ok('匯入：resetState 清 pack 會話', /_packToken = null/.test(imp));
-ok('匯入：doImport after 回調掛圖', /doImport\(s, toImport, \(res\) => importPackImages/.test(imp));
+// ── 2) 隨附包：讀 public/packs/* + importBuiltin 寫 DB ──
+const g = await fetchBuiltinData('gsat');
+ok(Array.isArray(g.mc) && g.mc.length > 400 && Array.isArray(g.tr) && g.tr.length > 0, `fetchBuiltin gsat（mc ${g.mc.length} · tr ${g.tr.length}）`);
+ok(g.mc.every(q => q.id && q.year && q.section), 'fetchBuiltin gsat：題目欄位齊（id/year/section）');
+const ga = await fetchBuiltinData('grammar');
+ok(Array.isArray(ga.qs) && ga.qs.length > 300 && Object.keys(ga.topics).length > 0, `fetchBuiltin grammar（qs ${ga.qs.length} · topics ${Object.keys(ga.topics).length}）`);
+ok(ga.qs.every(q => q.pattern && ga.topics[q.pattern]), 'fetchBuiltin grammar：每題 pattern 都有標題');
+ok(await rejects(() => fetchBuiltinData('nope')), 'fetchBuiltin：未知 id 拒收');
+await importBuiltin('gsat');
+let bank = await dbMod.getSetting('gsat_bank');
+ok(bank && bank.mc.length === g.mc.length && bank.tr.length === g.tr.length, 'importBuiltin gsat → settings.gsat_bank 落庫');
+await importBuiltin('grammar');
+const core = await dbMod.getSetting('grammar_bank_core');
+ok(core && core.qs.length === ga.qs.length && core.topics && Object.keys(core.topics).length === Object.keys(ga.topics).length, 'importBuiltin grammar → settings.grammar_bank_core 落庫');
+const expG = JSON.parse(await exportBuiltinPackJson('gsat'));
+ok(expG.kind === 'pack-gsat' && expG.data.mc.length === g.mc.length, 'exportBuiltinPackJson gsat → 可 parse 的單檔');
+ok(await rejects(() => exportBuiltinPackJson('nope')), 'exportBuiltinPackJson：未知 id 拒收');
 
-// ── 檔存在 ──
-ok('share_pack.rs 存在', existsSync(`${PROJ}/src-tauri/src/share_pack.rs`));
-ok('verify-sharepack.mjs 存在', existsSync(`${PROJ}/tools/verify-sharepack.mjs`));
+// ── 3) applyPack：覆寫 + overlay upsert 合併 ──
+await applyPack(packToJson('pack-gsat', { mc: [{ id: 'a' }], tr: [{ id: 'b' }] }));
+bank = await dbMod.getSetting('gsat_bank');
+ok(bank.mc.length === 1 && bank.tr.length === 1 && bank.mc[0].id === 'a', 'applyPack gsat：整包覆寫');
+await dbMod.setSetting('grammar_bank_overlay', { up: { 'g-1-1-mc-1': { id: 'g-1-1-mc-1' } }, rm: ['g-1-1-mc-9'] });
+await applyPack(packToJson('pack-grammar-overlay', { up: { 'g-1-1-mc-2': { id: 'g-1-1-mc-2' } }, rm: ['g-1-1-mc-9', 'g-1-1-mc-8'] }));
+let ov = await dbMod.getSetting('grammar_bank_overlay');
+ok(!!ov.up['g-1-1-mc-1'] && !!ov.up['g-1-1-mc-2'], 'overlay 匯入：upsert 合併（既有自建題不被覆蓋）');
+ok(ov.rm.join() === 'g-1-1-mc-9,g-1-1-mc-8', 'overlay 匯入：rm 聯集（不互踩）');
+ok(await rejects(() => applyPack('garbage')), 'applyPack：壞字串拒收');
 
-console.log(`\nSHAREPACK1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
-process.exit(fail === 0 ? 0 : 1);
+// ── 4) 預儲存：只收公開包 ──
+ok(await rejects(() => cachePack('bad.json', 'nope')), 'cachePack：壞包拒收且不落地');
+ok((await listCachedPacks()).length === 0, 'cachePack 壞包後：清單仍空');
+ok(await rejects(() => cachePack('mine.json', packToJson('pack-grammar-overlay', { up: {}, rm: [] }))), 'cachePack：overlay（個人資料）拒收');
+const goodJson = packToJson('pack-grammar-core', { qs: [{ id: 'q1' }], topics: {} });
+await cachePack('pack-a.json', goodJson);
+let lst = await listCachedPacks();
+ok(lst.length === 1 && lst[0].name === 'pack-a.json' && lst[0].at > 0, 'cachePack：進清單（帶時間戳）');
+ok((await cachedPackJson('pack-a.json')) === goodJson, 'cachedPackJson：取回原字串');
+await cachePack('pack-a.json', packToJson('pack-gsat', { mc: [{ id: 'z' }], tr: [] }));
+lst = await listCachedPacks();
+ok(lst.length === 1, 'cachePack：同名覆蓋（不堆疊）');
+await dropCachedPack('pack-a.json');
+ok((await listCachedPacks()).length === 0 && (await cachedPackJson('pack-a.json')) === null, 'dropCachedPack：刪掉後清單/內容皆空');
+
+// ── 5) 匯出 ──
+await dbMod.setSetting('grammar_bank_overlay', { up: {}, rm: [] });
+ok(await rejects(() => exportOverlayPackJson()), 'exportOverlayPackJson：空覆蓋層拒匯');
+await dbMod.setSetting('grammar_bank_overlay', { up: { 'g-1-1-mc-1': { id: 'g-1-1-mc-1', stem: 'x' } }, rm: [] });
+const expOv = JSON.parse(await exportOverlayPackJson());
+ok(expOv.kind === 'pack-grammar-overlay' && expOv.data.up['g-1-1-mc-1']?.stem === 'x', 'exportOverlayPackJson：單檔含 up/rm');
+
+// ── 6) gate HTML ──
+const gate = packGateHtml({ page: 'grammar', title: '文法翻譯', iconName: 'bookOpen' });
+ok(gate.includes('data-page="grammar"') && gate.includes('data-gate-import'), 'gate：頁標記＋匯入鈕齊');
+ok(!gate.includes('已匯入'), 'gate：不留「已匯入」痕跡（匯入後 UI 與內建無差別）');
+
+console.log(`\n${pass}/${pass + fail} PASS`);
+process.exit(fail ? 1 : 0);

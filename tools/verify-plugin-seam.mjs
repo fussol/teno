@@ -85,7 +85,7 @@ ok('gsat v6: 報告 pending/error 分流＋error 不計配分', /trErr/.test(gs)
 ok('gsat v6: document listener 模組只綁一次（不隨 onMount 累積）', /let docBound = false/.test(gs) && /if \(docBound\) return/.test(gs));
 ok('gsat v6: 浮層右錨（手機不右溢出視窗）', /\.gsat-dd-menu\{[^}]*right:0;left:auto/.test(css) && /max-width:min\(300px,calc\(100vw - 48px\)\)/.test(css));
 ok('gsat: 填空類題幹必有底線記號（102 年 import 曾整批丟空格）', (() => {
-  const bad = read('src/assets/gsat/gsat.jsonl').split('\n').filter(Boolean).map(l => JSON.parse(l))
+  const bad = read('public/packs/gsat/gsat.jsonl').split('\n').filter(Boolean).map(l => JSON.parse(l))
     .filter(q => q.type === 'mc' && /詞彙|成語|填充|單字/.test(q.section || '') && !q.stem.includes('_'));
   return bad.length === 0;
 })());
@@ -96,7 +96,7 @@ for (const id of ids) {
 }
 ok('grammar: 無限題流（自動補題＋隱藏題號）', /extendQueue/.test(g) && !/\$\{idx \+ 1\}\/\$\{queue.length\}/.test(g));
 ok('grammar: 背景批改＋結果視圖', /trGrades/.test(g) && /data-results/.test(g) && /grade-queue/.test(g));
-ok('grammar: 出題主題顯示', /pattern_titles/.test(g) && /topicOf/.test(g));
+ok('grammar: 出題主題顯示（SHAREPACK2：核心進 DB、topicOf 照舊）', /grammar_bank_core/.test(g) && /topicOf/.test(g));
 const gsatTrPrompt = read('src/assets/gsat/gsat_tr_grading.md');
 const gramTrPrompt = read('src/assets/grammar/translation_grading.md');
 ok('批改輸出：訂正/修改建議/緣由（prompt 兩頁齊）', /corrected/.test(gsatTrPrompt) && /suggestions/.test(gsatTrPrompt) && /suggestions/.test(gramTrPrompt));
@@ -107,13 +107,13 @@ ok('輸入框防洗（重畫前先收值＋qid 守門）', /ti\.dataset\.qid/.te
 ok('gsat 頁標記（背景批改不跨頁覆蓋）', /data-page="gsat"/.test(gs));
 ok('診斷行已刪（messages 實證完畢）', !/\[fetchLLM\] msgs/.test(read('src/lib/api.js')));
 ok('批改 JSON：共享 parser 補括號（三頁齊）', /parseLLMJson/.test(gs) && /parseLLMJson/.test(g) && /parseLLMJson/.test(read('src/pages/essay.js')) && /stack\.push/.test(read('src/lib/api.js')));
-ok('gsat: 中譯英進題庫＋背景批改', /gsat_translate/.test(gs) && /ggrade/.test(gs) && /TR_OFFICIAL/.test(gs));
+ok('gsat: 中譯英進題庫＋背景批改（SHAREPACK2：tr 由 setGsatBank 合入）', /bank\.tr \|\| \[\]/.test(gs) && /ggrade/.test(gs) && /TR_OFFICIAL/.test(gs));
 ok('gsat: 作答函式齊（防區塊誤刪）', /function startPaper/.test(gs) && /function startSingle/.test(gs) && /function groupInfo/.test(gs) && /function gradePanel/.test(gs) && /let setSeq/.test(gs) && /const trGrades/.test(gs) && /role: 'user'/.test(gs));
 ok('topics.js 三頁入口齊（plugins.js 展開）', ids.length >= 3, `ids=${ids}`);
 
 // 題庫完整性：id 唯一、欄位齊、pattern 有標題（1-9 分裂句併入）
-const qs = read('src/assets/grammar/questions.jsonl').split('\n').filter(Boolean).map(l => JSON.parse(l));
-const titles = JSON.parse(read('src/assets/grammar/pattern_titles.json'));
+const qs = read('public/packs/grammar/questions.jsonl').split('\n').filter(Boolean).map(l => JSON.parse(l));
+const titles = JSON.parse(read('public/packs/grammar/pattern_titles.json'));
 const qids = new Set(qs.map(q => q.id));
 ok('grammar 題庫：id 唯一且欄位齊', qids.size === qs.length && qs.every(q =>
   q.type === 'mc'

@@ -6,24 +6,37 @@ import { fetchLLM, parseLLMJson } from '../lib/api.js';
 import { radarChart } from '../lib/chart.js';
 import { logPractice, loadPractice, practiceRows } from '../lib/practice-log.js';
 import { toast } from '../lib/toast.js';
-import { getSetting } from '../lib/db.js';
+import { getSetting, setSetting } from '../lib/db.js';
 import { mergeBank } from '../lib/bank.js';
-import questionsRaw from '../assets/grammar/questions.jsonl?raw';
+import { importBuiltin, packGateHtml } from '../lib/sharepack.js';
 import gradingPromptRaw from '../assets/grammar/translation_grading.md?raw';
-import topicsRaw from '../assets/grammar/pattern_titles.json?raw';
+const PROMPT_HEAD = gradingPromptRaw.split('【題目】')[0];
 
-const BASE = questionsRaw.trim().split('\n').map(l => JSON.parse(l));
-// 題庫 = 內建主本 ⊕ DB 覆蓋層（工具頁出題/刪題寫 settings.grammar_bank_overlay；讀失敗＝用主本）
-let QUESTIONS = BASE;
-const loadBankOv = async () => {
+// SHAREPACK2：核心題庫不預載——settings.grammar_bank_core 匯入後才有；未匯入＝gate 卡
+let BASE = [];
+let TOPICS = {};
+let QUESTIONS = [];
+let coreState = 'loading';   // loading | ready | none
+const mergeOv = async () => {
   try {
     const ov = await getSetting('grammar_bank_overlay');
     // 無條件合併：覆蓋層被清空時也要退回 BASE（有長度條件會殘留舊合併結果）
-    if (ov && typeof ov === 'object') QUESTIONS = mergeBank(BASE, ov);
-  } catch { /* DB 未就緒 → 內建題庫 */ }
+    QUESTIONS = (ov && typeof ov === 'object') ? mergeBank(BASE, ov) : BASE;
+  } catch { QUESTIONS = BASE; }   // DB 未就緒 → 核心題
 };
-const PROMPT_HEAD = gradingPromptRaw.split('【題目】')[0];
-const TOPICS = JSON.parse(topicsRaw);   // pattern id -> [章標題, 句型標題]
+const loadBank = async () => {
+  if (coreState !== 'ready') {
+    let core = null;
+    try { core = await getSetting('grammar_bank_core'); } catch { /* DB 未就緒 → gate */ }
+    if (core && Array.isArray(core.qs) && core.qs.length) {
+      BASE = core.qs; TOPICS = core.topics || {}; coreState = 'ready';
+    } else {
+      coreState = 'none'; QUESTIONS = []; return;
+    }
+  }
+  await mergeOv();
+};
+const hydrateCore = (data) => { BASE = data.qs; TOPICS = data.topics || {}; coreState = 'ready'; };
 // 出題主題：第N章 章名｜句型（題題都要顯示）
 const topicOf = (q, max = 60) => {
   const t = TOPICS[q.pattern];
@@ -46,7 +59,8 @@ let pick = null;          // mc 已選項
 let trText = '';
 // 非同步批改：qid -> {status:'pending'|'done'|'error', out/text/err}。批改不擋作答，完成才回填。
 
-// 作答＋批改記憶：qid -> {status,out/text/err}（localStorage 足夠；要跟 DB 備份走再進 settings）
+// 作答＋批改記憶：qid -> {status,out/text/err}（DB 雙寫＝.db 全包帶得走；LS 是就地快取）
+let trDirty = false;       // 本輪寫過 → DB 回填不覆蓋本地
 const trStore = (() => {
   try {
     const o = JSON.parse(localStorage.getItem('teno:grammar:tr') || '{}');
@@ -57,7 +71,22 @@ const trStore = (() => {
 })();
 const saveTr = (qid, entry) => {
   trStore[qid] = entry;
+  trDirty = true;
   try { localStorage.setItem('teno:grammar:tr', JSON.stringify(trStore)); } catch { /* 溢位：記到這為止 */ }
+  setSetting('grammar_tr', trStore).catch(() => {});   // DB 雙寫（fire-and-forget，同其他 settings）
+};
+// DB 回填（啟動一次）：DB 優先、本地補缺；本輪寫過則本地為準
+const loadTrStore = async () => {
+  try {
+    const dbVal = await getSetting('grammar_tr');
+    if (dbVal && typeof dbVal === 'object' && !trDirty) {
+      for (const k of Object.keys(dbVal)) if (dbVal[k]?.status === 'pending') dbVal[k] = { status: 'error', err: '批改中斷（App 關閉）', text: dbVal[k].text };
+      const merged = { ...trStore, ...dbVal };
+      for (const k of Object.keys(trStore)) delete trStore[k];
+      Object.assign(trStore, merged);
+      try { localStorage.setItem('teno:grammar:tr', JSON.stringify(trStore)); } catch {}
+    }
+  } catch { /* DB 未就緒 → LS 照舊 */ }
 };
 const trGrades = {};
 let setSeq = 0;           // 換組就 +1：舊批次回來只入帳、不動畫面
@@ -252,6 +281,14 @@ function resultsView() {
 }
 
 export function render() {
+  if (coreState === 'loading') {
+    return `<span data-page="grammar" hidden></span>
+      <div class="page-title">${icon('bookOpen')} 文法翻譯</div>
+      <div class="page-subtitle">載入中…</div>`;
+  }
+  if (coreState !== 'ready') {
+    return packGateHtml({ page: 'grammar', title: '文法翻譯', iconName: 'bookOpen', desc: '16 章句型多選與翻譯 · 中文譯英文，LLM 逐題批改' });
+  }
   if (idx >= queue.length) extendQueue();   // 理論上到不了（advance 自動補），保險
   const body = mode == null ? homeView()
     : trResultsOpen ? resultsView()
@@ -345,6 +382,19 @@ function grade() {
 function mountBindings() {
   document.querySelectorAll('[data-back]').forEach(el =>
     el.addEventListener('click', () => { mode = null; storeRef?.actions.navigate(el.dataset.back); }));
+  document.querySelector('[data-gate-import]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      hydrateCore(await importBuiltin('grammar'));
+      await mergeOv();
+      toast('文法題庫已匯入', 'toast-success');
+      reRender();
+    } catch (err) {
+      toast('匯入失敗：' + (err?.message || err), 'toast-error');
+      btn.disabled = false;
+    }
+  });
   document.querySelectorAll('[data-mode]').forEach(el =>
     el.addEventListener('click', () => { if (newSet(el.dataset.mode, el.dataset.src || 'normal') !== false) reRender(); }));
   document.querySelectorAll('[data-opt]').forEach(el =>
@@ -367,6 +417,6 @@ function mountBindings() {
 
 export function onMount(s) {
   storeRef = s;
-  loadPractice('grammar').then(loadBankOv).then(() => reRender()).catch(() => {});
+  loadPractice('grammar').then(loadBank).then(loadTrStore).then(() => reRender()).catch(() => {});
   mountBindings();
 }

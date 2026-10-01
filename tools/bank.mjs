@@ -10,8 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const QS = path.join(ROOT, 'src/assets/grammar/questions.jsonl');
-const TITLES = path.join(ROOT, 'src/assets/grammar/pattern_titles.json');
+const QS = path.join(ROOT, 'public/packs/grammar/questions.jsonl');
+const TITLES = path.join(ROOT, 'public/packs/grammar/pattern_titles.json');
 
 const loadAll = () => fs.readFileSync(QS, 'utf8').trimEnd().split('\n').map((l, i) => {
   try { return JSON.parse(l); } catch (e) { throw new Error(`第 ${i + 1} 行 JSON 壞了: ${e.message}`); }

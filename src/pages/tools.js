@@ -7,8 +7,7 @@ import { getSetting, setSetting, getAllWords, saveWordsInTx, deleteWord } from '
 import { mergeBank, validateQuestion, nextQid } from '../lib/bank.js';
 import { normPerms, AI_CATS } from '../lib/aiperms.js';
 import { runTurn } from '../lib/aiagent-core.js';
-import questionsRaw from '../assets/grammar/questions.jsonl?raw';
-import topicsRaw from '../assets/grammar/pattern_titles.json?raw';
+import { importBuiltin } from '../lib/sharepack.js';
 
 // KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
 const pageRoot = () => document.getElementById('page-tools') || document.getElementById('pageContainer');
@@ -23,8 +22,11 @@ function esc(s) {
 }
 
 // ─── 文法題庫管理（工具頁）：AI 出題／刪題 → 覆蓋層存 settings，文法頁載入時合併 ───
-const BANK_BASE = questionsRaw.trim().split('\n').map(l => JSON.parse(l));
-const BANK_TOPICS = JSON.parse(topicsRaw);
+// SHAREPACK2：核心題庫不預載——settings.grammar_bank_core；未匯入＝只出 gate 卡
+let BANK_BASE = [];
+let BANK_TOPICS = {};
+let bankCoreReady = false;
+const hydrateBankCore = (data) => { BANK_BASE = data.qs; BANK_TOPICS = data.topics || {}; bankCoreReady = true; };
 let bOv = { up: {}, rm: [] };
 let bReady = null;          // 覆蓋層載入 promise（入庫前必等，id 才不撞）
 let bPreview = [];          // LLM 出題 → 預覽 → 確認入庫
@@ -38,9 +40,20 @@ let aiPermsCur = null;      // 權限快照（UI 讀寫同一份，存 settings.
 let aiLastImage = null;     // 聊天最近附加的圖片（File，供 AI 的 ocr.last_image 工具）
 const bankAll = () => mergeBank(BANK_BASE, bOv);
 const axisOf = (pat) => BANK_BASE.find(x => x.pattern === pat)?.axis || '句型與語序';
-const bankLoad = () => (bReady = bReady || getSetting('grammar_bank_overlay').then(o => {
-  if (o && typeof o === 'object') bOv = { up: o.up || {}, rm: o.rm || [] };
-}).catch(() => {}));
+const bankLoad = () => (bReady = bReady || (async () => {
+  try {
+    const core = await getSetting('grammar_bank_core');
+    if (core && Array.isArray(core.qs) && core.qs.length) hydrateBankCore(core);
+  } catch { /* DB 未就緒 */ }
+  // gate 反轉：核心就位→題庫管理區；未匯入→gate 卡（區塊預設 hidden）
+  const gate = document.getElementById('bankGate');
+  const sec = document.getElementById('bankSection');
+  if (gate && sec) { gate.hidden = bankCoreReady; sec.hidden = !bankCoreReady; }
+  try {
+    const o = await getSetting('grammar_bank_overlay');
+    if (o && typeof o === 'object') bOv = { up: o.up || {}, rm: o.rm || [] };
+  } catch { /* DB 未就緒 */ }
+})());
 
 function bankListHtml() {
   const all = bankAll();
@@ -600,8 +613,18 @@ export function render(s) {
       </div>
     </div>
 
+    <!-- 文法題庫管理 gate：核心未匯入（預設可見；bankLoad 就位後反轉） -->
+    <div class="section" id="bankGate">
+      <div class="section-title">${icon('layers')} 文法題庫管理</div>
+      <div class="card" style="text-align:center;padding:24px">
+        <div style="font-size:15px;font-weight:600;color:var(--text-primary);margin-bottom:6px">核心題庫尚未匯入</div>
+        <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px">出題／刪題要疊在核心題庫上；匯入題包後才可用（成品與內建無差）</div>
+        <button class="btn btn-primary" id="bankGateImport">${icon('download')} 匯入核心題庫</button>
+      </div>
+    </div>
+
     <!-- 文法題庫管理：AI 出題／刪題 → settings 覆蓋層（文法頁載入合併，免重編譯） -->
-    <div class="section">
+    <div class="section" id="bankSection" hidden>
       <div class="section-title">${icon('layers')} 文法題庫管理</div>
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('wand')} AI 出題</div>
@@ -1210,9 +1233,24 @@ function _mount(s) {
     });
   }
 
-  // 文法題庫管理：覆蓋層載入 → 列表；出題/篩選/刪題接線
+  // 文法題庫管理：核心＋覆蓋層載入 → 列表；出題/篩選/刪題接線
   bankS = s;
-  bankLoad().then(bankFillList);
+  bankLoad().then(() => { if (bankCoreReady) bankFillList(); });
+  document.getElementById('bankGateImport')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      hydrateBankCore(await importBuiltin('grammar'));
+      document.getElementById('bankGate').hidden = true;
+      document.getElementById('bankSection').hidden = false;
+      await bankLoad();   // 覆蓋層若還沒讀完就一起等
+      bankFillList();
+      toast('核心題庫已匯入', 'toast-success');
+    } catch (err) {
+      toast('匯入失敗：' + (err?.message || err), 'toast-error');
+      btn.disabled = false;
+    }
+  });
   document.getElementById('bankGen')?.addEventListener('click', bankGen);
   document.getElementById('bankQ')?.addEventListener('input', e => { bF.q = e.target.value; bankFillList(); });
   document.getElementById('bankFPat')?.addEventListener('change', e => { bF.pat = e.target.value; bankFillList(); });

@@ -33,8 +33,10 @@ const LS_KEY = 'teno:gsat:progress';
 const store = { actions: { navigate() {} }, state: {} };
 
 // 題序 = gsat.js 同法重建（mc+tr 合併 → year,no → 篩 97 → no）
-const readQ = f => fs.readFileSync(path.join(ROOT, 'src/assets/gsat', f), 'utf8').trim().split('\n').map(JSON.parse);
-const qs97 = [...readQ('gsat.jsonl'), ...readQ('gsat_translate.jsonl')]
+const readQ = f => fs.readFileSync(path.join(ROOT, 'public/packs/gsat', f), 'utf8').trim().split('\n').map(JSON.parse);
+// SHAREPACK2：題庫不再模組頂層常駐 → 每個 module 實例掛載前種入（等同「已匯入」狀態）
+const BANK = { mc: readQ('gsat.jsonl'), tr: readQ('gsat_translate.jsonl') };
+const qs97 = [...BANK.mc, ...BANK.tr]
   .sort((a, b) => Number(a.year) - Number(b.year) || Number(a.no) - Number(b.no))
   .filter(q => Number(q.year) === 97)
   .sort((a, b) => Number(a.no) - Number(b.no));
@@ -45,6 +47,7 @@ const seed = () => localStorage.setItem(LS_KEY, JSON.stringify({
 }));
 
 const mount = async (mod) => {
+  mod.setGsatBank(BANK);
   const c = document.getElementById('pageContainer');
   c.innerHTML = '';
   c.innerHTML = mod.render();   // main.js 同序：render → onMount
@@ -137,7 +140,7 @@ localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: gi0,
   results: qs97.slice(0, gi0).map(q => ({ qid: q.id, ok: true, picked: 'A' })) }));
 const g6 = await import(GSAT + '?group=1');
 const c = document.getElementById('pageContainer');
-c.innerHTML = ''; c.innerHTML = g6.render(); g6.onMount(store); await sleep(300);
+c.innerHTML = ''; c.innerHTML = g6.render(); g6.setGsatBank(BANK); g6.onMount(store); await sleep(300);
 let h = c.innerHTML;
 ok(!h.includes('data-gsubmit') && h.includes('data-next') && (h.match(/data-gsel=/g) || []).length === 10, '⑥ 整卷題組：10 空一頁＋導航（無立即交卷）');
 ok(!h.includes('<select'), '⑥ 下拉＝自訂浮層（非原生 select）');
@@ -178,7 +181,7 @@ ok(qs97[idx21].passage.startsWith(qs97[idx16].passage), '⑥b 資料前提：綜
 localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: idx21,
   results: qs97.slice(0, idx21).map(q => ({ qid: q.id, ok: true, picked: 'A' })) }));
 const g6b = await import(GSAT + '?seg=1');
-c.innerHTML = ''; c.innerHTML = g6b.render(); g6b.onMount(store); await sleep(300);
+c.innerHTML = ''; c.innerHTML = g6b.render(); g6b.setGsatBank(BANK); g6b.onMount(store); await sleep(300);
 h = c.innerHTML;
 const tail21 = qs97[idx21].passage.slice(qs97[idx16].passage.length);
 ok(!h.includes(qs97[idx16].passage.slice(0, 40)), '⑥b 組2頁不含組1開頭（不黏篇）', h.slice(0, 0));
@@ -189,7 +192,7 @@ ok(h.includes('<span class="gsat-fill">21</span>'), '⑥b 綜合裸題號轉空�
 localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: gi0, g: 1, t: 123000,
   results: qs97.map((q, i) => ({ qid: q.id, ok: i !== gi0 + 1, picked: i !== gi0 + 1 ? (q.answer || 'A') : 'Z' })) }));
 const g7 = await import(GSAT + '?graded=1');
-c.innerHTML = ''; c.innerHTML = g7.render(); g7.onMount(store); await sleep(300);
+c.innerHTML = ''; c.innerHTML = g7.render(); g7.setGsatBank(BANK); g7.onMount(store); await sleep(300);
 h = c.innerHTML;
 ok(h.includes('97 年整卷錯題報告'), '⑦ 已批改存檔 → 本卷錯題報告頁');
 ok(h.includes(`${qs97.length - 1}/${qs97.length}`), `⑦ 報告：答對題數 ${qs97.length - 1}/${qs97.length}（1 題故意錯）`, h.match(/font-size:40px[^>]*>[^<]*/)?.[0]);
@@ -206,7 +209,7 @@ ok(!h3.includes('已恢復上次進度'), '④ 損檔：不誤還原', h3.slice(
 localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: IDX, results: qs97.slice(0, IDX + 1).map((q, i) => ({ qid: q.id, ok: i % 2 === 0, picked: 'A' })) }));
 const g8 = await import(GSAT + '?pol=1');
 const c8 = document.getElementById('pageContainer');
-c8.innerHTML = ''; c8.innerHTML = g8.render(); g8.onMount(store); await sleep(300);
+c8.innerHTML = ''; c8.innerHTML = g8.render(); g8.setGsatBank(BANK); g8.onMount(store); await sleep(300);
 ok(c8.innerHTML.includes(`第 ${IDX + 1}/${qs97.length} 題`), '⑧ 掛載即還原存檔');
 c8.querySelector('[data-home]')?.click(); await sleep(30);
 ok(!c8.querySelector('[data-resume]') && !c8.innerHTML.includes('繼續上次'), '⑧ 首頁無「繼續上次」按鈕（續作改走整卷入口）');
@@ -247,7 +250,7 @@ let ask9 = false;
 globalThis.confirm = () => { ask9 = true; return false; };
 const g9 = await import(GSAT + '?e2e=1');
 const c9 = document.getElementById('pageContainer');
-c9.innerHTML = ''; c9.innerHTML = g9.render(); g9.onMount(store); await sleep(300);
+c9.innerHTML = ''; c9.innerHTML = g9.render(); g9.setGsatBank(BANK); g9.onMount(store); await sleep(300);
 c9.querySelector('[data-full]')?.click(); await sleep(30);
 c9.querySelector('[data-year="97"]')?.click(); await sleep(150);
 let h9 = c9.innerHTML;
@@ -320,7 +323,7 @@ const trIdx10 = qs97.findIndex(q => q.type === 'translate');   // 97：56/57 兩
 localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: trIdx10,
   results: qs97.slice(0, trIdx10).map(q => ({ qid: q.id, ok: true, picked: 'A' })) }));
 const g10 = await import(GSAT + '?seg=10');
-c10.innerHTML = ''; c10.innerHTML = g10.render(); g10.onMount(store); await sleep(300);
+c10.innerHTML = ''; c10.innerHTML = g10.render(); g10.setGsatBank(BANK); g10.onMount(store); await sleep(300);
 ok(c10.querySelector('#gsatTrInput')?.dataset.qid === qs97[trIdx10].id, '⑩ 還原進度落到中譯英第 1 題');
 const tiA = c10.querySelector('#gsatTrInput');
 tiA.value = 'my draft translation';
@@ -347,10 +350,22 @@ localStorage.setItem(LS_KEY, JSON.stringify({ v: 1, year: 97, idx: qs97.length -
   results: qs97.map((q, i) => ({ qid: q.id, ok: i % 2 === 0, picked: 'A', ...(q.type === 'translate' ? { tr: true } : {}) })) }));
 const g11 = await import(GSAT + '?seg=11');
 const c11 = document.getElementById('pageContainer');
-c11.innerHTML = ''; c11.innerHTML = g11.render(); g11.onMount(store); await sleep(300);
+c11.innerHTML = ''; c11.innerHTML = g11.render(); g11.setGsatBank(BANK); g11.onMount(store); await sleep(300);
 const h11 = c11.innerHTML;
 ok(h11.includes('你的答案：graded sentence.'), '⑪ 批改史跨 module 還原（done → 報告批改卡）', h11.includes('錯題報告') ? '' : '未進報告頁');
 ok(h11.includes('批改失敗：批改中斷（App 關閉）'), '⑪ pending 批改 → 轉 error 不留轉圈');
+
+// ⑫ SHAREPACK2 題庫 gate：未匯入 → gate 卡（零題庫 UI）；種入 → 與內建看不出差別
+localStorage.removeItem(LS_KEY);
+const gG = await import(GSAT + '?gate=1');
+const cG = document.getElementById('pageContainer');
+cG.innerHTML = ''; cG.innerHTML = gG.render(); gG.onMount(store); await sleep(300);
+const hG = cG.innerHTML;
+ok(hG.includes('題庫尚未匯入') && hG.includes('data-gate-import') && !hG.includes('data-full'), '⑫ 未匯入：gate 卡（無任何題庫入口）', hG.slice(0, 120));
+gG.setGsatBank(BANK);
+cG.innerHTML = ''; cG.innerHTML = gG.render(); gG.onMount(store); await sleep(300);
+const hG2 = cG.innerHTML;
+ok(hG2.includes('data-full') && !hG2.includes('data-gate-import') && !hG2.includes('題庫尚未匯入'), '⑫ 匯入後：正常首頁、無 gate 殘留（看不出已匯入）');
 
 console.log(`\n${pass}/${pass + fail} PASS`);
 process.exit(fail ? 1 : 0);

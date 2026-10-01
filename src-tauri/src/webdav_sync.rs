@@ -1606,6 +1606,34 @@ pub async fn webdav_cloud_delete(
     Ok(format!("已刪除雲端「{sub}」"))
 }
 
+/// LIBRARY1：公開圖書館單檔下載（GET 字串，題包級大小；上限 32MB）
+#[tauri::command]
+pub async fn webdav_cloud_get(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
+    let sub = path.trim().trim_start_matches('/').to_string();
+    if sub.is_empty() || sub.contains("..") || sub.starts_with('.') {
+        return Err("不合法的路徑".into());
+    }
+    let cfg = require_config(&app_handle)?;
+    let base = normalize_base(&cfg.url)?;
+    let auth = format!("Basic {}", auth_header(&cfg));
+    let url = cloud_join(&base, &sub)?;
+    let mut resp = ureq::get(&url)
+        .set("Authorization", &auth)
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(401, _) => "帳號或密碼錯誤（401）".to_string(),
+            ureq::Error::Status(404, _) => "雲端無此檔（404）".to_string(),
+            ureq::Error::Status(code, _) => format!("下載失敗（HTTP {code}）"),
+            _ => format!("下載失敗：{e}"),
+        })?;
+    let mut body = String::new();
+    resp.into_reader()
+        .take(32 * 1024 * 1024)
+        .read_to_string(&mut body)
+        .map_err(|e| format!("讀檔失敗：{e}"))?;
+    Ok(body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
