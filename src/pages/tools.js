@@ -838,7 +838,7 @@ function _mount(s) {
       model = list[0];
       return { baseUrl, model };
     } catch (e) {
-      el.innerHTML = `<div style="color:var(--orange)">${icon('info')} 無法連線 AI API（${baseUrl}）——請到「設定 → 韋氏字典 → API」確認位址</div>`;
+      el.innerHTML = `<div style="color:var(--orange)">${icon('info')} 無法連線 AI API（${baseUrl}）：${String(e?.message || e)}——請到「設定 → 韋氏字典 → API」確認位址</div>`;
       return null;
     }
   }

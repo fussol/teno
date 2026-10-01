@@ -402,8 +402,11 @@ mod llm_tests {
     }
 }
 
-/// fetch_get URL 白名單：http 僅允許本機 host（localhost/127.0.0.1/[::1]），其餘一律 https-only。
-/// （v3 定案：hostname 白名單取代 https:// 前置字串檢查；url crate 已在 Cargo.lock 為傳遞依賴）
+/// fetch_get URL 白名單：https 一律放行；http 僅限 localhost 與**私有網段 IP 字面值**
+/// （loopback／10.0.0.0/8／172.16.0.0/12／192.168.0.0/16／100.64.0.0/10＝Tailscale tailnet／IPv6 ULA）。
+/// 背景（W3 修，2026-10-01）：設定頁/store 明示手機填 PC tailnet `http://100.x.y.z:11434`，
+/// 舊白名單只放 localhost → 偵測模型 fetch_get 必拒（「無法連線 AI API」），自打臉。
+/// 公開網域／公開 IP 維持 https-only（明文可被路徑上竊聽）；私網內 IP 字面值＝自架服務既有信任域。
 /// 型別化比對（第 1 輪審查 #1 採納）：不用 host_str() 字串比對 — url 2.5.8 源碼實錘
 /// host_str() 切片的是 parse 正規化重寫後的內部字串，IPv6 含方括號（"[::1]"）；
 /// Host 列舉才是正規化型別（Domain/Ipv4/Ipv6；Ipv6Addr::LOCALHOST == ::1，
@@ -414,12 +417,27 @@ fn check_fetch_get_url(url: &str) -> Result<(), String> {
         "https" => Ok(()),
         "http" => match parsed.host() {
             Some(url::Host::Domain(d)) if d.eq_ignore_ascii_case("localhost") => Ok(()),
-            Some(url::Host::Ipv4(ip)) if ip == std::net::Ipv4Addr::LOCALHOST => Ok(()),
-            Some(url::Host::Ipv6(ip)) if ip == std::net::Ipv6Addr::LOCALHOST => Ok(()),
-            _ => Err("僅允許 HTTPS 連線（http 僅限 localhost）".to_string()),
+            Some(url::Host::Ipv4(ip)) if is_http_ok_ipv4(ip) => Ok(()),
+            Some(url::Host::Ipv6(ip)) if is_http_ok_ipv6(ip) => Ok(()),
+            _ => Err("僅允許 HTTPS 連線（http 僅限 localhost／私有網段 IP）".to_string()),
         },
         _ => Err("僅允許 HTTPS 連線".to_string()),
     }
+}
+
+/// http 可用的 IPv4：loopback(127/8)＋RFC1918＋CGNAT 100.64/10（Tailscale tailnet 100.x）。
+fn is_http_ok_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    let o = ip.octets();
+    ip.is_loopback()
+        || o[0] == 10
+        || (o[0] == 172 && (o[1] & 0xF0) == 16)
+        || (o[0] == 192 && o[1] == 168)
+        || (o[0] == 100 && (o[1] & 0xC0) == 64)   // 100.64.0.0/10
+}
+
+/// http 可用的 IPv6：loopback＋ULA（fc00::/7）。
+fn is_http_ok_ipv6(ip: std::net::Ipv6Addr) -> bool {
+    ip.is_loopback() || (ip.segments()[0] & 0xFE00) == 0xFC00
 }
 
 #[tauri::command]
@@ -4365,9 +4383,18 @@ mod fetch_tests {
         assert!(check_fetch_get_url("http://[0:0:0:0:0:0:0:1]:11434/api/tags").is_ok()); // ::1 長寫法亦歸一
         // 大小寫不敏感（url crate 正規化 scheme/host）
         assert!(check_fetch_get_url("HTTP://LOCALHOST:11434/api/tags").is_ok());
+        // 私有網段／tailnet IP 字面值允許（W3：設定頁明示 http://100.x.y.z:11434）
+        assert!(check_fetch_get_url("http://100.105.166.123:11434/api/tags").is_ok());   // tailscale 100.64/10
+        assert!(check_fetch_get_url("http://192.168.1.5:11434/api/tags").is_ok());        // LAN
+        assert!(check_fetch_get_url("http://10.1.2.3:11434/api/tags").is_ok());
+        assert!(check_fetch_get_url("http://172.16.0.9:11434/api/tags").is_ok());
+        assert!(check_fetch_get_url("http://[fd00::1]:11434/api/tags").is_ok());          // IPv6 ULA
+        // 網段邊界外（公開 IP／非私網）→ 拒
+        assert!(check_fetch_get_url("http://100.128.0.1:11434/api/tags").is_err());       // 100.128 不在 100.64/10
+        assert!(check_fetch_get_url("http://172.32.0.1:11434/api/tags").is_err());        // 172.32 超出 /12
+        assert!(check_fetch_get_url("http://203.0.113.1:11434/api/tags").is_err());       // 公開 IP
         // 其餘 http 拒絕
         assert!(check_fetch_get_url("http://example.com/api/tags").is_err());
-        assert!(check_fetch_get_url("http://192.168.1.5:11434/api/tags").is_err());
         // 非 http/https scheme 拒絕
         assert!(check_fetch_get_url("ftp://example.com/file").is_err());
         // 偽 scheme（"localhost" 為合法 RFC 3986 scheme）→ 落 _ 分支拒絕
