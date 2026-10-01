@@ -49,10 +49,26 @@ chk('筆記本 textarea＋分析鈕', /id="deckBatchInput"/.test(dk) && /id="dec
 chk('目標字本預設現在字本', /id="deckBatchDeck"/.test(dk) && /const curDeck = \(_deckName/.test(dk));
 chk('已存在整批搬（editWord deck）', /deckBatchMoveAll[\s\S]{0,400}editWord\(w\.id, \{ deck: pending\.targetDeck \}\)/.test(dk));
 chk('背景任務三件套', /startBackgroundTask\(taskId, `批量新增/.test(dk) && /updateBackgroundTask\(taskId/.test(dk) && /completeBackgroundTask\(taskId/.test(dk));
-chk('填字來源＝組合包預設（cambridge/merriam/dict-api/llm）', /lookupCambridge\(word\)/.test(dk) && /lookupMerriam\(word, s\.state\.mwDictKey/.test(dk) && /dictionaryapi\.dev/.test(dk));
+ chk('填字來源＝組合包預設（cambridge/merriam/dict-api/llm）', /lookupCambridge\(word\)/.test(dk) && /lookupMerriam\(word, s\.state\.mwDictKey/.test(dk) && /dictionaryapi\.dev/.test(readFileSync('src/lib/autofill-engine.js', 'utf8')));
 chk('韋氏 429 中止整批', /quotaHit\(e\)/.test(dk) && /超過韋氏每日免費額度/.test(dk));
 chk('browser.js 無批量（字本瀏覽器專屬）', !/openBatchModal|deckBatchModal|BATCHADD1/.test(readFileSync('src/pages/browser.js', 'utf8')));
 chk('batch-add.js 純函式無 DOM', !/document|window/.test(readFileSync('src/lib/batch-add.js', 'utf8')));
+
+console.log('[B5] UX3 根因修＋A–G（靜態）');
+const st = readFileSync('src/lib/store.js', 'utf8');
+chk('根因: addWord 同步防重（dup 回傳既有不落庫）', /async addWord\(wordData, opts = \{\}\)/.test(st) && /dup skipped/.test(st));
+chk('根因: addWord defer 跳過每字衍生重算', /if \(opts\.defer\) return word;/.test(st));
+chk('syncDerived 批量收尾補算', /async syncDerived\(\)[\s\S]{0,80}refreshDerived\(\)[\s\S]{0,60}notify\(\)/.test(st));
+chk('G: 殼字先落庫（批量 addWord defer:true）', /addWord\(\{ word: t, deck: targetDeck \}, \{ defer: true \}\)/.test(dk));
+chk('G: 欄位用 editWord 補上', /editWord\(id, data\)/.test(dk));
+chk('A: 逐字進度（data-bkt＋填寫中）', /data-bkt/.test(dk) && /…填寫中/.test(dk));
+chk('B: _batchRunning 全鎖（modal/分析/開始）', (dk.match(/_batchRunning/g) || []).length >= 4 && /if \(_batchRunning\) \{ return; \}|if \(_batchRunning\) return;/.test(dk));
+chk('C: 重試未完成鈕（retry:true）', /deckBatchRetry/.test(dk) && /retry: true/.test(dk));
+chk('D: 中止鈕＋旗標', /deckBatchAbort/.test(dk) && /_batchAbort = true/.test(dk));
+chk('E: 自動分析 debounce 1200', /setTimeout\(doParse, 1200\)/.test(dk));
+chk('F: 勾選搬移（deckBatchExistCb）', /deckBatchExistCb/.test(dk));
+chk('hoist: readComboConfig 只讀一次（fillOne 外）', (dk.match(/readComboConfig\(\)/g) || []).length === 1);
+chk('LLM 位址吃 llmApiUrl（不再寫死）', /llmBase/.test(dk) && !/fetchGet\('http:\/\/localhost:11434/.test(dk));
 
 console.log('[NEG] 反向驗證');
 let headHas;

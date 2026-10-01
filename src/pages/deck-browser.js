@@ -1961,8 +1961,13 @@ function showDeckMoveModal(s, existing, targetDeck) {
 // BATCHADD1（2026-09-11 使用者裁示）：字本瀏覽器專屬批量新增。
 // 筆記本式大輸入框（全螢幕級）一次多字 → 分出已存在／未存入 →
 // 已存在整批問搬移；未存入走背景任務逐字全欄位填（組合包同來源）再進現在字本。
+// UX3（2026-10-02）：A 逐字進度、B 開始即鎖定、C 重試未完成、D 中止、E 免按鈕自動分析、
+// F 勾選搬移、G 殼字先落庫後補欄；根因修＝addWord 同步防重＋批量 defer 衍生。
 // 只有 deck-browser 有；組合大瀏覽器（browser.js）不加。
+let _batchRunning = false;   // B：單一背景批量（重開 modal／再分析／再開始全擋）
+let _batchAbort = false;     // D：中止旗標
 async function openBatchModal(s) {
+  if (_batchRunning) { toast('批量新增執行中，進度看背景任務', ''); return; }
   const { parseBatchInput, partitionBatch } = await import('../lib/batch-add.js');
   const { normalizePos } = await import('../core/import.js');
   const container = document.getElementById('pageContainer');
@@ -2008,7 +2013,8 @@ async function openBatchModal(s) {
   let pending = null; // { existing:[], fresh:[], targetDeck }
   const chip = (t, deck) => `<span style="display:inline-block;font-size:12px;background:var(--bg-base);border:1px solid var(--border);border-radius:100px;padding:2px 10px;margin:1px 3px;font-family:var(--mono)">${escapeHtml(t)}${deck ? `<span style="color:var(--text-tertiary)"> · ${escapeHtml(deck)}</span>` : ''}</span>`;
 
-  document.getElementById('deckBatchParse')?.addEventListener('click', () => {
+  const doParse = () => {
+    if (_batchRunning) return;   // B：執行中不重算快照（免與背景任務打架）
     const raw = document.getElementById('deckBatchInput')?.value || '';
     const targetDeck = document.getElementById('deckBatchDeck')?.value || curDeck;
     const { tokens, invalid } = parseBatchInput(raw);
@@ -2022,8 +2028,8 @@ async function openBatchModal(s) {
     res.innerHTML = `
       ${existing.length ? `<div style="margin-bottom:var(--s2)">
         <div style="font-size:13px;font-weight:600;margin-bottom:6px">已存在（${existing.length}）</div>
-        <div style="margin-bottom:8px">${existing.map(w => chip(w.word, w.deck)).join('')}</div>
-        <button class="btn btn-sm" id="deckBatchMoveAll">全部移到「${escapeHtml(targetDeck)}」</button>
+        <div style="margin-bottom:8px">${existing.map(w => `<label style="cursor:pointer;display:inline-block"><input type="checkbox" class="deckBatchExistCb" data-id="${escapeAttr(w.id)}" ${(w.deck || 'Default') !== targetDeck ? 'checked' : ''}>${chip(w.word, w.deck)}</label>`).join('')}</div>
+        <button class="btn btn-sm" id="deckBatchMoveAll">搬移勾選的字到「${escapeHtml(targetDeck)}」</button>
       </div>` : ''}
       ${fresh.length ? `<div>
         <div style="font-size:13px;font-weight:600;margin-bottom:6px">未存入（${fresh.length}）</div>
@@ -2032,9 +2038,10 @@ async function openBatchModal(s) {
       </div>` : ''}
       ${!existing.length && !fresh.length ? `<div style="font-size:13px;color:var(--text-tertiary)">沒有可處理的字。</div>` : ''}`;
     document.getElementById('deckBatchMoveAll')?.addEventListener('click', async () => {
-      const toMove = (pending?.existing || []).filter(w => (w.deck || 'Default') !== pending.targetDeck);
+      const cbs = new Set([...document.querySelectorAll('.deckBatchExistCb:checked')].map(x => x.dataset.id));
+      const toMove = (pending?.existing || []).filter(w => cbs.has(w.id) && (w.deck || 'Default') !== pending.targetDeck);
       for (const w of toMove) { try { await s.actions.editWord(w.id, { deck: pending.targetDeck }); } catch (_) {} }
-      toast(toMove.length ? `已把 ${toMove.length} 字搬到「${pending.targetDeck}」` : `已存在的字都在「${pending.targetDeck}」了`, 'toast-success');
+      toast(toMove.length ? `已把 ${toMove.length} 字搬到「${pending.targetDeck}」` : `勾選的字都在「${pending.targetDeck}」了`, 'toast-success');
       // BATCHADD2: modal 不關（關閉僅限叉叉/取消/點背景）；搬完原地刷新已存在區的 deck 顯示
       const hint = document.getElementById('deckBatchHint');
       if (hint) hint.textContent = `已存在 ${toMove.length} 字搬到「${pending.targetDeck}」。`;
@@ -2042,84 +2049,178 @@ async function openBatchModal(s) {
     document.getElementById('deckBatchStart')?.addEventListener('click', async () => {
       const list = [...(pending?.fresh || [])];
       const target = pending?.targetDeck || curDeck;
-      if (!list.length) return;
+      if (!list.length || _batchRunning) return;
       // BATCHADD2: 開始批量也不關 modal — 背景執行本來就跟 modal 無關，
       // 關掉等於強迫使用者離開分析結果（關閉僅限叉叉/取消/點背景）。
       await runBatchAdd(s, list, target, normalizePos);
     });
+  };
+
+  document.getElementById('deckBatchParse')?.addEventListener('click', doParse);
+  // E：貼上後免按鈕——靜默 1.2s 自動分析（執行中不重算）
+  let _autoT = null;
+  document.getElementById('deckBatchInput')?.addEventListener('input', () => {
+    clearTimeout(_autoT);
+    if (_batchRunning) return;
+    _autoT = setTimeout(doParse, 1200);
+  });
+  // F：勾選變動即時更新搬移鈕（容器常駐，innerHTML 換頁不掉）
+  document.getElementById('deckBatchResult')?.addEventListener('change', () => {
+    const n = document.querySelectorAll('#deckBatchResult .deckBatchExistCb:checked').length;
+    const b = document.getElementById('deckBatchMoveAll');
+    if (b && pending) b.textContent = `搬移勾選的 ${n} 字到「${pending.targetDeck}」`;
   });
 }
 
 // BATCHADD1 背景填字引擎：來源同 tools.js 組合包預設
 // （pos cambridge／example dict-api／pron cambridge／related llm／
 // forms-syn-ant-phrase merriam／trans cambridge／derivative-syllables-etymology merriam）。
-async function runBatchAdd(s, list, targetDeck, normalizePos) {
+// UX3/G：先落殼字（word+deck 即刻入庫，addWord 同步防重當場擋重複）→ 逐字 fillOne 後 editWord 補欄；
+//        A modal 內逐字進度、C 重試未完成、D 中止；補齊設定 hoist 讀一次；LLM 位址吃 llmApiUrl。
+async function runBatchAdd(s, list, targetDeck, normalizePos, opts = {}) {
+  const retry = !!opts.retry;
+  _batchRunning = true;
+  _batchAbort = false;
   const taskId = 'batch-add-' + Date.now();
   s.actions.startBackgroundTask(taskId, `批量新增→${targetDeck}`, list.length);
-  let done = 0, failed = 0, aborted = false;
-  // LLM 偵測（related 預設走 LLM；連不上就跳過該欄，其餘照做）
-  let llm = null, llmOk = false;
+  let done = 0, failed = 0, skipped = 0, aborted = false;
+  const stat = new Map();   // token → 狀態字（A）
+  const paint = (t, txt, color) => {
+    stat.set(t, txt);
+    const el = document.querySelector(`[data-bkt="${t}"]`);
+    if (el) { el.textContent = txt; el.style.color = color || ''; }
+  };
+  // A：進度列表＝B 的鎖定畫面（結果區原地換成逐字狀態；modal 已關則 null guard，背景照跑）
+  const renderRows = (tokens) => {
+    const res = document.getElementById('deckBatchResult');
+    if (!res) return;
+    tokens.forEach(t => stat.set(t, '◦'));
+    res.innerHTML = `
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">批量新增進度（${tokens.length} 字）</div>
+      <div>${tokens.map(t => `<div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;padding:1px 0"><span>${escapeHtml(t)}</span><span data-bkt="${escapeAttr(t)}" style="color:var(--text-tertiary)">◦</span></div>`).join('')}</div>
+      <div style="display:flex;gap:var(--s2);align-items:center;margin-top:var(--s2)">
+        <button class="btn btn-sm" id="deckBatchAbort">中止</button>
+        <button class="btn btn-sm" id="deckBatchRetry" style="display:none">重試</button>
+        <span id="deckBatchSummary" style="font-size:12px;color:var(--text-tertiary)"></span>
+      </div>`;
+    document.getElementById('deckBatchAbort')?.addEventListener('click', () => {
+      _batchAbort = true;
+      const b = document.getElementById('deckBatchAbort');
+      if (b) { b.disabled = true; b.textContent = '中止中…'; }
+    });
+  };
   try {
-    const resp = await fetchGet('http://localhost:11434/api/tags');
-    const models = (JSON.parse(resp).models || []).map(m => m.name);
-    if (models.length) { llm = { baseUrl: 'http://localhost:11434', model: models[0] }; llmOk = true; }
-  } catch (_) { /* 無 LLM 照做 */ }
-  const quotaHit = (e) => /401|429/.test(String(e?.message || e));
-  const mwLookup = async (word) => {
-    const raw = await lookupMerriam(word, s.state.mwDictKey || '', s.state.mwThesKey || '');
-    return merriamToFields(JSON.parse(raw), word);
-  };
-  const llmJson = async (prompt) => {
-    const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
-    const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-    const arr = JSON.parse(cleaned);
-    return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
-  };
-  async function fillOne(word) {
-    // AUTOFILL4: 批量新增亦吃「設定 → 自動補齊」逐欄來源（取代固定 BATCH_METHODS；
-    // 新增字 existing 為空 → overwrite 不影響結果，但逐欄覆寫仍照使用者設定傳）。
-    // exampleMax 3 沿用批次舊 cap。
+    renderRows(list);
+    const pLock = document.getElementById('deckBatchParse');
+    if (pLock) pLock.disabled = true;   // B：執行中鎖分析
+    // ── 補齊設定 hoist（原每字 readComboConfig 重讀兩次 settings）──
     const { fillWordFields, readComboConfig } = await import('../lib/autofill-engine.js');
     const { methods: comboMethods, overwrite: comboOw } = await readComboConfig();
-    let mwF = null, camEn = null, camZh = null;
-    const getMw = async () => { if (!mwF) mwF = await mwLookup(word); return mwF; };
-    const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
-    const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
-    const llmJson = async (prompt) => {
-      const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
-      const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
-      const arr = JSON.parse(cleaned);
-      return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+    // LLM 偵測：位址吃設定 llmApiUrl（原寫死 localhost:11434，手機／改過位址必失敗）
+    let llm = null, llmOk = false;
+    const llmBase = ((s.state.llmApiUrl || '').trim() || 'http://localhost:11434').replace(/\/api\/generate$/, '').replace(/\/chat\/completions$/, '');
+    try {
+      const resp = await fetchGet(`${llmBase}/api/tags`);
+      const models = (JSON.parse(resp).models || []).map(m => m.name);
+      if (models.length) { llm = { baseUrl: llmBase, model: models[0] }; llmOk = true; }
+    } catch (_) { /* 無 LLM 照做 */ }
+    const quotaHit = (e) => /401|429/.test(String(e?.message || e));
+    const mwLookup = async (word) => {
+      const raw = await lookupMerriam(word, s.state.mwDictKey || '', s.state.mwThesKey || '');
+      return merriamToFields(JSON.parse(raw), word);
     };
-    const llmText = async (prompt) => fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
-    const r = await fillWordFields({
-      wordText: word, existing: {}, methods: comboMethods, overwrite: comboOw,
-      threshold: 1, count: 3, exampleMax: 3,
-      fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk },
-      onStat: () => {},
-    });
-    if (r.aborted) throw r.abortError ?? new Error('429');
-    return { word, deck: targetDeck, tags: [], related: [], forms: [], ...r.patch };
-  }
-  const queue = [...list];
-  const CON = 3;
-  await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
-    while (queue.length && !aborted) {
-      const w = queue.shift();
-      try {
-        const data = await fillOne(w);
-        await s.actions.addWord(data);
-        done++;
-      } catch (e) {
-        if (quotaHit(e)) { aborted = true; queue.length = 0; toast('超過韋氏每日免費額度（429），剩下的明天再試', 'toast-error'); break; }
-        failed++;
+    // ── 殼字階段（G）：字先入庫、欄位後補；重複在 addWord 同步防重當場擋下 ──
+    const k = (x) => String(x || '').toLowerCase().trim();
+    const targets = [];   // [{ token, id }]
+    for (const t of list) {
+      const ex = (s.state.words || []).find(w => k(w.word) === k(t));
+      if (ex) {
+        if (retry) targets.push({ token: t, id: ex.id });
+        else { skipped++; paint(t, '⤼ 已存在', 'var(--text-tertiary)'); }
+        continue;
       }
-      s.actions.updateBackgroundTask(taskId, done + failed, list.length);
+      try {
+        const shell = await s.actions.addWord({ word: t, deck: targetDeck }, { defer: true });
+        targets.push({ token: t, id: shell.id });
+      } catch (_) {
+        failed++; paint(t, '⤼ 落庫失敗', 'var(--danger, #e03131)');
+      }
     }
-  }));
-  s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `批量新增完成：${done} 成功${failed ? `，${failed} 失敗` : ''}${aborted ? '（額度中止）' : ''}` });
-  toast(`批量新增完成：${done} 成功${failed ? `，${failed} 失敗` : ''}`, failed ? '' : 'toast-success');
-  renderInPlace(s);
+    await s.actions.syncDerived();   // G 承諾：殼字立刻出現在字本
+    renderInPlace(s);
+    // ── 填欄：3 併發逐字（A 進度；D 檢查中止旗標）──
+    async function fillOne(word) {
+      // AUTOFILL4: 批量新增亦吃「設定 → 自動補齊」逐欄來源（取代固定 BATCH_METHODS；
+      // 新增字 existing 為空 → overwrite 不影響結果，但逐欄覆寫仍照使用者設定傳）。
+      // exampleMax 3 沿用批次舊 cap。
+      let mwF = null, camEn = null, camZh = null;
+      const getMw = async () => { if (!mwF) mwF = await mwLookup(word); return mwF; };
+      const getCamEn = async () => { if (!camEn) camEn = JSON.parse(await lookupCambridge(word)); return camEn; };
+      const getCamZh = async () => { if (!camZh) camZh = JSON.parse(await lookupCambridge(word, 'zh')); return camZh; };
+      const llmJson = async (prompt) => {
+        const text = await fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+        const cleaned = text.trim().replace(/```(?:json)?\s*/gi, '').replace(/\s*```/g, '').trim();
+        const arr = JSON.parse(cleaned);
+        return Array.isArray(arr) ? [...new Set(arr.map(x => String(x).trim()).filter(Boolean))] : null;
+      };
+      const llmText = async (prompt) => fetchLLM(`${llm.baseUrl}/api/generate`, llm.model, prompt);
+      const r = await fillWordFields({
+        wordText: word, existing: {}, methods: comboMethods, overwrite: comboOw,
+        threshold: 1, count: 3, exampleMax: 3,
+        fetchers: { getCamEn, getCamZh, getMw, llmJson, llmText, llmOk },
+        onStat: () => {},
+      });
+      if (r.aborted) throw r.abortError ?? new Error('429');
+      return { word, deck: targetDeck, tags: [], related: [], forms: [], ...r.patch };
+    }
+    const queue = [...targets];
+    const CON = 3;
+    await Promise.all(Array.from({ length: Math.min(CON, queue.length) }, async () => {
+      while (queue.length && !aborted && !_batchAbort) {
+        const { token, id } = queue.shift();
+        paint(token, '…填寫中', 'var(--accent)');
+        try {
+          const data = await fillOne(token);
+          await s.actions.editWord(id, data);
+          done++;
+          paint(token, '✓', 'var(--success, #2f9e44)');
+        } catch (e) {
+          if (quotaHit(e)) {
+            aborted = true;
+            toast('超過韋氏每日免費額度（429），剩下的明天再試', 'toast-error');
+            paint(token, '✗ 額度中止', 'var(--danger, #e03131)');
+            break;
+          }
+          failed++;
+          paint(token, `✗ ${String(e?.message || e).slice(0, 40)}`, 'var(--danger, #e03131)');
+        }
+        s.actions.updateBackgroundTask(taskId, done + failed + skipped, list.length);
+      }
+    }));
+    // D：剩餘未跑的標記中止（手動中止／額度）
+    for (const { token } of queue) paint(token, '⏹ 已中止', 'var(--text-tertiary)');
+    // C：未完成的字留重試鈕（殼字還在，重試＝只補欄位）
+    const undone = targets.filter(t => !String(stat.get(t.token) || '').startsWith('✓')).map(t => t.token);
+    const sumEl = document.getElementById('deckBatchSummary');
+    if (sumEl) sumEl.textContent = `${aborted || _batchAbort ? '已中止 · ' : ''}成功 ${done} · 失敗 ${failed} · 跳過 ${skipped}`;
+    if (undone.length) {
+      const rb = document.getElementById('deckBatchRetry');
+      if (rb) {
+        rb.style.display = '';
+        rb.textContent = `重試未完成的 ${undone.length} 字`;
+        rb.addEventListener('click', async () => { rb.disabled = true; await runBatchAdd(s, undone, targetDeck, normalizePos, { retry: true }); }, { once: true });
+      }
+    }
+    s.actions.completeBackgroundTask(taskId, { type: 'summary', message: `批量新增完成：${done} 成功${failed ? `，${failed} 失敗` : ''}${skipped ? `，${skipped} 跳過` : ''}${aborted || _batchAbort ? '（已中止）' : ''}` });
+    toast(`批量新增完成：成功 ${done}${failed ? `，失敗 ${failed}` : ''}${skipped ? `，跳過 ${skipped}` : ''}`, failed ? '' : 'toast-success');
+    await s.actions.syncDerived();   // BULK1：殼字／補欄累積的衍生在此一次補算
+    renderInPlace(s);
+  } finally {
+    _batchRunning = false;
+    _batchAbort = false;
+    const p = document.getElementById('deckBatchParse');
+    if (p) p.disabled = false;   // B：解鎖分析（重新分析＝重新解鎖開始鈕）
+  }
 }
 
 function escapeHtml(str) {

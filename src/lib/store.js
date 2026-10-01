@@ -1321,8 +1321,13 @@ export function createStore() {
       notify();
     },
 
-    /** Add a new word */
-    async addWord(wordData) {
+    /** Add a new word。opts.defer＝批量寫入跳過衍生＋通知（批量結束呼叫 syncDerived 一次補）。
+     *  UX3 根因修：同步防重——check→push 同一 task 內無 await，併發批量也擋得住；
+     *  重複（大小寫/首尾空白歸一比對）回傳既有字、不落庫。 */
+    async addWord(wordData, opts = {}) {
+      const dkey = String(wordData.word || '').toLowerCase().trim();
+      const dup = dkey ? state.words.find(w => String(w.word || '').toLowerCase().trim() === dkey) : null;
+      if (dup) { console.warn('[store] addWord dup skipped:', dkey); return dup; }
       const word = {
         id: nextWordId(),
         // H-CASE1: 存檔保大小寫（僅 trim；搜尋／去重本已兩端 lower，無需存檔端正規化；
@@ -1351,9 +1356,16 @@ export function createStore() {
       // push 不換 reference 會讓剛加的字搜不到，改 immutable append。
       state.words = [...state.words, word];
       try { await db.saveWord(word); } catch (e) { console.warn('[store] addWord saveWord error:', e); }
+      if (opts.defer) return word;
       await refreshDerived();
       notify();
       return word;
+    },
+
+    /** BULK1：批量 defer 寫入後補一次衍生計算＋通知（免每字全庫重算 stats/due/retention） */
+    async syncDerived() {
+      await refreshDerived();
+      notify();
     },
 
     /** word 是否在黑名單？ */
