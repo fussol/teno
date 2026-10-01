@@ -4,4 +4,8 @@
     <string name="widget_desc">"今日到期狀態／抽字"</string>
     <string name="widget_label_status">"Teno 狀態"</string>
     <string name="widget_label_word">"Teno 抽字"</string>
+    <string name="widget_label_weekly">"Teno 本週複習"</string>
+    <string name="widget_label_capture">"Teno 快速收詞"</string>
+    <string name="widget_desc_weekly">"本週每日複習量柱狀圖"</string>
+    <string name="widget_desc_capture">"桌面一鍵快速收詞"</string>
 </resources>

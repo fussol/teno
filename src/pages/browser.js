@@ -914,6 +914,15 @@ function _mount(s) {
 
   bindWordEvents(s);
   armChunking();   // WINDOW1：分段補渲染（renderInPlace/applySub/髒重繪的 onMount 都會走到）
+
+  // WIDGETROUTE：桌面 widget 收詞／看字 pending（_pendingDeckModal 同型；main.js __widgetRoute 設定）。
+  // prerender/boot 時 pending 為 null；只有 widget 點擊會帶值進來（word 找不到 = 資料未載入，放棄不卡）。
+  const wAct = s.state._pendingWidget;
+  if (wAct) {
+    s.state._pendingWidget = null;
+    if (wAct.type === 'add') openAddModal(s);
+    else if (wAct.type === 'word' && s.state.words.some(x => x.id === wAct.id)) openCardPreview(s, wAct.id);
+  }
 }
 
 async function inlineEditTags(s, id) {

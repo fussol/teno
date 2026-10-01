@@ -9,7 +9,12 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
@@ -19,6 +24,7 @@ import java.io.File
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -82,7 +88,7 @@ object TenoWidget {
             }
     }
 
-    data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String) {
+    data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String, val id: String = "") {
         /** 通知組字用（已含 /…/ 的音標＋詞性）。 */
         val meta: String get() = listOf(pron, pos).filter { it.isNotEmpty() }.joinToString("   ")
     }
@@ -270,9 +276,10 @@ object TenoWidget {
                         val pos = if (c.isNull(3)) "" else c.getString(3)
                         val ex = if (c.isNull(4)) "" else c.getString(4)
                         prefs(ctx).edit().putLong("lastWordId", c.getLong(5)).apply()
-                        PickedWord(w, d, pron, pos, ex)
+                        val wid = if (c.isNull(6)) "" else c.getString(6)
+                        PickedWord(w, d, pron, pos, ex, wid)
                     }
-                val cols = "word, definition, pronunciation, part_of_speech, example, rowid"
+                val cols = "word, definition, pronunciation, part_of_speech, example, rowid, id"
                 q("SELECT $cols FROM words WHERE word != '' AND rowid != ? ORDER BY RANDOM() LIMIT 1",
                     arrayOf(last.toString()))
                     ?: q("SELECT $cols FROM words WHERE word != '' ORDER BY RANDOM() LIMIT 1", null)
@@ -377,10 +384,20 @@ object TenoWidget {
 
     // ─── 渲染 ───────────────────────────────────────────────────
 
-    private fun launchPending(ctx: Context): PendingIntent? {
+    /** route≠null → extras teno_route/teno_arg 帶進 MainActivity（singleTask → onNewIntent /
+     *  冷啟 onCreate → evaluateJavascript 推 window.__widgetRoute）。requestCode 分顆避免互相覆蓋
+     *  （filterEquals 不比 extras → 同 code 的 extras 由 UPDATE_CURRENT 原地更新，不累積 PI）。 */
+    private fun launchPending(ctx: Context, route: String? = null, arg: String? = null, code: Int = 0): PendingIntent? {
         val i = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName) ?: return null
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        return PendingIntent.getActivity(ctx, 0, i,
+        if (route != null) {
+            i.putExtra("teno_route", route)
+            if (arg != null) i.putExtra("teno_arg", arg)
+        } else {
+            i.removeExtra("teno_route")
+            i.removeExtra("teno_arg")
+        }
+        return PendingIntent.getActivity(ctx, code, i,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -392,6 +409,10 @@ object TenoWidget {
         if (sIds.isNotEmpty()) mgr.updateAppWidget(sIds, statusViews(ctx, t))
         val wIds = mgr.getAppWidgetIds(ComponentName(ctx, TenoWordWidgetProvider::class.java))
         if (wIds.isNotEmpty()) mgr.updateAppWidget(wIds, wordViews(ctx, t))
+        val kIds = mgr.getAppWidgetIds(ComponentName(ctx, TenoWeeklyWidgetProvider::class.java))
+        if (kIds.isNotEmpty()) mgr.updateAppWidget(kIds, weeklyViews(ctx, t))
+        val cIds = mgr.getAppWidgetIds(ComponentName(ctx, TenoCaptureWidgetProvider::class.java))
+        if (cIds.isNotEmpty()) mgr.updateAppWidget(cIds, captureViews(ctx, t))
     }
 
     private fun statusViews(ctx: Context, t: ThemeColors): RemoteViews {
@@ -441,7 +462,7 @@ object TenoWidget {
                 rv.setTextViewText(R.id.wsCaption, caps.joinToString("　·　"))
             }
         }
-        launchPending(ctx)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
+        launchPending(ctx, "review", null, 10)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
         return rv
     }
 
@@ -476,7 +497,119 @@ object TenoWidget {
             rv.setTextViewText(R.id.wwEx, ex)
         }
         rv.setOnClickPendingIntent(R.id.wwRefresh, pi(ctx, ACTION_ROTATE))
-        launchPending(ctx)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
+        launchPending(ctx, "word", w?.id?.ifEmpty { null }, 20)
+            ?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
+        return rv
+    }
+
+    // ─── 本週複習 widget（review_log 近7日；[0]=6天前 … [6]=今天） ───
+
+    /** 每日複習次數（本地日曆日；dayCutoff 鏡像若要極準再升級 — widget 圖表用日曆日已足）。 */
+    internal fun readWeekly(ctx: Context): IntArray? {
+        return try {
+            val db = openDb(ctx) ?: return null
+            db.use {
+                val out = IntArray(7)
+                val today = LocalDate.now()
+                db.rawQuery(
+                    "SELECT reviewed_at FROM review_log WHERE reviewed_at >= ?",
+                    arrayOf(isoUtc(System.currentTimeMillis() - 7L * DAY_MS))
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val ms = parseMs(if (c.isNull(0)) null else c.getString(0)) ?: continue
+                        val d = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+                        val off = (today.toEpochDay() - d.toEpochDay()).toInt()
+                        if (off in 0..6) out[6 - off]++
+                    }
+                }
+                out
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** 柱狀圖 bitmap（固定畫布 540×144 → fitCenter 等比縮放不變形；遠端視圖封包 <1MB）。
+     *  今日 t.accent 實色＋粗體計數；過去日 accent 半透明；0 日 track 短樁＋基線。 */
+    internal fun weeklyChart(t: ThemeColors, w: IntArray): Bitmap {
+        val bw = 540; val bh = 144
+        val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val d = 24f                                   // 左右留白
+        val baseY = 112f                              // 柱底基線
+        val colW = (bw - 2 * d) / 7f
+        val barW = colW * 0.46f
+        val maxV = w.max().coerceAtLeast(1)
+        val maxBar = 80f
+        val areaL = d; val areaR = bw - d
+
+        fun alphaOf(color: Int, a: Int) = (color and 0x00FFFFFF) or (a shl 24)
+        val line = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = alphaOf(t.track, 170); strokeWidth = 2f }
+        c.drawLine(areaL, baseY + 1f, areaR, baseY + 1f, line)
+
+        val barPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER; textSize = 17f
+        }
+        val dayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER; textSize = 16f
+        }
+        val cnDay = arrayOf("一", "二", "三", "四", "五", "六", "日")
+        val today = LocalDate.now()
+        for (i in 0..6) {
+            val v = w[i].coerceAtLeast(0)
+            val isToday = i == 6
+            val date = today.minusDays((6 - i).toLong())
+            val x = d + i * colW + colW / 2f
+            val barH = if (v == 0) 5f else (v.toFloat() / maxV * maxBar).coerceAtLeast(6f)
+            barPaint.color = when {
+                v == 0 -> t.track
+                isToday -> t.accent
+                else -> alphaOf(t.accent, 105)
+            }
+            val r = RectF(x - barW / 2f, baseY - barH, x + barW / 2f, baseY)
+            c.drawRoundRect(r, 8f, 8f, barPaint)
+            if (v > 0) {
+                countPaint.color = if (isToday) t.accent else t.text2
+                countPaint.typeface = if (isToday) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                c.drawText(v.toString(), x, baseY - barH - 6f, countPaint)
+            }
+            dayPaint.color = if (isToday) t.accent else t.text2
+            dayPaint.typeface = if (isToday) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+            c.drawText(cnDay[date.dayOfWeek.value - 1], x, baseY + 24f, dayPaint)
+        }
+        return bmp
+    }
+
+    private fun weeklyViews(ctx: Context, t: ThemeColors): RemoteViews {
+        val rv = RemoteViews(ctx.packageName, R.layout.widget_weekly)
+        rv.setInt(R.id.wkBg, "setColorFilter", t.surface)
+        rv.setInt(R.id.wkTitle, "setTextColor", t.text2)
+        rv.setInt(R.id.wkCaption, "setTextColor", t.text2)
+        val w = readWeekly(ctx)
+        if (w == null) {
+            rv.setTextViewText(R.id.wkTitle, "開啟 Teno 同步資料")
+            rv.setViewVisibility(R.id.wkChart, View.GONE)
+            rv.setViewVisibility(R.id.wkCaption, View.GONE)
+        } else {
+            rv.setTextViewText(R.id.wkTitle, "Teno · 本週複習")
+            rv.setViewVisibility(R.id.wkChart, View.VISIBLE)
+            rv.setImageViewBitmap(R.id.wkChart, weeklyChart(t, w))
+            val sum = w.sum()
+            rv.setViewVisibility(R.id.wkCaption, View.VISIBLE)
+            rv.setTextViewText(R.id.wkCaption, if (sum == 0) "還沒有複習紀錄"
+                else "本週 ${sum} 次　·　日均 ${(sum + 6) / 7} 次")
+        }
+        launchPending(ctx, null, null, 30)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
+        return rv
+    }
+
+    // ─── 快速收詞 widget（靜態 +，點擊 → 字庫新增 modal） ───
+
+    private fun captureViews(ctx: Context, t: ThemeColors): RemoteViews {
+        val rv = RemoteViews(ctx.packageName, R.layout.widget_capture)
+        rv.setInt(R.id.wcBg, "setColorFilter", t.surface)
+        rv.setInt(R.id.wcPlus, "setTextColor", t.accent)
+        rv.setInt(R.id.wcLabel, "setTextColor", t.text2)
+        launchPending(ctx, "add", null, 40)?.let { rv.setOnClickPendingIntent(R.id.widgetRoot, it) }
         return rv
     }
 

@@ -893,6 +893,26 @@ store.subscribe((state) => {
   // WIDGET1：開 App 即推（Android 桌面 widget 同步今日到期數；其他平台 no-op）
   invoke('widget_refresh').catch(() => {});
 
+  // WIDGETROUTE：桌面 widget 點擊路由（MainActivity flushTick evaluateJavascript 推送，回 1=原生清 pending）。
+  // 狀態→study 複習；收詞→字庫新增 modal；抽字→字庫字卡預覽（_pendingWidget 同 _pendingDeckModal 型，
+  // browser onMount 消費）。已停在字庫 → _forceRender 強制 self-nav 重跑 renderPage（deck-item 同型）。
+  window.__widgetRoute = (route, arg) => {
+    try {
+      if (route === 'review') { store.actions.navigate('study'); return 1; }
+      if (route === 'add' || route === 'word') {
+        store.state._pendingWidget = route === 'add' ? { type: 'add' } : { type: 'word', id: arg };
+        // pending 不在 layersSignature → 主動標髒 browser 圖層，否則 renderPage 快路徑
+        // （圖層存在且未髒 → 直接 return）不重跑 onMount、pending 永遠沒人消費。
+        const l = pageLayers.get('browser');
+        if (l) l.dirty = true;
+        if (store.state.currentPage === 'browser') _forceRender = true;   // 同頁：subscribe 只認 page change
+        store.actions.navigate('browser');
+        return 1;
+      }
+    } catch (e) { console.error('[main] widget route:', e); }
+    return 1;
+  };
+
   // Splash 退場：預渲染完成（或逾時）後才退場，且至少顯示 SPLASH_MIN_MS
   const splash = $('splash');
   if (splash) {

@@ -41,6 +41,10 @@ for (const p of [
 ]) ok(mf.includes(p), `manifest 權限 ${p}`);
 ok(/<receiver[^>]*"\.TenoStatusWidgetProvider"/s.test(mf), 'manifest receiver TenoStatusWidgetProvider');
 ok(/<receiver[^>]*"\.TenoWordWidgetProvider"/s.test(mf), 'manifest receiver TenoWordWidgetProvider');
+ok(/<receiver[^>]*"\.TenoWeeklyWidgetProvider"/s.test(mf), 'manifest receiver TenoWeeklyWidgetProvider');
+ok(/<receiver[^>]*"\.TenoCaptureWidgetProvider"/s.test(mf), 'manifest receiver TenoCaptureWidgetProvider');
+ok(mf.includes('@xml/teno_widget_info_weekly'), 'manifest weekly provider meta');
+ok(mf.includes('@xml/teno_widget_info_capture'), 'manifest capture provider meta');
 ok(mf.includes('android.appwidget.action.APPWIDGET_UPDATE'), 'manifest APPWIDGET_UPDATE filter');
 ok(mf.includes('@xml/teno_widget_info_status'), 'manifest status provider meta');
 ok(mf.includes('@xml/teno_widget_info_word'), 'manifest word provider meta');
@@ -77,8 +81,24 @@ ok((kw.match(/"[a-zA-Z]+" to "#[0-9A-F]{6}"/g) || []).length === 40, 'ACCENTS �
 ok(kw.includes('hexToHsl') && kw.includes('hslToColor'), 'hexToHSL／hslToRgb 鏡像');
 ok(kw.includes('themeAccentIntensity') && kw.includes('(intensity - 0.5f) * 40f'), 'intensity 公式鏡像');
 ok(kw.includes('aL - 24f'), '淺色底用 accent-deep（aL-24）');
-// 兩顆 widget 獨立渲染
+// 四顆 widget 獨立渲染
 ok(kw.includes('TenoStatusWidgetProvider') && kw.includes('TenoWordWidgetProvider'), '兩 provider 分開渲染');
+ok(kw.includes('TenoWeeklyWidgetProvider') && kw.includes('TenoCaptureWidgetProvider'), '本週／收詞 provider 渲染');
+// 點擊路由（MainActivity extras → window.__widgetRoute）
+ok(kw.includes('teno_route') && kw.includes('teno_arg'), 'launchPending 路由 extras teno_route/teno_arg');
+ok(kw.includes('route != null') && kw.includes('removeExtra'), 'route 空 → removeExtra（無路由開 app 原樣）');
+ok(kw.includes('launchPending(ctx, "review", null, 10)'), '狀態 widget 點擊 → review（study 複習頁）');
+ok(kw.includes('launchPending(ctx, "word", w?.id') && kw.includes(', 20)'), '抽字 widget 點擊 → word（帶字 id）');
+ok(kw.includes('launchPending(ctx, "add", null, 40)'), '收詞 widget 點擊 → add');
+ok(kw.includes('PickedWord(w, d, pron, pos, ex, wid)'), 'pickWord 帶 words.id 給字卡路由');
+ok(kw.includes('rowid, id'), 'pickWord cols 含 id');
+// 本週複習（review_log 近7日）
+ok(kw.includes('fun readWeekly'), 'readWeekly 讀 review_log 近 7 日');
+ok(kw.includes('6 - off') && kw.includes('IntArray(7)'), '週桶 [0]=6天前…[6]=今天');
+ok(kw.includes('fun weeklyChart'), 'weeklyChart 畫柱狀 bitmap');
+ok(kw.includes('drawRoundRect') && kw.includes('ARGB_8888'), '柱狀圓角＋ARGB bitmap');
+ok(kw.includes('Bitmap.createBitmap(bw, bh') || kw.includes('Bitmap.createBitmap'), 'chart 固定畫布（封包 <1MB）');
+ok(kw.includes('本週 ${sum} 次'), '週總計 caption');
 ok(!kw.includes('c.mode') && !kw.includes('mode == "word"'), 'widgetMode 判定已移除');
 ok(kw.includes('goal_streak') && kw.includes('daily_goal'), '今日進度讀 goal_streak');
 // 間隔通知（1..1440 分）＋內容池隨機抽取
@@ -97,9 +117,20 @@ const kr = read(`${KDIR}/TenoWidgetReceiver.kt`);
 ok(kr.includes('class TenoWidgetProviderBase : AppWidgetProvider()'), 'TenoWidgetProviderBase 繼承 AppWidgetProvider');
 ok(kr.includes('class TenoStatusWidgetProvider : TenoWidgetProviderBase()'), 'TenoStatusWidgetProvider 為獨立 receiver');
 ok(kr.includes('class TenoWordWidgetProvider : TenoWidgetProviderBase()'), 'TenoWordWidgetProvider 為獨立 receiver');
+ok(kr.includes('class TenoWeeklyWidgetProvider : TenoWidgetProviderBase()'), 'TenoWeeklyWidgetProvider 為獨立 receiver');
+ok(kr.includes('class TenoCaptureWidgetProvider : TenoWidgetProviderBase()'), 'TenoCaptureWidgetProvider 為獨立 receiver');
+ok(kr.includes('TenoWeeklyWidgetProvider::class.java)') && kr.includes('cancelAlarms'), 'onDeleted 納入本週（鬧鐘存廢判定）');
 ok(kr.includes('class TenoRefreshReceiver : BroadcastReceiver()'), 'TenoRefreshReceiver 繼承 BroadcastReceiver');
 ok(kr.includes('ACTION_BOOT_COMPLETED'), 'BOOT 重武裝');
 ok(kr.includes('goAsync()'), 'receiver 背景緒執行');
+
+const ma = read(`${KDIR}/MainActivity.kt`);
+ok(ma.includes('onNewIntent'), 'MainActivity.onNewIntent 接暖路徑');
+ok(ma.includes('readRoute'), 'MainActivity.readRoute 消費 extras');
+ok(ma.includes('pendingRoute') && ma.includes('flushTick'), 'pendingRoute＋flushTick 重試');
+ok(ma.includes('window.__widgetRoute'), '推送 window.__widgetRoute');
+ok(ma.includes("== \"1\"") || ma.includes("== \"1\""), 'JS 回 1 才清 pending');
+ok(ma.includes('removeExtra'), '送達後 removeExtra（重建不重放）');
 
 const ks = read(`${KDIR}/TenoResidentService.kt`);
 ok(ks.includes('startForeground('), '常駐服務 startForeground');
@@ -109,7 +140,9 @@ ok(ks.includes('periodMs'), '常駐刷新間隔 = 抽字間隔');
 console.log('── 3) res ──');
 const RES = 'src-tauri/gen/android/app/src/main/res';
 for (const f of ['layout/widget_status.xml', 'layout/widget_word.xml',
+  'layout/widget_weekly.xml', 'layout/widget_capture.xml',
   'xml/teno_widget_info_status.xml', 'xml/teno_widget_info_word.xml',
+  'xml/teno_widget_info_weekly.xml', 'xml/teno_widget_info_capture.xml',
   'drawable/widget_bg.xml', 'drawable/widget_bar.xml', 'drawable/ic_refresh.xml',
   'drawable/ic_stat_teno.xml'])
   ok(exists(`${RES}/${f}`), `res ${f} 存在`);
@@ -120,6 +153,22 @@ for (const id of ['wsBg', 'wsTitle', 'wsGoal', 'wsNewNum', 'wsLearnNum', 'wsRevi
 const ww = read(`${RES}/layout/widget_word.xml`);
 for (const id of ['wgBg', 'wwWord', 'wwRefresh', 'wwMeta', 'wwDef'])
   ok(ww.includes(`@+id/${id}`), `抽字 layout 有 ${id}`);
+const wk = read(`${RES}/layout/widget_weekly.xml`);
+for (const id of ['widgetRoot', 'wkBg', 'wkTitle', 'wkChart', 'wkCaption'])
+  ok(wk.includes(`@+id/${id}`), `本週 layout 有 ${id}`);
+const wc = read(`${RES}/layout/widget_capture.xml`);
+for (const id of ['widgetRoot', 'wcBg', 'wcPlus', 'wcLabel'])
+  ok(wc.includes(`@+id/${id}`), `收詞 layout 有 ${id}`);
+const infoK = read(`${RES}/xml/teno_widget_info_weekly.xml`);
+ok(infoK.includes('android:updatePeriodMillis="0"'), 'weekly provider 自管刷新（updatePeriod=0）');
+ok(infoK.includes('android:initialLayout="@layout/widget_weekly"'), 'weekly provider initialLayout');
+const infoC = read(`${RES}/xml/teno_widget_info_capture.xml`);
+ok(infoC.includes('android:updatePeriodMillis="0"'), 'capture provider 自管刷新（updatePeriod=0）');
+ok(infoC.includes('android:initialLayout="@layout/widget_capture"'), 'capture provider initialLayout');
+const str = read(`${RES}/values/strings.xml`);
+ok(str.includes('widget_label_weekly') && str.includes('widget_label_capture'), 'strings 新 widget 標籤');
+ok(str.includes('widget_desc_weekly') && str.includes('widget_desc_capture'), 'strings 新 widget 描述');
+
 const infoS = read(`${RES}/xml/teno_widget_info_status.xml`);
 ok(infoS.includes('android:updatePeriodMillis="0"'), 'status provider 自管刷新（updatePeriod=0）');
 ok(infoS.includes('android:initialLayout="@layout/widget_status"'), 'status provider initialLayout');
@@ -159,6 +208,13 @@ ok(st.includes('isAndroid') && /isAndroid \? `[\s\S]*?桌面 Widget/.test(st), '
 ok(st.includes('widgetRequestPerms()'), 'settings 授權鈕');
 const main = read('src/main.js');
 ok((main.match(/invoke\('widget_refresh'\)/g) || []).length >= 2, 'main.js 開 App＋可見性推播');
+ok(main.includes('window.__widgetRoute'), 'main.js 定義 __widgetRoute');
+ok(main.includes("route === 'review'") && main.includes("navigate('study')"), 'review → study 複習頁');
+ok(main.includes("{ type: 'add' }") && main.includes("{ type: 'word', id: arg }"), 'add／word → _pendingWidget');
+ok(main.includes('_forceRender = true'), '字庫 self-nav 強制重渲染');
+const brw = read('src/pages/browser.js');
+ok(brw.includes('_pendingWidget'), 'browser 消費 _pendingWidget');
+ok(brw.includes('openAddModal(s)') && brw.includes('openCardPreview(s, wAct.id)'), 'add → 新增 modal／word → 字卡預覽');
 
 // ── 6) 口徑對拍：JS 鏡像 vs scheduler.getDueCards ──
 console.log('── 6) 口徑對拍（鏡像 vs getDueCards）──');

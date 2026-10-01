@@ -313,6 +313,28 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/teno_widget_info_word" />
         </receiver>
+        <receiver
+            android:name=".TenoWeeklyWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label_weekly">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/teno_widget_info_weekly" />
+        </receiver>
+        <receiver
+            android:name=".TenoCaptureWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_label_capture">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/teno_widget_info_capture" />
+        </receiver>
 
         <!-- 鬧鐘（抽字輪播／日界線刷新／每日通知）＋開機重武裝。exported=false：
              只收系統廣播（BOOT，系統可送）與自家 PendingIntent。 -->

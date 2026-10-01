@@ -23,12 +23,11 @@ open class TenoWidgetProviderBase : AppWidgetProvider() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         val mgr = AppWidgetManager.getInstance(context)
-        val statusGone = mgr.getAppWidgetIds(
-            ComponentName(context, TenoStatusWidgetProvider::class.java)).isEmpty()
-        val wordGone = mgr.getAppWidgetIds(
-            ComponentName(context, TenoWordWidgetProvider::class.java)).isEmpty()
-        // 兩顆都移除 → 換字／日界線鬧鐘作廢；通知獨立（設定頁可無 widget 使用）
-        if (statusGone && wordGone) {
+        fun gone(cls: Class<*>) = mgr.getAppWidgetIds(ComponentName(context, cls)).isEmpty()
+        // 有資料的三顆（狀態／抽字／本週）都移除 → 換字／日界線鬧鐘作廢；
+        // 收詞 widget 靜態無資料（theme 改色靠開 App 時 widget_refresh 補畫）；通知獨立（設定頁可無 widget 使用）
+        if (gone(TenoStatusWidgetProvider::class.java) && gone(TenoWordWidgetProvider::class.java)
+            && gone(TenoWeeklyWidgetProvider::class.java)) {
             TenoWidget.cancelAlarms(context, includeNotify = false)
         }
     }
@@ -39,6 +38,12 @@ class TenoStatusWidgetProvider : TenoWidgetProviderBase()
 
 /** 抽字 widget：隨機一字＋音標／詞性＋釋義；⟳ 手動換字、間隔自動輪播。 */
 class TenoWordWidgetProvider : TenoWidgetProviderBase()
+
+/** 本週複習 widget：review_log 近 7 日柱狀圖＋本週總計。 */
+class TenoWeeklyWidgetProvider : TenoWidgetProviderBase()
+
+/** 快速收詞 widget：桌面一鍵跳字庫新增 modal（靜態、無 DB 讀取）。 */
+class TenoCaptureWidgetProvider : TenoWidgetProviderBase()
 
 /**
  * 鬧鐘與系統廣播接收器（ROTATE／DAY／NOTIFY／BOOT_COMPLETED）。
