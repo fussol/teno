@@ -40,6 +40,7 @@ console.log('[G3] 多選：空白拖曳即時移動選擇');
 ok('import dragTrack', mc.includes("import { dragTrack } from '../lib/gesture.js'"));
 ok('typeof 守門', mc.includes("typeof dragTrack === 'function'"));
 ok('卡片 #emCard + .exam-gest', mc.includes('id="emCard"') && mc.includes('exam-gest'));
+ok('手勢綁整個 emWrap（含卡片下方空白區）', mc.includes('id="emWrap"') && mc.includes("getElementById('emWrap')"));
 ok('STEP=54 每格位移', mc.includes('const STEP = 54'));
 ok('軸 dy-dx 方向式', mc.includes('Math.round((dy - dx) / STEP)'));
 ok('選項上不啟動手勢（ignore）', mc.includes("ignore: '.study-opt, button'"));

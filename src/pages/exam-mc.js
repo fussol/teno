@@ -142,7 +142,7 @@ function renderExam(s) {
   const answered = (e.results || []).reduce((n, r) => n + (r !== undefined ? 1 : 0), 0);
   const pct = Math.round((answered / total) * 100);
 
-  return `<div class="study-wrap" style="padding-bottom:40px">
+  return `<div class="study-wrap exam-gest" id="emWrap" style="padding-bottom:40px">
     <div class="study-toolbar">
       <span>多選測驗</span>
       <span>${e.idx+1} / ${total}</span>
@@ -543,8 +543,9 @@ export function onMount(s) {
 // EXAMGEST: 多選手勢 — 空白處（選項/鈕除外）拖曳＝光暈即時跟手指，每 54px 移一格、到頭循環、
 // 首次＝第 1 項；→/↑ 上一項、←/↓ 下一項（軸 dy-dx）。放開＝停在當前選擇，點空白確認；
 // 沒手勢過的點空白＝無事（無操作提示，不加 toast）。列表不位移（螢幕放得下，不滑）。
+// 綁整個 emWrap（含卡片下方 hint 區）＝夠大的空白手勢區，選項/鈕照 ignore 排除。
 function bindMcGest(s) {
-  const card = document.getElementById('emCard');
+  const card = document.getElementById('emWrap');
   const STEP = 54;
   let gSel = -1, base = 0;
   const setGlow = (sel) => {
