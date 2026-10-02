@@ -1342,13 +1342,13 @@ body.no-hints .mode-desc{display:none}
    原生 IME 手感：fixed 貼螢幕底、鍵帽立體陰影、按壓下沈、system font、uniform 鍵寬；
    色票 var 由 theme.js generatePalette 依 light/dark 覆寫（:root 值＝注入前 fallback）。 */
 .spell-kbd{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;flex-direction:column;gap:8px;
-  padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));
+  padding:10px 5px calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--kbd-tray);box-shadow:0 -1px 0 rgba(0,0,0,.22),0 -8px 24px rgba(0,0,0,.10);
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .sk-row{display:flex;gap:6px;justify-content:center}
-.sk-key{flex:0 0 auto;width:calc((100% - 54px)/10);max-width:52px;padding:10px 0;border:none;border-radius:6px;
+.sk-key{flex:0 0 auto;width:calc((100% - 54px)/10);max-width:52px;padding:10px 0;border:none;border-radius:8px;
   background:var(--kbd-key);color:var(--kbd-text);font-family:var(--font);font-size:17px;font-weight:500;line-height:1.3;
-  text-transform:uppercase;box-shadow:0 1px 1px rgba(0,0,0,.28);cursor:pointer;transition:filter .05s,box-shadow .05s,transform .05s}
+  box-shadow:0 1px 2px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.06);cursor:pointer;transition:filter .05s,box-shadow .05s,transform .05s}
 .sk-key:active{filter:brightness(.82);box-shadow:none;transform:translateY(1px)}
 .sk-fn{width:calc(((100% - 54px)/10)*1.5);max-width:78px;background:var(--kbd-key-fn)}
 .sk-row.sk-util{justify-content:center;padding:0}
@@ -1357,6 +1357,7 @@ body.no-hints .mode-desc{display:none}
 .sk-util .sk-ret{flex:0 0 auto;width:auto;max-width:none;min-width:70px;background:var(--accent);color:var(--accent-on)}
 .sk-util .sk-ret:active{filter:brightness(.9)}
 .sk-up .sk-shift{background:var(--kbd-text);color:var(--kbd-tray)}
+.sk-up .sk-key{text-transform:uppercase}   /* 鍵帽小寫預設、⇧ 按下才翻大寫（原生 iOS 手勢） */
 
 /* Chip styles */
 .study-chips{display:flex;flex-wrap:wrap;gap:4px}
