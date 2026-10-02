@@ -1176,18 +1176,32 @@ function openModal(s, word) {
   };
   _rec('── modal 開 ──');
   const _wm = document.getElementById('wordModal');
+  // IMEHINT1：modal 全部單行輸入強制鍵盤動作鍵=「換行」——實證你手機的 IME 動作鍵
+  //（下一個/前往）由 WebView 原生推焦點、零 keydown 事件 → JS 守門全部繞過；
+  // 換行鍵會派真 keydown Enter → 回到膠囊/導覽邏輯。
+  _wm?.querySelectorAll('input.form-input').forEach((el) => el.setAttribute('enterkeyhint', 'enter'));
   const _mon = (name, cap, filt) => _wm?.addEventListener(name, (e) => {
     if (filt && !filt(e)) return;
     const t = e.target;
-    _rec(`[${name}] t=${t.id || t.tagName} ime=${t._ime} comp=${e.isComposing ?? '-'} kc=${e.keyCode ?? '-'} k=${e.key ?? '-'} val=${JSON.stringify(String(t.value || '').slice(0, 24))} act=${document.activeElement?.id || '-'}`);
+    _rec(`[${name}] t=${t.id || t.tagName} ime=${t._ime} comp=${e.isComposing ?? '-'} kc=${e.keyCode ?? '-'} k=${e.key ?? '-'} code=${e.code ?? '-'} it=${e.inputType ?? '-'} val=${JSON.stringify(String(t.value || '').slice(0, 20))} act=${document.activeElement?.id || '-'}`);
   }, cap);
-  _mon('keydown', true, (e) => e.key === 'Enter');        // 捕獲：最早記錄，先於膠囊/導覽 handler
-  _mon('keyup', false, (e) => e.key === 'Enter');
+  // IMELOG2：功能鍵全記（可印單字跳過防刷屏）、input 全記（看字怎麼進來：insertText/paste/composition）
+  _mon('keydown', true, (e) => e.key.length > 1 || e.keyCode === 229);
+  _mon('keyup', false, (e) => e.key.length > 1 || e.keyCode === 229);
   _mon('compositionstart');
   _mon('compositionend');
   _mon('focusin');
   _mon('focusout');
-  _mon('input', false, (e) => e.target._ime === true || e.isComposing === true);   // 只記「掛旗/組字中」的落字（一般打字不刷屏）
+  _mon('input');
+  _mon('pointerdown', true);
+  // DOC 層探針：keydown 若打不進 modal（目標在 modal 外/被上層停掉），這裡先亮
+  if (window.__imeDocKd) document.removeEventListener('keydown', window.__imeDocKd, true);
+  window.__imeDocKd = (e) => {
+    if (document.getElementById('wordModal') && (e.key.length > 1 || e.keyCode === 229)) {
+      _rec(`[DOC-kd] t=${e.target && (e.target.id || e.target.tagName)} k=${e.key} kc=${e.keyCode} comp=${e.isComposing}`);
+    }
+  };
+  document.addEventListener('keydown', window.__imeDocKd, true);
   // ── TEMP-IMELOG 結束 ──
 
   // ── 統一膠囊輸入系統（元首令 2026-08-31 v2 — 與 deck-browser 同款）──
