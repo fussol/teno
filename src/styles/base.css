@@ -1346,15 +1346,15 @@ body.no-hints .mode-desc{display:none}
   background:var(--kbd-tray);box-shadow:0 -1px 0 rgba(0,0,0,.22),0 -8px 24px rgba(0,0,0,.10);
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .sk-row{display:flex;gap:6px;justify-content:center}
-.sk-key{flex:0 0 auto;width:calc((100% - 54px)/10);max-width:52px;padding:9px 0;border:none;border-radius:6px;
+.sk-key{flex:0 0 auto;width:calc((100% - 54px)/10);max-width:52px;padding:10px 0;border:none;border-radius:6px;
   background:var(--kbd-key);color:var(--kbd-text);font-family:var(--font);font-size:17px;font-weight:500;line-height:1.3;
   text-transform:uppercase;box-shadow:0 1px 1px rgba(0,0,0,.28);cursor:pointer;transition:filter .05s,box-shadow .05s,transform .05s}
 .sk-key:active{filter:brightness(.82);box-shadow:none;transform:translateY(1px)}
 .sk-fn{width:calc(((100% - 54px)/10)*1.5);max-width:78px;background:var(--kbd-key-fn)}
-.sk-row.sk-util{justify-content:flex-start;padding:0 2px}
-.sk-util .sk-key{width:auto;max-width:none;flex:0 0 auto}
-.sk-util .sk-space{flex:1 1 auto;min-width:0}
-.sk-util .sk-ret{flex:0 0 auto;min-width:66px;background:var(--accent);color:var(--accent-on)}
+.sk-row.sk-util{justify-content:center;padding:0}
+.sk-util .sk-key{width:calc((100% - 54px)/10);max-width:52px}   /* , . ＝字母鍵同寬（width:auto 會壓成細條） */
+.sk-util .sk-space{flex:1 1 auto;width:auto;max-width:none;min-width:0}
+.sk-util .sk-ret{flex:0 0 auto;width:auto;max-width:none;min-width:70px;background:var(--accent);color:var(--accent-on)}
 .sk-util .sk-ret:active{filter:brightness(.9)}
 .sk-up .sk-shift{background:var(--kbd-text);color:var(--kbd-tray)}
 
