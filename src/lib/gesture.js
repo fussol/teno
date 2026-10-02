@@ -12,6 +12,7 @@ export function dragTrack(el, cb) {
   let sx = 0, sy = 0, down = false, moved = false, downT = null;
   el.addEventListener('pointerdown', ev => {
     if (ev.button != null && ev.button > 0) return;
+    if (cb.when && !cb.when(ev)) return;   // 區域外（非本頁活頁）→ 不追蹤、不擷 pointer capture
     if (cb.ignore && ev.target && ev.target.closest && ev.target.closest(cb.ignore)) return;
     down = true; moved = false; downT = ev.target;
     sx = ev.clientX; sy = ev.clientY;

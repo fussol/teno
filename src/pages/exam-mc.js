@@ -142,7 +142,7 @@ function renderExam(s) {
   const answered = (e.results || []).reduce((n, r) => n + (r !== undefined ? 1 : 0), 0);
   const pct = Math.round((answered / total) * 100);
 
-  return `<div class="study-wrap exam-gest" id="emWrap" style="padding-bottom:40px">
+  return `<div class="study-wrap exam-gest" style="padding-bottom:40px">
     <div class="study-toolbar">
       <span>多選測驗</span>
       <span>${e.idx+1} / ${total}</span>
@@ -543,19 +543,28 @@ export function onMount(s) {
 // EXAMGEST: 多選手勢 — 空白處（選項/鈕除外）拖曳＝光暈即時跟手指，每 54px 移一格、到頭循環、
 // 首次＝第 1 項；→/↑ 上一項、←/↓ 下一項（軸 dy-dx）。放開＝停在當前選擇，點空白確認；
 // 沒手勢過的點空白＝無事（無操作提示，不加 toast）。列表不位移（螢幕放得下，不滑）。
-// 綁整個 emWrap（含卡片下方 hint 區）＝夠大的空白手勢區，選項/鈕照 ignore 排除。
+// 區域＝整個 #contentArea（含卡片以外的背景留白）；when 只在 emCard 於 DOM 時啟動。
+// 綁一次跨 render 存活 → lastW 換題重置 gSel，舊選擇不帶到下一題。
 function bindMcGest(s) {
-  const card = document.getElementById('emWrap');
+  const zone = document.getElementById('contentArea');
+  if (!zone || zone._emGestBound) return;
+  zone._emGestBound = true;
   const STEP = 54;
-  let gSel = -1, base = 0;
+  let gSel = -1, base = 0, lastW = null;
   const setGlow = (sel) => {
     document.querySelectorAll('[data-em-opt]').forEach((el, i) => el.classList.toggle('selected', i === sel));
   };
-  dragTrack(card, {
+  const sync = () => {
+    const w = e.words[e.idx];
+    if (w !== lastW) { lastW = w; gSel = -1; setGlow(-1); }
+    return w;
+  };
+  dragTrack(zone, {
+    when: () => !!document.getElementById('emCard'),
     ignore: '.study-opt, button',
-    onDown() { base = gSel < 0 ? 0 : gSel; },
+    onDown() { sync(); base = gSel < 0 ? 0 : gSel; },
     onMove(dx, dy) {
-      const w = e.words[e.idx];
+      const w = sync();
       if (!w || w._answered) return;
       const n = w._options.length;
       const sel = ((base + Math.round((dy - dx) / STEP)) % n + n) % n;
@@ -564,7 +573,7 @@ function bindMcGest(s) {
     onEnd() {},   // 選擇已即時落下：不回彈、不作答（點空白／直點選項才作答）
     onCancel() {},
     onTap(target) {
-      const w = e.words[e.idx];
+      const w = sync();
       if (!w) return;
       if (w._answered) {   // 倒數中點卡＝立即跳過
         if (e.pendingNext) { clearTimeout(e.pendingNext); e.pendingNext = null; }

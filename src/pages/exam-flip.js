@@ -516,19 +516,26 @@ export function onMount(s) {
 
 // EXAMGEST: 翻卡手勢 — 正面點卡翻面（.tts-click/按鈕除外），反面拖曳跟手＋紅綠光罩，
 // ≥70px 鬆手判分（→/↑ 對、←/↓ 錯）→ answer* 渲染＋_throw 飛出。無按鈕、無操作提示。
-// 觸控垂直拖＝捲動（.exam-gest pan-y → pointercancel 回彈），見 lib/gesture.js。
+// 卺域＝整個 #contentArea（含 .page 外緣留白＝卡片以外的背景）；when 只在 efCard 於 DOM 時啟動
+// （config/result/暫離他頁＝不追蹤）。垂直拖＝捲動（#contentArea pan-y），見 lib/gesture.js。
 function bindFlipGest(s) {
-  const card = document.getElementById('efCard');
-  dragTrack(card, {
+  const zone = document.getElementById('contentArea');
+  if (!zone || zone._efGestBound) return;
+  zone._efGestBound = true;
+  const card = () => document.getElementById('efCard');
+  dragTrack(zone, {
+    when: () => !!card(),
     ignore: 'button, .tts-click',
     onMove(dx, dy) {
-      card.style.transition = 'none';
+      const c = card();
+      if (!c) return;
+      c.style.transition = 'none';
       if (!e.answered) {   // 正面也跟手、鬆手回彈（翻面走點擊）
-        card.style.transform = `translate(${dx * .7}px,${dy * .7}px) rotate(${dx * .02}deg)`;
+        c.style.transform = `translate(${dx * .7}px,${dy * .7}px) rotate(${dx * .02}deg)`;
         return;
       }
       if (e.judged) return;
-      card.style.transform = `translate(${dx}px,${dy}px) rotate(${dx * .03}deg)`;
+      c.style.transform = `translate(${dx}px,${dy}px) rotate(${dx * .03}deg)`;
       const t = document.getElementById('efTint');
       if (t) {
         const ok = (dx > 0 && Math.abs(dx) >= Math.abs(dy)) || (dy < 0 && Math.abs(dy) > Math.abs(dx));
@@ -539,17 +546,18 @@ function bindFlipGest(s) {
       }
     },
     onEnd(dx, dy, dir) {
-      const clear = () => { card.style.transition = ''; card.style.transform = ''; };
+      const c = card();
+      const clear = () => { if (c) { c.style.transition = ''; c.style.transform = ''; } };
       const tint = document.getElementById('efTint');
       if (tint) tint.style.opacity = 0;
-      if (!e.answered || e.judged) { clear(); return; }
+      if (!c || !e.answered || e.judged) { clear(); return; }
       if (Math.hypot(dx, dy) < 70) { clear(); return; }   // 不足門檻＝回彈不判（無 toast：手勢教學不進 app）
       e._throw = dir;
       if (dir === 'right' || dir === 'up') answerCorrect(s); else answerWrong(s);
     },
     onCancel() {
-      card.style.transition = '';
-      card.style.transform = '';
+      const c = card();
+      if (c) { c.style.transition = ''; c.style.transform = ''; }
       const t = document.getElementById('efTint');
       if (t) t.style.opacity = 0;
     },

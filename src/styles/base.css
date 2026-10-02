@@ -1321,6 +1321,7 @@ body.no-hints .mode-desc{display:none}
 /* EXAMGEST（2026-10-02）：測驗手勢卡 — pan-y 把垂直捲動交給瀏覽器（pointercancel→回彈），水平拖＝手勢；
    點擊/拖曳追蹤見 lib/gesture.js（觸控 ↑↓ 判分的取捨記在該檔註解） */
 .exam-gest{touch-action:pan-y;transition:transform .26s cubic-bezier(.2,.8,.3,1.25)}
+#contentArea{touch-action:pan-y}   /* EXAMGEST：手勢背景區＝整個內容區（.page 外緣留白也在內） */
 .gest-tint{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .1s}
 @keyframes efThrowR{40%{transform:translateX(30px) rotate(3deg)}100%{transform:none}}
 @keyframes efThrowL{40%{transform:translateX(-30px) rotate(-3deg)}100%{transform:none}}
