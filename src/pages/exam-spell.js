@@ -4,6 +4,7 @@ import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
+import { spellKbdHtml, spellInputAttr, bindSpellKbd } from '../lib/spell-kbd.js';
 
 let e = {
   phase: 'config',
@@ -78,22 +79,9 @@ function renderConfig(s) {
             </div>`;
           }).join('')}
         </div>
-        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+        <div style="margin:0 0 16px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-container)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px">${icon('tag')} 答對／答錯自動標籤</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>測驗數量</span>
-              <input type="number" id="esCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
-              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
-              <span>自動跳下一題</span>
-               <input type="checkbox" id="esAutoNext" ${e.settings.autoNext?'checked':''}>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>間隔秒數</span>
-              <input type="number" id="esDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
-            </label>
             <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
               <span>答對標籤</span>
               <select id="esTagCorrect" class="form-input" style="width:130px">
@@ -120,6 +108,24 @@ function renderConfig(s) {
             </label>
           </div>
         </div>
+        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>測驗數量</span>
+              <input type="number" id="esCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
+              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <span>自動跳下一題</span>
+               <input type="checkbox" id="esAutoNext" ${e.settings.autoNext?'checked':''}>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>間隔秒數</span>
+              <input type="number" id="esDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
+            </label>
+          </div>
+        </div>
         <button class="study-flip-btn" id="esStartBtn" style="width:100%;margin-top:0">${icon('play')} 開始測驗</button>
       </div>
     </div>
@@ -143,7 +149,8 @@ function renderExam(s) {
         ${splitFieldsHtml(w.pos, w.definition) || ''}
         </div>
         <div class="study-input-row">
-          <input class="study-input" id="esInput" type="text" placeholder="輸入英文單字..." autofocus>
+          <input class="study-input" id="esInput" type="text" placeholder="輸入英文單字..." autofocus ${typeof spellInputAttr === 'function' ? spellInputAttr() : ''}>
+          ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}
           <button class="study-submit" id="esSubmitBtn">確認</button>
         </div>
       </div>
@@ -191,6 +198,12 @@ function renderResult(s) {
   const pct = total > 0 ? Math.round((e.correct / total) * 100) : 0;
   const mins = Math.floor(e.totalTime / 60);
   const secs = e.totalTime % 60;
+  // G′: 結果頁套用鈕＝主角 — 帶上將套用的標籤名與筆數
+  const sys = s.state.systemTags || [];
+  const tcRaw = e.settings.tagCorrect || 'correct';
+  const twRaw = e.settings.tagWrong || 'wrong';
+  const tcName = (sys.find(t => t.role === tcRaw) || {}).name || tcRaw;
+  const twName = (sys.find(t => t.role === twRaw) || {}).name || twRaw;
 
   return `<div class="study-wrap" style="padding-bottom:40px;justify-content:center">
     <div class="study-card" style="max-width:480px;padding:40px 32px;text-align:center">
@@ -204,7 +217,7 @@ function renderResult(s) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
         <button class="study-flip-btn" id="esRetryBtn" style="font-size:14px;padding:12px 24px">${icon('refresh')} 再考一次</button>
-        <button class="btn" id="esTagBtn" style="${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 加上標籤</button>
+        <button class="study-flip-btn" id="esTagBtn" style="font-size:13px;padding:12px 20px;margin-top:0;${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 套用：${esc(tcName)} × ${e.correct}、${esc(twName)} × ${e.wrong}</button>
         <button class="btn" data-goto="dashboard">${icon('home')} 回首頁</button>
       </div>
     </div>
@@ -388,7 +401,6 @@ export function onMount(s) {
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）
-    if (!e.decks.length) e.decks = s.state.decks.map(d => d.id);
     document.getElementById('esToggleAll')?.addEventListener('click', () => {
       const all = e.decks.length !== s.state.decks.length;
       e.decks = all ? s.state.decks.map(d => d.id) : [];
@@ -441,6 +453,7 @@ export function onMount(s) {
       });
     }
     if (submit) submit.addEventListener('click', () => submitSpelling(s));
+    if (typeof bindSpellKbd === 'function') bindSpellKbd('esInput');   // SPELLKBD: 手機內建鍵盤（桌機 isMobile=false 無作用）
     document.getElementById('esNextBtn')?.addEventListener('click', () => {
       if (e.idx < e.words.length - 1) {
         nextWord(s);

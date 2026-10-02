@@ -678,6 +678,7 @@ function openAddModal(s) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -747,17 +748,17 @@ function openAddModal(s) {
     return api;
   };
   // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
-  const defSep = ',|;|；|\\n', defJn = ', ';
+  const defSep = ',|，|;|；|\\n', defJn = ', ';
   const exSep = null, exJn = "\n";   // 例句模式：sep=null（逗號屬句子一部分，Enter 整句一顆）
   const deckDefChips = _tagInput('deckAddDefChips', 'deckAddDef', 'def-chip', '', defSep, defJn, 'display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   const deckExChips = _tagInput('deckAddExChips', 'deckAddExample', 'ex-chip', '', exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   // 統一膠囊：相似/反義/衍生物/相關詞/詞形變化（逗號分割、Enter 入膠囊）
   const _pillStyle = 'display:inline-flex;align-items:center;gap:4px;padding:1px 10px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s';
-  const deckSynChips = _tagInput('deckAddSynonymChips', 'deckAddSynonym', 'pill-chip', '', ',', ', ', _pillStyle);
-  const deckAntChips = _tagInput('deckAddAntonymChips', 'deckAddAntonym', 'pill-chip', '', ',', ', ', _pillStyle);
-  const deckDerivChips = _tagInput('deckAddDerivativeChips', 'deckAddDerivative', 'pill-chip', '', ',', ', ', _pillStyle);
-  const deckRelChips = _tagInput('deckAddRelatedChips', 'deckAddRelated', 'pill-chip', '', ',', ', ', _pillStyle);
-  const deckFormsChips = _tagInput('deckAddFormsChips', 'deckAddForms', 'pill-chip', '', ',', ', ', _pillStyle);
+  const deckSynChips = _tagInput('deckAddSynonymChips', 'deckAddSynonym', 'pill-chip', '', ',|，', ', ', _pillStyle);
+  const deckAntChips = _tagInput('deckAddAntonymChips', 'deckAddAntonym', 'pill-chip', '', ',|，', ', ', _pillStyle);
+  const deckDerivChips = _tagInput('deckAddDerivativeChips', 'deckAddDerivative', 'pill-chip', '', ',|，', ', ', _pillStyle);
+  const deckRelChips = _tagInput('deckAddRelatedChips', 'deckAddRelated', 'pill-chip', '', ',|，', ', ', _pillStyle);
+  const deckFormsChips = _tagInput('deckAddFormsChips', 'deckAddForms', 'pill-chip', '', ',|，', ', ', _pillStyle);
   // ── POS chips ───
   const _posCN = {noun:'名詞',verb:'動詞',adjective:'形容詞',adverb:'副詞',preposition:'介係詞',conjunction:'連接詞',pronoun:'代名詞',interjection:'感嘆詞',exclamation:'感嘆詞',determiner:'限定詞',article:'冠詞',phrase:'片語',idiom:'慣用語',suffix:'後綴',prefix:'前綴',abbreviation:'縮寫','plural noun':'複數名詞'};
   const _normalizePos = (pos) => (pos || '').split(',').map(p => _posCN[p.trim().toLowerCase()] || p.trim()).filter(Boolean).join(', ');
@@ -953,7 +954,7 @@ function openAddModal(s) {
     }
   };
   document.getElementById('deckAddModal')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
@@ -1143,6 +1144,7 @@ function openEditModal(s, id) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -1210,16 +1212,16 @@ function openEditModal(s, id) {
     return api;
   };
   // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
-  const defSep = ',|;|；|\\n', defJn = ', ', exSep = null, exJn = '\n';   // 例句模式
+  const defSep = ',|，|;|；|\\n', defJn = ', ', exSep = null, exJn = '\n';   // 例句模式
   const editDefChips = _tagInputEdit('deckEditDefChips', 'deckEditDef', 'def-chip', w.definition || '', defSep, defJn, 'display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   const editExChips = _tagInputEdit('deckEditExChips', 'deckEditExample', 'ex-chip', mergeExamplePhrases(w.example, w.phrases), exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   // 統一膠囊（編輯 modal）：既有值預載入膠囊
   const _pillStyleE = 'display:inline-flex;align-items:center;gap:4px;padding:1px 10px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s';
-  const editSynChips = _tagInputEdit('deckEditSynonymChips', 'deckEditSynonym', 'pill-chip', w.synonym || '', ',', ', ', _pillStyleE);
-  const editAntChips = _tagInputEdit('deckEditAntonymChips', 'deckEditAntonym', 'pill-chip', w.antonym || '', ',', ', ', _pillStyleE);
-  const editDerivChips = _tagInputEdit('deckEditDerivativeChips', 'deckEditDerivative', 'pill-chip', w.derivative || '', ',', ', ', _pillStyleE);
-  const editRelChips = _tagInputEdit('deckEditRelatedChips', 'deckEditRelated', 'pill-chip', (w.related || []).join(', '), ',', ', ', _pillStyleE);
-  const editFormsChips = _tagInputEdit('deckEditFormsChips', 'deckEditForms', 'pill-chip', (w.forms || []).join(', '), ',', ', ', _pillStyleE);
+  const editSynChips = _tagInputEdit('deckEditSynonymChips', 'deckEditSynonym', 'pill-chip', w.synonym || '', ',|，', ', ', _pillStyleE);
+  const editAntChips = _tagInputEdit('deckEditAntonymChips', 'deckEditAntonym', 'pill-chip', w.antonym || '', ',|，', ', ', _pillStyleE);
+  const editDerivChips = _tagInputEdit('deckEditDerivativeChips', 'deckEditDerivative', 'pill-chip', w.derivative || '', ',|，', ', ', _pillStyleE);
+  const editRelChips = _tagInputEdit('deckEditRelatedChips', 'deckEditRelated', 'pill-chip', (w.related || []).join(', '), ',|，', ', ', _pillStyleE);
+  const editFormsChips = _tagInputEdit('deckEditFormsChips', 'deckEditForms', 'pill-chip', (w.forms || []).join(', '), ',|，', ', ', _pillStyleE);
   // ── POS chips ───
   const _getEditPosVal = () => Array.from(document.querySelectorAll('#deckEditPosGroup .pos-chip.selected')).map(el => el.dataset.pos).join(', ');
   const _selectEditPosChips = (posStr) => {
@@ -1339,7 +1341,7 @@ function openEditModal(s, id) {
     }
   };
   document.getElementById('deckEditModal')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄

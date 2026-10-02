@@ -1318,6 +1318,25 @@ body.no-hints .mode-desc{display:none}
 .study-user-input{margin-top:10px;font-size:13px;color:var(--text-tertiary)}
 .study-user-word{font-family:var(--mono);color:var(--accent);font-weight:600}
 
+/* EXAMGEST（2026-10-02）：測驗手勢卡 — pan-y 把垂直捲動交給瀏覽器（pointercancel→回彈），水平拖＝手勢；
+   點擊/拖曳追蹤見 lib/gesture.js（觸控 ↑↓ 判分的取捨記在該檔註解） */
+.exam-gest{touch-action:pan-y;transition:transform .26s cubic-bezier(.2,.8,.3,1.25)}
+.gest-tint{position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;transition:opacity .1s}
+@keyframes efThrowR{40%{transform:translateX(30px) rotate(3deg)}100%{transform:none}}
+@keyframes efThrowL{40%{transform:translateX(-30px) rotate(-3deg)}100%{transform:none}}
+@keyframes efThrowU{40%{transform:translateY(-26px)}100%{transform:none}}
+@keyframes efThrowD{40%{transform:translateY(26px)}100%{transform:none}}
+.ef-throw-right{animation:efThrowR .3s cubic-bezier(.2,.7,.3,1)}
+.ef-throw-left{animation:efThrowL .3s cubic-bezier(.2,.7,.3,1)}
+.ef-throw-up{animation:efThrowU .3s cubic-bezier(.2,.7,.3,1)}
+.ef-throw-down{animation:efThrowD .3s cubic-bezier(.2,.7,.3,1)}
+/* SPELLKBD：拼字內建鍵盤（只在手機掛 — 原生鍵盤建議列會洩答案，見 lib/spell-kbd.js） */
+.spell-kbd{width:100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
+.sk-row{display:flex;gap:4px;justify-content:center}
+.sk-key{flex:1;max-width:36px;padding:10px 0;border:1px solid var(--border);border-radius:10px;background:var(--bg-elevated);color:var(--text-primary);font-family:var(--mono);font-size:15px;font-weight:600}
+.sk-key:active{background:var(--accent-container);border-color:var(--accent);color:var(--accent)}
+.sk-wide{max-width:120px}
+
 /* Chip styles */
 .study-chips{display:flex;flex-wrap:wrap;gap:4px}
 .study-chips-label{font-size:10px;color:var(--text-quaternary);font-weight:500;align-self:center;margin-right:4px}

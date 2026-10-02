@@ -30,7 +30,7 @@ ok('splitFieldsHtml 切 [,，;；\\n]', svg.includes('split(/[,，;；\\n]/)'));
 ok('browser word-row 同規則', browser.includes("split(/[,，;；\\n]/)"));
 ok('deck-browser word-row 同規則', deck.includes("split(/[,，;；\\n]/)"));
 for (const [f, src] of [['deck-add', deck], ['deck-edit', deck], ['browser-combo', browser]]) {
-  ok(`${f} defSep 含 \\n`, src.includes("',|;|；|\\\\n'"));
+  ok(`${f} defSep 含 \\n＋，（MOBILE1）`, src.includes("',|，|;|；|\\\\n'"));
 }
 
 console.log('== T3 行為：舊髒資料照樣切得開 ==');

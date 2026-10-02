@@ -1189,6 +1189,7 @@ function openModal(s, word) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
+      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -1256,7 +1257,7 @@ function openModal(s, word) {
     return api;
   };
   // DEFSEP1：定義膠囊分隔（含 \n/;； 舊資料殘留；存檔 join 一律 defJn=', '）
-  const defSep = ',|;|；|\\n', defJn = ', ';
+  const defSep = ',|，|;|；|\\n', defJn = ', ';
   const exSep = null, exJn = '\n';   // 例句模式：sep=null（逗號屬句子一部分）
   const defIn = word?.definition || '';
   const exIn = mergeExamplePhrases(word?.example, word?.phrases);
@@ -1264,11 +1265,11 @@ function openModal(s, word) {
   const exChips = _tagInput('fExChips', 'fExample', 'ex-chip', exIn, exSep, exJn, 'display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:6px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s');
   // 統一膠囊：相似/反義/衍生物/相關詞/詞形變化（既有值預載；編輯+新增共用 modal）
   const _pillStyleB = 'display:inline-flex;align-items:center;gap:4px;padding:1px 10px;border-radius:100px;font-size:12px;background:var(--accent);color:var(--accent-on);cursor:pointer;transition:background-color .15s,border-color .15s,color .15s';
-  const synChips = _tagInput('fSynonymChips', 'fSynonyms', 'pill-chip', word?.synonym || '', ',', ', ', _pillStyleB);
-  const antChips = _tagInput('fAntonymChips', 'fAntonyms', 'pill-chip', word?.antonym || '', ',', ', ', _pillStyleB);
-  const derivChips = _tagInput('fDerivativeChips', 'fDerivatives', 'pill-chip', word?.derivative || '', ',', ', ', _pillStyleB);
-  const relChips = _tagInput('fRelatedChips', 'fRelated', 'pill-chip', (word?.related || []).join(', '), ',', ', ', _pillStyleB);
-  const formsChips = _tagInput('fFormsChips', 'fForms', 'pill-chip', (word?.forms || []).join(', '), ',', ', ', _pillStyleB);
+  const synChips = _tagInput('fSynonymChips', 'fSynonyms', 'pill-chip', word?.synonym || '', ',|，', ', ', _pillStyleB);
+  const antChips = _tagInput('fAntonymChips', 'fAntonyms', 'pill-chip', word?.antonym || '', ',|，', ', ', _pillStyleB);
+  const derivChips = _tagInput('fDerivativeChips', 'fDerivatives', 'pill-chip', word?.derivative || '', ',|，', ', ', _pillStyleB);
+  const relChips = _tagInput('fRelatedChips', 'fRelated', 'pill-chip', (word?.related || []).join(', '), ',|，', ', ', _pillStyleB);
+  const formsChips = _tagInput('fFormsChips', 'fForms', 'pill-chip', (word?.forms || []).join(', '), ',|，', ', ', _pillStyleB);
 
   const close = () => document.getElementById('wordModal')?.remove();
   document.getElementById('modalClose')?.addEventListener('click', close);
@@ -1562,7 +1563,7 @@ function openModal(s, word) {
   };
 
   document.getElementById('wordModal')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄

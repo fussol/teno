@@ -4,6 +4,7 @@ import { icon, splitFieldsHtml, fmtExample, wordExample, studyExampleHtml, bindE
 import { extraFieldsHtml, visShow } from '../lib/word-extra.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
+import { spellKbdHtml, spellInputAttr, bindSpellKbd } from '../lib/spell-kbd.js';
 let _ssVvHandler = null;   // G11: visualViewport resize（常駐節點累積）
 
 export function render(s) {
@@ -78,7 +79,8 @@ function renderFront(w, cnt) {
       ${splitFieldsHtml(w.pos, w.definition) || ''}
       </div>
       <div class="study-input-row">
-        <input class="study-input" id="spellInput" type="text" placeholder="輸入英文單字..." autofocus>
+        <input class="study-input" id="spellInput" type="text" placeholder="輸入英文單字..." autofocus ${typeof spellInputAttr === 'function' ? spellInputAttr() : ''}>
+        ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}
         <button class="study-submit" id="spellSubmitBtn">確認</button>
       </div>
     </div>
@@ -136,6 +138,7 @@ export function onMount(s) {
     el?.focus();
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, 50);
+  if (typeof bindSpellKbd === 'function') bindSpellKbd('spellInput');   // SPELLKBD: 手機內建鍵盤
   // G11：visualViewport resize 具名＋冪等 — rip() 每次重渲染都跑 onMount，原匿名 listener 在常駐節點無限累積
   if (window.visualViewport) {
     if (_ssVvHandler) { window.visualViewport.removeEventListener('resize', _ssVvHandler); _ssVvHandler = null; }

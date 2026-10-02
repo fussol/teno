@@ -5,6 +5,7 @@ import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { mulberry32, hashCode } from '../lib/rng.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
+import { dragTrack } from '../lib/gesture.js';
 
 let e = {
   phase: 'config',
@@ -79,22 +80,9 @@ function renderConfig(s) {
             </div>`;
           }).join('')}
         </div>
-        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+        <div style="margin:0 0 16px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-container)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px">${icon('tag')} 答對／答錯自動標籤</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>測驗數量</span>
-              <input type="number" id="emCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
-              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
-              <span>自動跳下一題</span>
-               <input type="checkbox" id="emAutoNext" ${e.settings.autoNext?'checked':''}>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>間隔秒數</span>
-              <input type="number" id="emDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
-            </label>
             <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
               <span>答對標籤</span>
               <select id="emTagCorrect" class="form-input" style="width:130px">
@@ -121,6 +109,24 @@ function renderConfig(s) {
             </label>
           </div>
         </div>
+        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>測驗數量</span>
+              <input type="number" id="emCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
+              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <span>自動跳下一題</span>
+               <input type="checkbox" id="emAutoNext" ${e.settings.autoNext?'checked':''}>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>間隔秒數</span>
+              <input type="number" id="emDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
+            </label>
+          </div>
+        </div>
         <button class="study-flip-btn" id="emStartBtn" style="width:100%;margin-top:0">${icon('play')} 開始測驗</button>
       </div>
     </div>
@@ -143,7 +149,7 @@ function renderExam(s) {
       <button class="btn btn-sm study-toolbar-exit" id="emExitBtn">${icon('x')} 退出</button>
     </div>
     <div class="study-progress-bar"><div class="study-progress-fill" style="width:${pct}%"></div></div>
-    <div class="study-card" style="padding:40px 32px">
+    <div class="study-card exam-gest" id="emCard" style="padding:40px 32px">
       ${w._answered ? `
         <div class="study-result ${w._picked === w._correctIdx ? 'study-correct' : 'study-wrong'}" style="margin-bottom:12px">
           ${w._picked === w._correctIdx ? '✓ 正確' : '✗ 錯誤'}
@@ -189,6 +195,12 @@ function renderResult(s) {
   const pct = total > 0 ? Math.round((e.correct / total) * 100) : 0;
   const mins = Math.floor(e.totalTime / 60);
   const secs = e.totalTime % 60;
+  // G′: 結果頁套用鈕＝主角 — 帶上將套用的標籤名與筆數
+  const sys = s.state.systemTags || [];
+  const tcRaw = e.settings.tagCorrect || 'correct';
+  const twRaw = e.settings.tagWrong || 'wrong';
+  const tcName = (sys.find(t => t.role === tcRaw) || {}).name || tcRaw;
+  const twName = (sys.find(t => t.role === twRaw) || {}).name || twRaw;
 
   return `<div class="study-wrap" style="padding-bottom:40px;justify-content:center">
     <div class="study-card" style="max-width:480px;padding:40px 32px;text-align:center">
@@ -202,7 +214,7 @@ function renderResult(s) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
         <button class="study-flip-btn" id="emRetryBtn" style="font-size:14px;padding:12px 24px">${icon('refresh')} 再考一次</button>
-        <button class="btn" id="emTagBtn" style="${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 加上標籤</button>
+        <button class="study-flip-btn" id="emTagBtn" style="font-size:13px;padding:12px 20px;margin-top:0;${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 套用：${esc(tcName)} × ${e.correct}、${esc(twName)} × ${e.wrong}</button>
         <button class="btn" data-goto="dashboard">${icon('home')} 回首頁</button>
       </div>
     </div>
@@ -440,7 +452,6 @@ export function onMount(s) {
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）
-    if (!e.decks.length) e.decks = s.state.decks.map(d => d.id);
     document.getElementById('emToggleAll')?.addEventListener('click', () => {
       const all = e.decks.length !== s.state.decks.length;
       e.decks = all ? s.state.decks.map(d => d.id) : [];
@@ -488,6 +499,8 @@ export function onMount(s) {
         pickOption(s, parseInt(el.dataset.emOpt));
       });
     });
+    // EXAMGEST: 空白處拖曳＝即時移動選擇（54px/格、循環），點空白確認；直點選項照舊立即作答
+    if (typeof dragTrack === 'function') bindMcGest(s);
     document.getElementById('emPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
   bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
@@ -525,6 +538,41 @@ export function onMount(s) {
     });
     document.getElementById('emTagBtn')?.addEventListener('click', () => applyTags(s));
   }
+}
+
+// EXAMGEST: 多選手勢 — 空白處（選項/鈕除外）拖曳＝光暈即時跟手指，每 54px 移一格、到頭循環、
+// 首次＝第 1 項；→/↑ 上一項、←/↓ 下一項（軸 dy-dx）。放開＝停在當前選擇，點空白確認；
+// 沒手勢過的點空白＝無事（無操作提示，不加 toast）。列表不位移（螢幕放得下，不滑）。
+function bindMcGest(s) {
+  const card = document.getElementById('emCard');
+  const STEP = 54;
+  let gSel = -1, base = 0;
+  const setGlow = (sel) => {
+    document.querySelectorAll('[data-em-opt]').forEach((el, i) => el.classList.toggle('selected', i === sel));
+  };
+  dragTrack(card, {
+    ignore: '.study-opt, button',
+    onDown() { base = gSel < 0 ? 0 : gSel; },
+    onMove(dx, dy) {
+      const w = e.words[e.idx];
+      if (!w || w._answered) return;
+      const n = w._options.length;
+      const sel = ((base + Math.round((dy - dx) / STEP)) % n + n) % n;
+      if (sel !== gSel) { gSel = sel; setGlow(gSel); }
+    },
+    onEnd() {},   // 選擇已即時落下：不回彈、不作答（點空白／直點選項才作答）
+    onCancel() {},
+    onTap(target) {
+      const w = e.words[e.idx];
+      if (!w) return;
+      if (w._answered) {   // 倒數中點卡＝立即跳過
+        if (e.pendingNext) { clearTimeout(e.pendingNext); e.pendingNext = null; }
+        if (e.settings.autoNext) nextWord(s);
+        return;
+      }
+      if (gSel >= 0) pickOption(s, gSel);
+    },
+  });
 }
 
 function updateStatus(s) {

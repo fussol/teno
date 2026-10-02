@@ -4,6 +4,7 @@ import { toast } from '../lib/toast.js';
 import { renderSavedSessions, buildSession } from '../core/exam-session.js';
 import { bindSpeakClick } from '../lib/tts.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS } from '../lib/word-image.js';
+import { dragTrack } from '../lib/gesture.js';
 
 let e = {
   phase: 'config',
@@ -16,6 +17,7 @@ let e = {
   judged: false,
   totalTime: 0,
   cardStart: 0,
+  _throw: null,          // EXAMGEST: 手勢判分方向（right/left/up/down），onMount 消費成飛出動畫後清空
   results: [],          // B1: per-word 作答結果：undefined/null=未答 / true=對 / false=錯 / 'old'=舊存檔未知
   autoNextTimer: null,  // B1: autoNext 的 timer id（exit/重啟時清理）
   pendingScore: null,   // B2: 延遲窗計分暫存（'correct'|'wrong'|null，不序列化；nextWord/末題按鈕/exit 時 flush）
@@ -80,22 +82,9 @@ function renderConfig(s) {
             </div>`;
           }).join('')}
         </div>
-        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
-          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+        <div style="margin:0 0 16px;padding:12px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--accent-container)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:10px">${icon('tag')} 答對／答錯自動標籤</div>
           <div style="display:flex;flex-direction:column;gap:12px">
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>測驗數量</span>
-              <input type="number" id="efCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
-              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
-              <span>自動跳下一題</span>
-               <input type="checkbox" id="efAutoNext" ${e.settings.autoNext?'checked':''}>
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
-              <span>間隔秒數</span>
-              <input type="number" id="efDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
-            </label>
             <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
               <span>答對標籤</span>
               <select id="efTagCorrect" class="form-input" style="width:130px">
@@ -122,6 +111,24 @@ function renderConfig(s) {
             </label>
           </div>
         </div>
+        <div style="margin:16px 0;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:12px">${icon('sliders')} 設定</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>測驗數量</span>
+              <input type="number" id="efCount" class="form-input form-number" value="${e.settings.count}" min="0" max="${pool.length}">
+              <span style="font-size:11px;color:var(--text-tertiary)">0=全部 (${pool.length})</span>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary);cursor:pointer">
+              <span>自動跳下一題</span>
+               <input type="checkbox" id="efAutoNext" ${e.settings.autoNext?'checked':''}>
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:var(--text-secondary)">
+              <span>間隔秒數</span>
+              <input type="number" id="efDelay" class="form-input form-number" value="${e.settings.delay}" min="0.5" max="10" step="0.5">
+            </label>
+          </div>
+        </div>
         <button class="study-flip-btn" id="efStartBtn" style="width:100%;margin-top:0">${icon('play')} 開始測驗</button>
       </div>
     </div>
@@ -139,13 +146,13 @@ function renderExam(s) {
 
   let body;
   if (!e.answered) {
-    body = `<div class="study-card" style="padding:40px 32px">
+    body = `<div class="study-card exam-gest" id="efCard" style="padding:40px 32px">
         <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px;font-weight:500">請回想這個單字的定義</div>
         <div class="tts-click" style="font-size:26px;font-weight:700;color:var(--text-primary);margin-bottom:12px;line-height:1.4;cursor:pointer" title="點擊播放發音">${esc(w.word)}</div>
         <button class="study-flip-btn" id="efRevealBtn">顯示答案</button>
       </div>`;
   } else {
-    body = `<div class="study-card" style="padding:40px 32px">
+    body = `<div class="study-card exam-gest" id="efCard" style="padding:40px 32px">
         ${e.judged ? `<div class="study-result ${e.answeredCorrect ? 'study-correct' : 'study-wrong'}" style="margin-bottom:12px">
           ${e.answeredCorrect ? '✓ 正確' : '✗ 錯誤'}
         </div>` : ''}
@@ -162,12 +169,10 @@ function renderExam(s) {
           ${extraFieldsHtml(w, esc, 'exam')}
           ${(visShow('exam', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
         </div>
+        <div class="gest-tint" id="efTint"></div>
       </div>
       <div class="study-buttons" style="position:static;margin-top:16px;border:none;background:none;padding:0;pointer-events:auto">
-        ${!e.judged ? `
-          <button class="study-btn" id="efCorrectBtn" style="background:var(--green);flex:1">${icon('check')} 正確</button>
-          <button class="study-btn" id="efWrongBtn" style="background:var(--red);flex:1">${icon('x')} 錯誤</button>
-        ` : !e.settings.autoNext ? `
+        ${!e.judged ? '' : !e.settings.autoNext ? `
           <button class="study-flip-btn" id="efNextBtn" style="flex:1">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
         ` : ''}
       </div>`;
@@ -190,6 +195,12 @@ function renderResult(s) {
   const pct = total > 0 ? Math.round((e.correct / total) * 100) : 0;
   const mins = Math.floor(e.totalTime / 60);
   const secs = e.totalTime % 60;
+  // G′: 結果頁套用鈕＝主角 — 帶上將套用的標籤名與筆數
+  const sys = s.state.systemTags || [];
+  const tcRaw = e.settings.tagCorrect || 'correct';
+  const twRaw = e.settings.tagWrong || 'wrong';
+  const tcName = (sys.find(t => t.role === tcRaw) || {}).name || tcRaw;
+  const twName = (sys.find(t => t.role === twRaw) || {}).name || twRaw;
 
   return `<div class="study-wrap" style="padding-bottom:40px;justify-content:center">
     <div class="study-card" style="max-width:480px;padding:40px 32px;text-align:center">
@@ -203,7 +214,7 @@ function renderResult(s) {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
         <button class="study-flip-btn" id="efRetryBtn" style="font-size:14px;padding:12px 24px">${icon('refresh')} 再考一次</button>
-        <button class="btn" id="efTagBtn" style="${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 加上標籤</button>
+        <button class="study-flip-btn" id="efTagBtn" style="font-size:13px;padding:12px 20px;margin-top:0;${total===0?'opacity:.5;pointer-events:none':''}">${icon('tag')} 套用：${esc(tcName)} × ${e.correct}、${esc(twName)} × ${e.wrong}</button>
         <button class="btn" data-goto="dashboard">${icon('home')} 回首頁</button>
       </div>
     </div>
@@ -294,6 +305,9 @@ function resumeSession(s, session) {
 }
 
 function answerCorrect(s) {
+  if (!e.judged) e.totalTime += (Date.now() - e.cardStart) / 1000;   // EXAMGEST: 首判才計時（原由按鈕 handler 設 judged，改判不重加）
+  e.judged = true;            // B2 判分狀態收斂進 answer*（EXAMGEST 無按鈕，手勢直呼此處）
+  e.answeredCorrect = true;
   e.pendingScore = 'correct';   // B2: 延遲窗內不直接計分（timer fire / 手動下一題 / exit 時 flush）
   e.results[e.idx] = true;      // B1: results 即時寫（applyTags/resume 依賴，不延遲）
   e.totalTime += (Date.now() - e.cardStart) / 1000;
@@ -306,6 +320,9 @@ function answerCorrect(s) {
 }
 
 function answerWrong(s) {
+  if (!e.judged) e.totalTime += (Date.now() - e.cardStart) / 1000;   // EXAMGEST: 同 answerCorrect
+  e.judged = true;            // EXAMGEST: 同 answerCorrect
+  e.answeredCorrect = false;
   e.pendingScore = 'wrong';     // B2
   e.results[e.idx] = false;     // B1
   e.totalTime += (Date.now() - e.cardStart) / 1000;
@@ -413,7 +430,6 @@ export function onMount(s) {
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）
-    if (!e.decks.length) e.decks = s.state.decks.map(d => d.id);
     document.getElementById('efToggleAll')?.addEventListener('click', () => {
       const all = e.decks.length !== s.state.decks.length;
       e.decks = all ? s.state.decks.map(d => d.id) : [];
@@ -459,16 +475,12 @@ export function onMount(s) {
       e.judged = false;
       renderInPlace(s);
     });
-    document.getElementById('efCorrectBtn')?.addEventListener('click', () => {
-      e.judged = true;
-      e.answeredCorrect = true;
-      answerCorrect(s);
-    });
-    document.getElementById('efWrongBtn')?.addEventListener('click', () => {
-      e.judged = true;
-      e.answeredCorrect = false;
-      answerWrong(s);
-    });
+    // EXAMGEST: 手勢取代正確/錯誤按鈕 — 正面點卡翻面、反面拖曳跟手、≥70px 鬆手判分
+    if (typeof dragTrack === 'function') bindFlipGest(s);
+    if (e._throw) {   // 手勢判分的飛出方向（answer* 渲染後的這輪 onMount 消費一次）
+      document.getElementById('efCard')?.classList.add('ef-throw-' + e._throw);
+      e._throw = null;
+    }
     document.getElementById('efPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
   bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
@@ -500,6 +512,61 @@ export function onMount(s) {
     });
     document.getElementById('efTagBtn')?.addEventListener('click', () => applyTags(s));
   }
+}
+
+// EXAMGEST: 翻卡手勢 — 正面點卡翻面（.tts-click/按鈕除外），反面拖曳跟手＋紅綠光罩，
+// ≥70px 鬆手判分（→/↑ 對、←/↓ 錯）→ answer* 渲染＋_throw 飛出。無按鈕、無操作提示。
+// 觸控垂直拖＝捲動（.exam-gest pan-y → pointercancel 回彈），見 lib/gesture.js。
+function bindFlipGest(s) {
+  const card = document.getElementById('efCard');
+  dragTrack(card, {
+    ignore: 'button, .tts-click',
+    onMove(dx, dy) {
+      card.style.transition = 'none';
+      if (!e.answered) {   // 正面也跟手、鬆手回彈（翻面走點擊）
+        card.style.transform = `translate(${dx * .7}px,${dy * .7}px) rotate(${dx * .02}deg)`;
+        return;
+      }
+      if (e.judged) return;
+      card.style.transform = `translate(${dx}px,${dy}px) rotate(${dx * .03}deg)`;
+      const t = document.getElementById('efTint');
+      if (t) {
+        const ok = (dx > 0 && Math.abs(dx) >= Math.abs(dy)) || (dy < 0 && Math.abs(dy) > Math.abs(dx));
+        t.style.background = ok
+          ? 'linear-gradient(135deg,rgba(94,217,143,.65),rgba(94,217,143,.1))'
+          : 'linear-gradient(315deg,rgba(248,138,138,.6),rgba(248,138,138,.08))';
+        t.style.opacity = Math.min(Math.hypot(dx, dy) / 120, .6);
+      }
+    },
+    onEnd(dx, dy, dir) {
+      const clear = () => { card.style.transition = ''; card.style.transform = ''; };
+      const tint = document.getElementById('efTint');
+      if (tint) tint.style.opacity = 0;
+      if (!e.answered || e.judged) { clear(); return; }
+      if (Math.hypot(dx, dy) < 70) { clear(); return; }   // 不足門檻＝回彈不判（無 toast：手勢教學不進 app）
+      e._throw = dir;
+      if (dir === 'right' || dir === 'up') answerCorrect(s); else answerWrong(s);
+    },
+    onCancel() {
+      card.style.transition = '';
+      card.style.transform = '';
+      const t = document.getElementById('efTint');
+      if (t) t.style.opacity = 0;
+    },
+    onTap() {
+      if (!e.answered) {          // 點卡＝翻面（單字是 .tts-click、鈕有 ignore，皆不經過這）
+        e.answered = true;
+        e.judged = false;
+        renderInPlace(s);
+        return;
+      }
+      if (e.judged && e.settings.autoNext && e.autoNextTimer) {   // 倒數中點卡＝立即跳過
+        clearTimeout(e.autoNextTimer);
+        e.autoNextTimer = null;
+        nextWord(s);
+      }
+    },
+  });
 }
 
 function updateStatus(s) {
