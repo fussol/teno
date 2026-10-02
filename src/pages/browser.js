@@ -1189,7 +1189,7 @@ function openModal(s, word) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
+      if (e.isComposing || e.keyCode === 229 || input._ime) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄；IMEJUMP1：Android keydown 常沒標 isComposing/229 → 掛旗補
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -1562,9 +1562,18 @@ function openModal(s, word) {
     }
   };
 
+  // IMEJUMP1：Android 組字中 keydown 的 isComposing/keyCode 229 可能都沒標（MOBILE1 守門漏接）
+  // → 組字期 value 尚空、被導覽層當「空欄跳下一欄」。改用 compositionstart/end 掛旗補識別；
+  // focusout 兜底（compositionend 漏發時下一個聚焦點清旗，不會永久卡住跳欄）。
+  const _wm = document.getElementById('wordModal');
+  _wm?.addEventListener('compositionstart', (e) => { e.target._ime = true; });
+  _wm?.addEventListener('compositionend', (e) => { e.target._ime = false; });
+  _wm?.addEventListener('focusout', (e) => { e.target._ime = false; });
+
   document.getElementById('wordModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
+    if (el._ime) return;   // IMEJUMP1：組字中不跳欄
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); _jumpNext(el.id); }
