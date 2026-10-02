@@ -24,7 +24,7 @@ globalThis.document = dom.window.document;
 let src = readFileSync('src/pages/browser.js', 'utf8');
 if (LEGACY) {
   src = src.replace(' || input._ime', '')
-           .replace(/^\s*if \(el\._ime\) return;.*$/m, '');
+           .replace(/^\s*if \(el\._ime\) \{.*$/m, '');
 }
 src = src.replace(/^import .*$/gm, '').replace(/^export /gm, '');
 
@@ -33,6 +33,7 @@ const stubs = {
   isMobile: false,
   HARD_LIST_CAP: 999,
   WORD_IMAGE_CSS: '',
+  toast: () => '',   // TEMP-IMELOG nav 跳欄會呼叫；listener 內 ReferenceError 會被 jsdom 吞掉，先預置
   window: dom.window,
   navigator: dom.window.navigator,
 };

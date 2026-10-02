@@ -1161,6 +1161,35 @@ function openModal(s, word) {
   `;
   container.insertAdjacentHTML('beforeend', html);
 
+  // ── TEMP-IMELOG：Android 組字跳欄診斷監測器（診斷完成後整段移除） ──
+  // 螢幕底部綠字疊層記錄 modal 內 Enter/composition/focus 事件＋各 handler 決策，
+  // keydown 只記 Enter（避免打字刷屏）；nav 跳欄/擋下另吐 toast 讓手機端直接看到。
+  if (!document.getElementById('imeLog')) {
+    document.body.insertAdjacentHTML('beforeend',
+      `<div id="imeLog" style="position:fixed;left:0;right:0;top:0;z-index:99999;max-height:42vh;overflow:hidden;background:rgba(0,0,0,.82);color:#7dff7d;font:10px/1.4 ui-monospace,monospace;padding:4px 6px;pointer-events:none;white-space:pre-wrap;word-break:break-all"></div>`);
+  }
+  const _t0 = performance.now();
+  const _rec = (s) => {
+    const el = document.getElementById('imeLog');
+    if (!el) return;
+    el.textContent = (el.textContent + `${((performance.now() - _t0) | 0)}ms ${s}\n`).split('\n').slice(-18).join('\n');
+  };
+  _rec('── modal 開 ──');
+  const _wm = document.getElementById('wordModal');
+  const _mon = (name, cap, filt) => _wm?.addEventListener(name, (e) => {
+    if (filt && !filt(e)) return;
+    const t = e.target;
+    _rec(`[${name}] t=${t.id || t.tagName} ime=${t._ime} comp=${e.isComposing ?? '-'} kc=${e.keyCode ?? '-'} k=${e.key ?? '-'} val=${JSON.stringify(String(t.value || '').slice(0, 24))} act=${document.activeElement?.id || '-'}`);
+  }, cap);
+  _mon('keydown', true, (e) => e.key === 'Enter');        // 捕獲：最早記錄，先於膠囊/導覽 handler
+  _mon('keyup', false, (e) => e.key === 'Enter');
+  _mon('compositionstart');
+  _mon('compositionend');
+  _mon('focusin');
+  _mon('focusout');
+  _mon('input', false, (e) => e.target._ime === true || e.isComposing === true);   // 只記「掛旗/組字中」的落字（一般打字不刷屏）
+  // ── TEMP-IMELOG 結束 ──
+
   // ── 統一膠囊輸入系統（元首令 2026-08-31 v2 — 與 deck-browser 同款）──
   // Enter 存膠囊（逗號分割）；例句模式（sep=null）整句一顆；點膠囊回編輯（例句半成品先存回）
   const _tagInput = (containerId, inputId, chipClass, initialVal, sep, jn, style) => {
@@ -1189,7 +1218,10 @@ function openModal(s, word) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229 || input._ime) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄；IMEJUMP1：Android keydown 常沒標 isComposing/229 → 掛旗補
+      if (e.isComposing || e.keyCode === 229 || input._ime) {   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄；IMEJUMP1：Android keydown 常沒標 isComposing/229 → 掛旗補
+        if (e.key === 'Enter') _rec(`CHIP skip comp=${e.isComposing} kc=${e.keyCode} ime=${input._ime}`);
+        return;
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -1199,6 +1231,9 @@ function openModal(s, word) {
           if (fresh.length) { chips.push(...fresh); render(); }
           input.value = '';
           e.stopPropagation();
+          _rec(`CHIP 吃字 n=${vals.length} → 不冒泡`);
+        } else {
+          _rec('CHIP 空值 → 放行給導覽');
         }
       }
     });
@@ -1565,28 +1600,30 @@ function openModal(s, word) {
   // IMEJUMP1：Android 組字中 keydown 的 isComposing/keyCode 229 可能都沒標（MOBILE1 守門漏接）
   // → 組字期 value 尚空、被導覽層當「空欄跳下一欄」。改用 compositionstart/end 掛旗補識別；
   // focusout 兜底（compositionend 漏發時下一個聚焦點清旗，不會永久卡住跳欄）。
-  const _wm = document.getElementById('wordModal');
-  _wm?.addEventListener('compositionstart', (e) => { e.target._ime = true; });
-  _wm?.addEventListener('compositionend', (e) => { e.target._ime = false; });
-  _wm?.addEventListener('focusout', (e) => { e.target._ime = false; });
+  _wm?.addEventListener('compositionstart', (e) => { e.target._ime = true; _rec(`旗 ON t=${e.target.id}`); });
+  _wm?.addEventListener('compositionend', (e) => { e.target._ime = false; _rec(`旗 OFF t=${e.target.id}`); });
+  _wm?.addEventListener('focusout', (e) => { if (e.target._ime) _rec(`旗 OFF(focusout) t=${e.target.id}`); e.target._ime = false; });
 
   document.getElementById('wordModal')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
+    if (e.key !== 'Enter') return;
+    if (e.isComposing || e.keyCode === 229) { _rec(`NAV early comp=${e.isComposing} kc=${e.keyCode}`); return; }
     const el = e.target;
-    if (el._ime) return;   // IMEJUMP1：組字中不跳欄
+    if (el._ime) { _rec('NAV 擋：_ime 組字旗'); toast('[IMELOG] 組字旗擋下不跳欄', 'toast-success'); return; }   // IMEJUMP1：組字中不跳欄
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); _jumpNext(el.id); }
       return;
     }
-    if ((el.id === 'fDefinition' || el.id === 'fExample') && el.value.trim()) return;
+    if ((el.id === 'fDefinition' || el.id === 'fExample') && el.value.trim()) { _rec(`NAV 擋：欄位有字 val=${JSON.stringify(el.value.slice(0, 20))}`); return; }
     const idx = fieldIds.indexOf(el.id);
-    if (idx === -1) return;
+    if (idx === -1) { _rec(`NAV return：${el.id} 不在導覽列`); return; }
     e.preventDefault();
 
     if (el.id === 'fWord') {
       autoFillAll();
     }
+    _rec(`NAV 跳欄 ${el.id} → (下欄) val=${JSON.stringify(el.value)}`);
+    toast(`[IMELOG] 跳欄 ${el.id}→下一欄`, 'toast-success');
     _jumpNext(el.id);
   });
 
