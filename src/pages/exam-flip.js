@@ -171,14 +171,12 @@ function renderExam(s) {
         </div>
         <div class="gest-tint" id="efTint"></div>
       </div>
-      <div class="study-buttons" style="position:static;margin-top:16px;border:none;background:none;padding:0;pointer-events:auto">
-        ${!e.judged ? '' : !e.settings.autoNext ? `
-          <button class="study-flip-btn" id="efNextBtn" style="flex:1">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
-        ` : ''}
-      </div>`;
+      ${e.judged && !e.settings.autoNext ? `<div class="study-buttons">
+        <button class="study-flip-btn" id="efNextBtn" style="flex:1">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
+      </div>` : ''}`;
   }
 
-  return `<div class="study-wrap" style="padding-bottom:40px">
+  return `<div class="study-wrap">
     <div class="study-toolbar">
       <span>翻卡測驗</span>
       <span>${e.idx+1} / ${total}</span>

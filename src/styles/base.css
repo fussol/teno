@@ -51,6 +51,12 @@
   --border:        rgba(185,178,204,0.13);
   --border-strong: rgba(185,178,204,0.22);
 
+  /* SPELLKBD native keyboard — fallback（theme.js generatePalette 注入前＝dark） */
+  --kbd-tray:   #2a2b30;
+  --kbd-key:    #4b4d55;
+  --kbd-key-fn: #3a3b42;
+  --kbd-text:   #f2f2f6;
+
   /* State layers (MD3 overlays) */
   --state-hover:   rgba(255,255,255,0.055);
   --state-focus:   rgba(182,157,255,0.12);
@@ -1276,6 +1282,7 @@ body.no-hints .mode-desc{display:none}
 .study-correct{color:var(--green);background:var(--green-container)}
 .study-wrong{color:var(--red);background:var(--red-container)}
 .study-buttons{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:center;gap:10px;padding:24px 24px 28px;z-index:55;background:linear-gradient(transparent,var(--bg-base) 35%);pointer-events:none}
+.study-buttons .study-flip-btn{pointer-events:auto}
 .study-btn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 32px;border:none;border-radius:var(--r-xl);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--font);transition:background-color .15s,color .15s,border-color .15s,opacity .15s,transform .15s,box-shadow .15s;pointer-events:auto;background:var(--bg-surface);box-shadow:0 2px 8px rgba(0,0,0,.15)}
 .study-btn:hover{border-color:var(--border-strong);background:var(--bg-elevated)}
 .study-btn:active{opacity:.8}
@@ -1331,12 +1338,25 @@ body.no-hints .mode-desc{display:none}
 .ef-throw-left{animation:efThrowL .3s cubic-bezier(.2,.7,.3,1)}
 .ef-throw-up{animation:efThrowU .3s cubic-bezier(.2,.7,.3,1)}
 .ef-throw-down{animation:efThrowD .3s cubic-bezier(.2,.7,.3,1)}
-/* SPELLKBD：拼字內建鍵盤（只在手機掛 — 原生鍵盤建議列會洩答案，見 lib/spell-kbd.js） */
-.spell-kbd{width:100%;display:flex;flex-direction:column;gap:6px;margin-top:2px}
-.sk-row{display:flex;gap:4px;justify-content:center}
-.sk-key{flex:1;max-width:36px;padding:10px 0;border:1px solid var(--border);border-radius:10px;background:var(--bg-elevated);color:var(--text-primary);font-family:var(--mono);font-size:15px;font-weight:600}
-.sk-key:active{background:var(--accent-container);border-color:var(--accent);color:var(--accent)}
-.sk-wide{max-width:120px}
+/* SPELLKBD：拼字內建鍵盤（只在手機掛 — 原生鍵盤建議列會洩答案，見 lib/spell-kbd.js）
+   原生 IME 手感：fixed 貼螢幕底、鍵帽立體陰影、按壓下沈、system font、uniform 鍵寬；
+   色票 var 由 theme.js generatePalette 依 light/dark 覆寫（:root 值＝注入前 fallback）。 */
+.spell-kbd{position:fixed;left:0;right:0;bottom:0;z-index:70;display:flex;flex-direction:column;gap:8px;
+  padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));
+  background:var(--kbd-tray);box-shadow:0 -1px 0 rgba(0,0,0,.22),0 -8px 24px rgba(0,0,0,.10);
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.sk-row{display:flex;gap:6px;justify-content:center}
+.sk-key{flex:0 0 auto;width:calc((100% - 54px)/10);max-width:52px;padding:9px 0;border:none;border-radius:6px;
+  background:var(--kbd-key);color:var(--kbd-text);font-family:var(--font);font-size:17px;font-weight:500;line-height:1.3;
+  text-transform:uppercase;box-shadow:0 1px 1px rgba(0,0,0,.28);cursor:pointer;transition:filter .05s,box-shadow .05s,transform .05s}
+.sk-key:active{filter:brightness(.82);box-shadow:none;transform:translateY(1px)}
+.sk-fn{width:calc(((100% - 54px)/10)*1.5);max-width:78px;background:var(--kbd-key-fn)}
+.sk-row.sk-util{justify-content:flex-start;padding:0 2px}
+.sk-util .sk-key{width:auto;max-width:none;flex:0 0 auto}
+.sk-util .sk-space{flex:1 1 auto;min-width:0}
+.sk-util .sk-ret{flex:0 0 auto;min-width:66px;background:var(--accent);color:var(--accent-on)}
+.sk-util .sk-ret:active{filter:brightness(.9)}
+.sk-up .sk-shift{background:var(--kbd-text);color:var(--kbd-tray)}
 
 /* Chip styles */
 .study-chips{display:flex;flex-wrap:wrap;gap:4px}

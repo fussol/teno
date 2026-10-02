@@ -150,11 +150,11 @@ function renderExam(s) {
         </div>
         <div class="study-input-row">
           <input class="study-input" id="esInput" type="text" placeholder="輸入英文單字..." autofocus ${typeof spellInputAttr === 'function' ? spellInputAttr() : ''}>
-          ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}
           <button class="study-submit" id="esSubmitBtn">確認</button>
         </div>
       </div>
-      <div class="study-hint" style="position:static;margin-top:12px">Enter: 確認 · 點擊題目播放發音</div>`;
+      <div class="study-hint" style="position:static;margin-top:12px">Enter: 確認 · 點擊題目播放發音</div>
+      ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}`;
   } else {
     const isCorrect = e.userInput.toLowerCase() === w.word.toLowerCase();
     body = `<div class="study-card" style="padding:40px 32px">
@@ -175,14 +175,14 @@ function renderExam(s) {
           ${extraFieldsHtml(w, esc, 'exam')}
           ${(visShow('exam', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
         </div>
-        ${!e.settings.autoNext ? `
-          <button class="study-flip-btn" id="esNextBtn" style="margin-top:20px">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
-        ` : ''}
       </div>
+      ${!e.settings.autoNext ? `<div class="study-buttons">
+        <button class="study-flip-btn" id="esNextBtn" style="flex:1">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
+      </div>` : ''}
       <div class="study-hint" style="position:static;margin-top:12px">${e.settings.autoNext ? '即將跳下一題...' : '點擊下一題繼續'}</div>`;
   }
 
-  return `<div class="study-wrap" style="padding-bottom:40px">
+  return `<div class="study-wrap" style="padding-bottom:${e.userInput === '' ? '250px' : '140px'}">
     <div class="study-toolbar">
       <span>拼字測驗</span>
       <span>${e.idx+1} / ${total}</span>

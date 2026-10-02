@@ -65,7 +65,7 @@ function renderCard(s) {
 }
 
 function renderFront(w, cnt) {
-  return `<div class="study-wrap">
+  return `<div class="study-wrap" style="padding-bottom:350px">
     <div class="study-progress">
       <span class="study-counts">
         <span class="study-count-new">${cnt.newCount??0}新</span>
@@ -80,10 +80,10 @@ function renderFront(w, cnt) {
       </div>
       <div class="study-input-row">
         <input class="study-input" id="spellInput" type="text" placeholder="輸入英文單字..." autofocus ${typeof spellInputAttr === 'function' ? spellInputAttr() : ''}>
-        ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}
         <button class="study-submit" id="spellSubmitBtn">確認</button>
       </div>
     </div>
+    ${typeof spellKbdHtml === 'function' ? spellKbdHtml() : ''}
   </div>`;
 }
 

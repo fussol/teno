@@ -170,6 +170,10 @@ function generatePalette(h, sat, light, isDark) {
       '--border-strong':  rgbaStr(h, 12, 94, 0.20),
       '--state-hover':    rgbaStr(h, 12, 94, 0.06),
       '--state-pressed':  rgbaStr(h, 12, 94, 0.10),
+      '--kbd-tray':       '#2a2b30',
+      '--kbd-key':        '#4b4d55',
+      '--kbd-key-fn':     '#3a3b42',
+      '--kbd-text':       '#f2f2f6',
     };
   }
 
@@ -189,6 +193,10 @@ function generatePalette(h, sat, light, isDark) {
     '--border-strong':  rgbaStr(h, 14, 12, 0.18),
     '--state-hover':    rgbaStr(h, 14, 12, 0.04),
     '--state-pressed':  rgbaStr(h, 14, 12, 0.08),
+    '--kbd-tray':       '#d3d6dc',
+    '--kbd-key':        '#ffffff',
+    '--kbd-key-fn':     '#aeb4bd',
+    '--kbd-text':       '#111217',
   };
 }
 

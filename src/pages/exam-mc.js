@@ -142,7 +142,7 @@ function renderExam(s) {
   const answered = (e.results || []).reduce((n, r) => n + (r !== undefined ? 1 : 0), 0);
   const pct = Math.round((answered / total) * 100);
 
-  return `<div class="study-wrap exam-gest" style="padding-bottom:40px">
+  return `<div class="study-wrap exam-gest">
     <div class="study-toolbar">
       <span>多選測驗</span>
       <span>${e.idx+1} / ${total}</span>
@@ -170,9 +170,6 @@ function renderExam(s) {
           ${extraFieldsHtml(w, esc, 'exam')}
           ${(visShow('exam', 'description') && w.description) ? `<div style="font-size:13px;color:var(--text-tertiary);margin-top:12px;line-height:1.5">${esc(w.description)}</div>` : ''}
         </div>
-        ${!e.settings.autoNext ? `
-          <button class="study-flip-btn" id="emNextBtn" style="margin-top:20px">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
-        ` : ''}
       ` : `
         <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:16px;font-weight:500">選出正確的單字</div>
         ${splitFieldsHtml(w.pos, w.definition) || ''}
@@ -186,6 +183,9 @@ function renderExam(s) {
         </div>
       `}
     </div>
+    ${w._answered && !e.settings.autoNext ? `<div class="study-buttons">
+      <button class="study-flip-btn" id="emNextBtn" style="flex:1">${e.idx < e.words.length - 1 ? icon('arrow-right')+' 下一題' : icon('check')+' 查看結果'}</button>
+    </div>` : ''}
     <div class="study-hint" style="position:static;margin-top:12px">${w._answered ? (e.settings.autoNext ? '即將跳下一題...' : '點擊下一題繼續') : '1~4 選擇答案'}</div>
   </div>`;
 }

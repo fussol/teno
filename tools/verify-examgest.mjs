@@ -36,6 +36,7 @@ ok('answer* 收斂 judged/answeredCorrect', /function answerCorrect\(s\) \{[\s\S
 ok('改判不重加時間（首判計時）', (flip.match(/if \(!e\.judged\) e\.totalTime \+=/g) || []).length === 2);
 ok('_throw 飛出動畫消費', flip.includes("classList.add('ef-throw-' + e._throw)"));
 ok('判分門檻 70px', flip.includes('Math.hypot(dx, dy) < 70'));
+ok('下一題鈕＝fixed .study-buttons（免滑到底）', flip.includes('<div class="study-buttons">') && !flip.includes('class="study-buttons" style='));
 ok('無門檻 toast（操作提示不進 app）', !flip.includes('再多滑一點'));
 ok('b11 timer callback 原文保留', flip.includes('setTimeout(() => { nextWord(s); e.autoNextTimer = null; }, e.settings.delay * 1000)'));
 
@@ -49,6 +50,7 @@ ok('STEP=54 每格位移', mc.includes('const STEP = 54'));
 ok('軸 dy-dx 方向式', mc.includes('Math.round((dy - dx) / STEP)'));
 ok('選項上不啟動手勢（ignore）', mc.includes("ignore: '.study-opt, button'"));
 ok('點空白確認（gSel>=0 才作答）', mc.includes('if (gSel >= 0) pickOption(s, gSel)'));
+ok('下一題鈕＝fixed .study-buttons（免滑到底）', mc.includes('<div class="study-buttons">') && !mc.includes('class="study-buttons" style='));
 ok('列表不位移（不加 transform 跟手）', !mc.includes('mOpts') && !/translateY\(.*axis/.test(mc));
 ok('b11 timer callback 原文保留', mc.includes('setTimeout(() => { nextWord(s); e.pendingNext = null; }, e.settings.delay * 1000)'));
 
@@ -75,6 +77,10 @@ ok('spell-kbd 三函式皆 isMobile 門', ['function spellKbdHtml', 'function sp
 ok('exam-spell import＋模板插鍵盤＋readonly', esp.includes("spellKbdHtml()") && esp.includes("spellInputAttr()") && esp.includes("bindSpellKbd('esInput')") && esp.includes("typeof bindSpellKbd === 'function'"));
 ok('study-spell import＋模板插鍵盤', ssp.includes("spellKbdHtml()") && ssp.includes("spellInputAttr()") && ssp.includes("bindSpellKbd('spellInput')") && ssp.includes("typeof bindSpellKbd === 'function'"));
 ok('鍵盤含 ⌫ 退格', kbd.includes('__bs') && kbd.includes('⌫'));
+ok('鍵盤原生鍵位 ⇧/空格/⏎', ['__shift', '__space', '__ret'].every(k => kbd.includes(k)));
+ok('鍵盤 CSS fixed 貼底＋鍵帽＋fn 鍵', (() => { const c = R('src/styles/base.css'); return c.includes('.spell-kbd{position:fixed') && c.includes('.sk-fn') && c.includes('.sk-space'); })());
+ok('鍵盤色票 light/dark 雙覆寫', ['--kbd-tray', '--kbd-key-fn'].every(v => R('src/lib/theme.js').includes(v)) && R('src/styles/base.css').includes('--kbd-tray'));
+ok('exam-spell：鍵盤只在輸入態＋下一題鈕 fixed', esp.includes('spellKbdHtml()') && esp.includes('<div class="study-buttons">') && !esp.includes('class="study-buttons" style='));
 
 console.log('[G7] 無手勢操作提示（app 端）');
 for (const [name, src] of pages) {
