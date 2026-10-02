@@ -503,7 +503,7 @@ export function onMount(s) {
     if (typeof dragTrack === 'function') bindMcGest(s);
     document.getElementById('emPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
-  bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
+  bindExNext(document.getElementById('pageContainer'));
     document.getElementById('emNextBtn')?.addEventListener('click', () => {
       if (e.idx < e.words.length - 1) {
         nextWord(s);

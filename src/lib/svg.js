@@ -289,6 +289,7 @@ export function examplePoolFor(w) {
 }
 
 import { pickNextExamples } from './example-rotation.js';
+import { store } from './app-store.js';
 
 /**
  * EXNEXT1: 按下「下一組」——排除當前顯示、優先出現次數最少、
@@ -312,21 +313,23 @@ export function rotateExamples(w) {
 /**
  * EXNEXT1: 「下一組例句」事件委派——綁在 root（pageContainer），
  * 點 .ex-corner / .ex-next-btn 時刷新最近 .study-example / .card-panel-example。
- * @param {Element} root 委派根（如 pageContainer；字卡面板則傳面板元素）
- * @param {() => object} getWord 回傳當前 word 物件（含 _exShown/_exCounts）
+ * 字從卡片 data-wid 對 store 找（study/exam 的 w 皆 store 參照）——
+ * #pageContainer 常駐（KEEPALIVE），傳 getWord 閉包會停在第一個綁定頁，
+ * 換頁後按「下一組」拿上一頁的字 → 例句吃到別字（ELOOP1 修）。
+ * @param {Element} root 委派根（如 pageContainer）
  */
-export function bindExNext(root, getWord) {
+export function bindExNext(root) {
   if (!root || root.__exNextBound) return;
   root.__exNextBound = true;
   root.addEventListener('click', (e) => {
     const btn = e.target.closest('.ex-corner, .ex-next-btn');
     if (!btn) return;
     e.stopPropagation();
-    const w = getWord && getWord();
-    if (!w) return;
-    const next = rotateExamples(w);
     const box = btn.closest('.study-example, .card-panel-example');
     if (!box) return;
+    const w = (store.state.words || []).find(x => x.id === box.dataset.wid);
+    if (!w) return;
+    const next = rotateExamples(w);
     const btnHtml = btn.outerHTML;
     box.innerHTML = fmtExample(next) + (btn.classList.contains('ex-corner') ? btnHtml : '');
     // 刷新後重綁（innerHTML 重建按鈕節點；委派在 root 上其實免重綁——btnHtml 僅視覺）
@@ -347,7 +350,7 @@ export function studyExampleHtml(w) {
   const rotatable = max > 0 && lines.length > max;
   if (!rotatable) return `<div class="study-example">${fmtExample(lines)}</div>`;
   const shown = examplePoolFor(w);
-  return `<div class="study-example" style="width:100%">${fmtExample(shown)}<button class="ex-corner" title="下一組例句" style="position:absolute;top:8px;right:8px;z-index:5;font-size:12px;color:var(--accent);background:var(--bg-surface);border:1px solid var(--border);border-radius:100px;cursor:pointer;padding:4px 12px">${icon('shuffle', 14)} 下一組</button></div>`;
+  return `<div class="study-example" style="width:100%" data-wid="${w.id}">${fmtExample(shown)}<button class="ex-corner" title="下一組例句" style="position:absolute;top:8px;right:8px;z-index:5;font-size:12px;color:var(--accent);background:var(--bg-surface);border:1px solid var(--border);border-radius:100px;cursor:pointer;padding:4px 12px">${icon('shuffle', 14)} 下一組</button></div>`;
 }
 
 /**

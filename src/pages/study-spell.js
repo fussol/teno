@@ -128,7 +128,7 @@ function renderBack(w, cnt) {
 export function onMount(s) {
   mount(s, () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
-  bindExNext(document.getElementById('pageContainer'), () => session?.current?.word);
+  bindExNext(document.getElementById('pageContainer'));
   // IMG1: 背面顯示圖（renderBack）；正面拼字輸入不帶圖
   if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
   const wid = session?.current?.word?.id;

@@ -466,7 +466,7 @@ export function onMount(s) {
     });
     document.getElementById('esPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
-  bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
+  bindExNext(document.getElementById('pageContainer'));
     document.getElementById('esExitBtn')?.addEventListener('click', async () => {
       if (e.autoNextTimer) { clearTimeout(e.autoNextTimer); e.autoNextTimer = null; }   // B2: 殘留 timer 防護
       flushPendingScore();   // B2: exit 前 flush（延遲窗退出計分不遺失；resume 重問雙計為既有行為，見 B2 計畫書風險）

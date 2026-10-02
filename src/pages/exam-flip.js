@@ -481,7 +481,7 @@ export function onMount(s) {
     }
     document.getElementById('efPlayBtn')?.remove();
     bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
-  bindExNext(document.getElementById('pageContainer'), () => e.words[e.idx]);
+  bindExNext(document.getElementById('pageContainer'));
     document.getElementById('efNextBtn')?.addEventListener('click', () => {
       if (e.idx < e.words.length - 1) {
         nextWord(s);

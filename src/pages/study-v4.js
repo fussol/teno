@@ -109,7 +109,7 @@ function renderCard(s) {
 export function onMount(s) {
   mount(s, 's4FlipBtn', () => rip(s));
   bindSpeakClick(document.getElementById('pageContainer'), () => s.state);
-  bindExNext(document.getElementById('pageContainer'), () => session?.current?.word);
+  bindExNext(document.getElementById('pageContainer'));
   // IMG1: 卡面圖片占位填充（翻卡 rip → 重 render → onMount 重跑 → 換圖自然更新）
   if (!document.getElementById('wordImageStyle')) document.head.insertAdjacentHTML('beforeend', `<style id="wordImageStyle">${WORD_IMAGE_CSS}</style>`);
   const wid = session?.current?.word?.id;
