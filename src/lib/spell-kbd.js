@@ -38,12 +38,24 @@ export function bindSpellKbd(inputId) {
   const kbd = document.getElementById('spellKbd');
   const input = document.getElementById(inputId);
   if (!kbd || !input || !kbd.querySelectorAll) return;
-  let up = false;
+  let up = false, holdT = null, rep = null;
+  const stopBs = () => { clearTimeout(holdT); clearInterval(rep); holdT = rep = null; };
   kbd.querySelectorAll('[data-sk]').forEach(btn => {
+    const k = btn.dataset.sk;
+    if (k === '__bs') {
+      // 原生手感：點＝刪1字；按住450ms後每70ms連刪（放開/滑出/pointercancel 即停）
+      btn.addEventListener('pointerdown', () => {
+        input.value = input.value.slice(0, -1);
+        stopBs();
+        holdT = setTimeout(() => {
+          rep = setInterval(() => { input.value = input.value.slice(0, -1); }, 70);
+        }, 450);
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => btn.addEventListener(t, stopBs));
+      return;
+    }
     btn.addEventListener('click', () => {
-      const k = btn.dataset.sk;
       if (k === '__shift') { up = !up; kbd.classList.toggle('sk-up', up); return; }
-      if (k === '__bs') { input.value = input.value.slice(0, -1); return; }
       if (k === '__space') { input.value += ' '; return; }
       if (k === '__ret') {
         input.closest('.study-input-row')?.querySelector('.study-submit')?.click();

@@ -78,6 +78,7 @@ ok('exam-spell import＋模板插鍵盤＋readonly', esp.includes("spellKbdHtml(
 ok('study-spell import＋模板插鍵盤', ssp.includes("spellKbdHtml()") && ssp.includes("spellInputAttr()") && ssp.includes("bindSpellKbd('spellInput')") && ssp.includes("typeof bindSpellKbd === 'function'"));
 ok('鍵盤含 ⌫ 退格', kbd.includes('__bs') && kbd.includes('⌫'));
 ok('鍵盤原生鍵位 ⇧/空格/⏎', ['__shift', '__space', '__ret'].every(k => kbd.includes(k)));
+ok('⌫ 長按連刪（pointerdown→450ms→interval70ms、抬起即停）', kbd.includes("btn.addEventListener('pointerdown'") && kbd.includes('setInterval') && kbd.includes('450') && kbd.includes('stopBs'));
 ok('鍵盤 CSS fixed 貼底＋鍵帽＋fn 鍵', (() => { const c = R('src/styles/base.css'); return c.includes('.spell-kbd{position:fixed') && c.includes('.sk-fn') && c.includes('.sk-space'); })());
 ok('鍵帽小寫預設＋.sk-up 才翻大寫（⇧ 視覺生效）', (() => { const c = R('src/styles/base.css'); return c.includes('.sk-up .sk-key{text-transform:uppercase}') && !/^\.sk-key\{[^}]*text-transform:uppercase/m.test(c); })());
 ok('鍵盤色票 light/dark 雙覆寫', ['--kbd-tray', '--kbd-key-fn'].every(v => R('src/lib/theme.js').includes(v)) && R('src/styles/base.css').includes('--kbd-tray'));
