@@ -554,7 +554,7 @@ export function render(s) {
     <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
-        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）。範圍可選一或多個字本（沒選＝全部）。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
+        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）。範圍可選一或多個字本（沒選＝全部）、加入時間可限某日以前/以後。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
           <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
@@ -568,6 +568,11 @@ export function render(s) {
           <button class="exam-deck-chip selected" data-scope="">全部</button>
           <button class="btn btn-sm" id="comboScopeAll">全選</button>
           ${(s.state.decks || []).map(d => `<button class="exam-deck-chip" data-scope="${esc(d.name)}"><span style="width:7px;height:7px;border-radius:50%;background:${d.color || 'var(--text-tertiary)'};display:inline-block"></span>${esc(d.name)}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:var(--s2)">
+          <span class="muted" style="font-size:12px;font-weight:600">加入時間：</span>
+          <select id="comboDateMode" style="font-size:12px"><option value="">不限</option><option value="before">以前</option><option value="after">以後</option></select>
+          <input type="date" id="comboDate" style="font-size:12px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);color:var(--text-primary)">
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
           <div class="combo-row"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span class="combo-name">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_pos" role="switch" aria-checked="false" title="覆寫已有詞性"></div><span class="combo-ow">覆寫</span></div>
@@ -1098,8 +1103,20 @@ function _mount(s) {
     // 範圍：一或多個字本（chips 沒選＝全部；words.deck 存字本名）
     const scope = [...document.querySelectorAll('#comboScopeDeck .exam-deck-chip.selected')].map(b => b.dataset.scope).filter(Boolean);
     if (scope.length) targets = targets.filter(w => scope.includes(w.deck || ''));
+    // 加入時間：以前＝該日 23:59:59.999 前、以後＝該日 00:00 起（皆含當天）；沒 createdAt 當 0（算進以前）
+    const dm = document.getElementById('comboDateMode')?.value || '';
+    const dv = document.getElementById('comboDate')?.value || '';
+    if (dm && dv) {
+      const day = new Date(`${dv}T00:00:00`);
+      const end = new Date(day); end.setDate(day.getDate() + 1);
+      const dayMs = day.getTime(), endMs = end.getTime();
+      targets = targets.filter(w => {
+        const t = w.createdAt ? new Date(w.createdAt).getTime() : 0;
+        return dm === 'before' ? t < endMs : t >= dayMs;
+      });
+    }
     if (!targets.length) {
-      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${owFields.length || scope.length ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${owFields.length || scope.length || (dm && dv) ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
       return;
     }
     const vals = Object.values(M);
