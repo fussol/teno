@@ -2047,16 +2047,37 @@ async function openBatchModal(s) {
     if (!tokens.length) { res.innerHTML = ''; return; }
     res.innerHTML = `
       ${existing.length ? `<div style="margin-bottom:var(--s2)">
-        <div style="font-size:13px;font-weight:600;margin-bottom:6px">已存在（${existing.length}）</div>
-        <div style="margin-bottom:8px">${existing.map(w => `<label style="cursor:pointer;display:inline-block"><input type="checkbox" class="deckBatchExistCb" data-id="${escapeAttr(w.id)}" ${(w.deck || 'Default') !== targetDeck ? 'checked' : ''}>${chip(w.word, w.deck)}</label>`).join('')}</div>
-        <button class="btn btn-sm" id="deckBatchMoveAll">搬移勾選的字到「${escapeHtml(targetDeck)}」</button>
+        <button class="btn btn-sm" id="deckBatchExistToggle" style="font-weight:600">已存在（${existing.length}） ▸</button>
+        <div id="deckBatchExistList" style="display:none;margin:8px 0">${existing.map(w => `<label style="cursor:pointer;display:inline-block"><input type="checkbox" class="deckBatchExistCb" data-id="${escapeAttr(w.id)}">${chip(w.word, w.deck)}</label>`).join('')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <button class="btn btn-sm" id="deckBatchExistAllOn">全選</button>
+          <button class="btn btn-sm" id="deckBatchExistAllOff">全不選</button>
+          <button class="btn btn-sm" id="deckBatchMoveAll">搬移勾選的字到「${escapeHtml(targetDeck)}」</button>
+        </div>
       </div>` : ''}
       ${fresh.length ? `<div>
-        <div style="font-size:13px;font-weight:600;margin-bottom:6px">未存入（${fresh.length}）</div>
-        <div style="margin-bottom:8px">${fresh.map(t => chip(t)).join('')}</div>
-        <button class="btn-primary btn-sm" id="deckBatchStart">開始批量新增（背景執行）</button>
+        <button class="btn btn-sm" id="deckBatchFreshToggle" style="font-weight:600">未存入（${fresh.length}） ▸</button>
+        <div id="deckBatchFreshList" style="display:none;margin:8px 0">${fresh.map(t => chip(t)).join('')}</div>
+        <button class="btn-primary btn-sm" id="deckBatchStart" style="margin-top:6px">開始批量新增（背景執行）</button>
       </div>` : ''}
       ${!existing.length && !fresh.length ? `<div style="font-size:13px;color:var(--text-tertiary)">沒有可處理的字。</div>` : ''}`;
+    // 已存在區全選/全不選（程式改 checked 不觸發 change → 手動派發讓搬移鈕計數即時更新）
+    const setExistAll = (v) => {
+      document.querySelectorAll('.deckBatchExistCb').forEach(c => { c.checked = v; });
+      document.getElementById('deckBatchResult')?.dispatchEvent(new Event('change'));
+    };
+    document.getElementById('deckBatchExistAllOn')?.addEventListener('click', () => setExistAll(true));
+    document.getElementById('deckBatchExistAllOff')?.addEventListener('click', () => setExistAll(false));
+    // 收納：字串列預設收起（一堆字免滑很久），點標題展開/收合
+    const fold = (tid, lid, label) => document.getElementById(tid)?.addEventListener('click', () => {
+      const l = document.getElementById(lid);
+      const open = l.style.display === 'none';
+      l.style.display = open ? '' : 'none';
+      const t = document.getElementById(tid);
+      if (t) t.textContent = `${label} ${open ? '▾' : '▸'}`;
+    });
+    fold('deckBatchExistToggle', 'deckBatchExistList', `已存在（${existing.length}）`);
+    fold('deckBatchFreshToggle', 'deckBatchFreshList', `未存入（${fresh.length}）`);
     document.getElementById('deckBatchMoveAll')?.addEventListener('click', async () => {
       const cbs = new Set([...document.querySelectorAll('.deckBatchExistCb:checked')].map(x => x.dataset.id));
       const toMove = (pending?.existing || []).filter(w => cbs.has(w.id) && (w.deck || 'Default') !== pending.targetDeck);

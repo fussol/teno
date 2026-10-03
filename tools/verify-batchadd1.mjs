@@ -66,7 +66,9 @@ chk('B: _batchRunning 全鎖（modal/分析/開始）', (dk.match(/_batchRunning
 chk('C: 重試未完成鈕（retry:true）', /deckBatchRetry/.test(dk) && /retry: true/.test(dk));
 chk('D: 中止鈕＋旗標', /deckBatchAbort/.test(dk) && /_batchAbort = true/.test(dk));
 chk('E: 自動分析 debounce 1200', /setTimeout\(doParse, 1200\)/.test(dk));
-chk('F: 勾選搬移（deckBatchExistCb）', /deckBatchExistCb/.test(dk));
+chk('F: 勾選搬移（deckBatchExistCb）＋預設不勾', /deckBatchExistCb/.test(dk) && !/targetDeck \? 'checked'/.test(dk));
+chk('F2: 已存在全選/全不選鈕', /id="deckBatchExistAllOn"/.test(dk) && /id="deckBatchExistAllOff"/.test(dk));
+chk('F3: 字串列收納（兩區預設收起＋開合）', /id="deckBatchExistList" style="display:none/.test(dk) && /id="deckBatchFreshList" style="display:none/.test(dk) && /fold\('deckBatchExistToggle'/.test(dk) && /fold\('deckBatchFreshToggle'/.test(dk));
 chk('hoist: readComboConfig 只讀一次（fillOne 外）', (dk.match(/readComboConfig\(\)/g) || []).length === 1);
 chk('LLM 位址吃 llmApiUrl（不再寫死）', /llmBase/.test(dk) && !/fetchGet\('http:\/\/localhost:11434/.test(dk));
 
