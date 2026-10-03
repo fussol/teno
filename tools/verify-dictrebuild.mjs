@@ -97,5 +97,21 @@ chk('tools 頁無 hideLlmRow', !tools.includes('hideLlmRow'));
 chk('detectModel 改讀 state', /s\.state\.llmApiUrl/.test(tools) && /s\.state\.llmModel/.test(tools));
 chk('英中模式不留空白資訊列', /if \(s\.definition\) html \+=/.test(tools));
 
+console.log('\n== [G] HALLUC-GUARD：結構性幻覺擋板＋一次帶回饋重試 ==');
+chk('Rust 有 zh_validate', /fn zh_validate\(/.test(rs));
+chk('Rust 失敗 → 帶原輸出重試一次 → 再檢查', rs.includes('你上一次的輸出') && /zh_validate\(&zh\)\.map_err/.test(rs));
+chk('Rust 仍不過 → 顯式錯誤（寧缺勿錯）', rs.includes('翻譯品質檢查未過'));
+{
+  const eng = src('src/lib/autofill-engine.js');
+  chk('JS 有 zhGuardBad（與 Rust 同規則）', /export const zhGuardBad/.test(eng));
+  chk('JS 失敗帶回饋重試一次', eng.includes('你上一次的輸出'));
+  chk('JS 過檢去重＋截 3 義', eng.includes('.slice(0, 3).join'));
+  const { zhGuardBad } = await import('../src/lib/autofill-engine.js');
+  chk('擋拼音混入「會計(kuàichāng)」', zhGuardBad('會計(kuàichāng)') !== null, zhGuardBad('會計(kuàichāng)'));
+  chk('擋英文漏出「contradicts」', zhGuardBad('contradicts') !== null);
+  chk('擋空輸出', zhGuardBad('') !== null && zhGuardBad(' , ') !== null);
+  chk('放行正常詞', zhGuardBad('協定,協議,一致') === null);
+}
+
 console.log(`\nDICTREBUILD: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

@@ -710,6 +710,30 @@ fn zh_clean(t: &str) -> String {
     to_traditional(&out)
 }
 
+/// HALLUC-GUARD：翻譯輸出的結構性品質檢查（確定性、零 LLM 成本）。
+///
+/// 擋的是「結構性幻覺」—— 實測 1001 字批次出現過的：
+///   拼音混入「會計(kuàichāng)」、英文漏出「烤grill」「contradicts」、
+///   非漢字義項、全空輸出、重複義項（遺傳的×3）、義項過多。
+/// 過檢 → 回傳正規化結果（去空、去重、截 3 義）；
+/// 不過 → Err（原因字串帶進重試回饋）。
+/// **語意錯譯（accord→妥協）此處擋不了** —— 確定性檢查天生管不到，靠人工抽查。
+fn zh_validate(t: &str) -> Result<String, String> {
+    let items: Vec<&str> = t.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() { return Err("輸出為空".to_string()); }
+    for it in &items {
+        if it.chars().any(|c| c.is_ascii_alphabetic()) {
+            return Err(format!("混入英文字母：「{it}」"));
+        }
+        if !it.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)) {
+            return Err(format!("不是漢字詞：「{it}」"));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    let out: Vec<&str> = items.into_iter().filter(|i| seen.insert(*i)).take(3).collect();
+    Ok(out.join(","))
+}
+
 /// DICTREBUILD 翻譯 prompt
 ///
 /// 使用者對英英釋義的定位：**保險** —— 確保中文不漏掉主要語意
@@ -969,6 +993,44 @@ mod dictrebuild_tests {
         // 但禁止同義詞堆疊
         assert!(p.contains("同義詞堆疊"), "prompt 應禁止堆疊");
     }
+
+    // ── HALLUC-GUARD 測試（真實幻覺樣本取自 1001 字批次）──
+
+    #[test]
+    fn zh_validate_rejects_english_and_pinyin() {
+        for bad in ["會計(kuàichāng)", "匿名的(yīmìngde)", "contradicts", "烤grill", "車窗,風shield", "speculative"] {
+            let e = zh_validate(bad).unwrap_err();
+            assert!(e.contains("英文字母"), "應擋英文/拼音：{bad} → {e}");
+        }
+    }
+
+    #[test]
+    fn zh_validate_rejects_empty_and_non_han() {
+        assert!(zh_validate("").is_err());
+        assert!(zh_validate(" , , ").is_err());
+        assert!(zh_validate("1.,2.").is_err());
+    }
+
+    #[test]
+    fn zh_validate_accepts_good_output() {
+        assert_eq!(zh_validate("協定,協議,一致").unwrap(), "協定,協議,一致");
+        assert_eq!(zh_validate(" 鑰匙, 關鍵 ").unwrap(), "鑰匙,關鍵");
+    }
+
+    #[test]
+    fn zh_validate_dedupes_and_caps_three() {
+        assert_eq!(zh_validate("遺傳的,遺傳的,遺傳的").unwrap(), "遺傳的");
+        assert_eq!(zh_validate("甲,乙,丙,丁").unwrap(), "甲,乙,丙");
+    }
+
+    #[test]
+    fn lookup_cambridge_wires_guard_and_retry() {
+        let rs = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs")).unwrap();
+        assert!(rs.contains("fn zh_validate("));
+        // 失敗 → 帶回饋重試一次 → 再檢查才放行
+        assert!(rs.contains("你上一次的輸出"));
+        assert!(rs.contains("zh_validate(&zh).map_err"));
+    }
 }
 
 #[tauri::command]
@@ -1008,9 +1070,18 @@ async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: tauri:
             .take(5)                       // 釋義上限 5 條：避免多義字爆走（見 zh_translate_prompt 註解）
             .collect()).unwrap_or_default();
         if defs.is_empty() { return Err(format!("查無「{}」的釋義，無法產生翻譯", w)); }
-        let raw = llm_generate(&llm_url, &llm_model, &llm_format, &llm_key, &zh_translate_prompt(&w, &defs.join("\n")))?;
-        let zh = zh_clean(&raw);
-        if zh.is_empty() { return Err("翻譯服務回傳空值".to_string()); }
+        let prompt = zh_translate_prompt(&w, &defs.join("\n"));
+        let mut zh = zh_clean(&llm_generate(&llm_url, &llm_model, &llm_format, &llm_key, &prompt)?);
+        // HALLUC-GUARD：結構性幻覺不過檢 → 帶原輸出與原因重試一次；
+        // 再不過回傳錯誤（寧缺勿錯，語意錯譯靠人工抽查）。
+        if let Err(e) = zh_validate(&zh) {
+            let prompt2 = format!(
+                "{}\n\n你上一次的輸出「{}」不合格：{}。\n請重新輸出：只准 1~3 個繁體中文詞，半角逗號分隔，無英文、無拼音、無標點。",
+                prompt, zh, e
+            );
+            zh = zh_clean(&llm_generate(&llm_url, &llm_model, &llm_format, &llm_key, &prompt2)?);
+        }
+        let zh = zh_validate(&zh).map_err(|e| format!("翻譯品質檢查未過：{}", e))?;
         serde_json::to_string(&serde_json::json!({
             "word": w,
             "uk_ipa": en["uk_ipa"], "uk_audio": en["uk_audio"],

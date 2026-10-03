@@ -77,6 +77,22 @@ const COMBO_FIXED_MERRIAM = ['etymology', 'syllables', 'derivative'];
 export const comboSelectorId = (field) => 'combo' + field[0].toUpperCase() + field.slice(1);
 
 /**
+ * HALLUC-GUARD：翻譯輸出的結構性品質檢查（同 Rust zh_validate，雙路徑同一套規則）。
+ * 回傳 null＝過；否則原因字串（帶進重試回饋）。
+ * 擋：空輸出、英文/拼音混入（會計(kuàichāng)、contradicts、烤grill）、無漢字義項。
+ * 語意錯譯擋不了 —— 靠人工抽查。
+ */
+export const zhGuardBad = (s) => {
+  const items = String(s ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!items.length) return '輸出為空';
+  for (const it of items) {
+    if (/[A-Za-z]/.test(it)) return `混入英文字母：「${it}」`;
+    if (!/[一-鿿]/.test(it)) return `不是漢字詞：「${it}」`;
+  }
+  return null;
+};
+
+/**
  * AUTOFILL1：由 methodSources 記憶體 + 全域覆寫開關，導出引擎要的 { methods, overwrite }。
  * 語意與 tools.js 一鍵全補完全一致（該處原為內嵌組裝，抽出來供所有自動填入入口共用）。
  *
@@ -413,6 +429,30 @@ export async function fillWordFields({
               if (typeof fixed === 'string' && fixed) t = fixed;
             } catch (_) { /* 無後端 → 只靠 prompt 鎖 */ }
           }
+          // HALLUC-GUARD：結構性幻覺（英文/拼音/非漢字）→ 帶原輸出與原因重試一次，
+          // 再不過就放棄（同 Rust lookup_cambridge 的 zh_validate + retry）。
+          if (t && zhGuardBad(t)) {
+            try {
+              const bad = zhGuardBad(t);
+              const text2 = await llmText(prompt
+                + `\n\n你上一次的輸出「${t}」不合格：${bad}。\n請重新輸出：只准 1~3 個繁體中文詞，半角逗號分隔，無英文、無拼音、無標點。`);
+              let t2 = String(text2 ?? '').trim().split('\n')[0]
+                .replace(/[；;、，｜|／/。]+/g, ',')
+                .replace(/\s+/g, '')
+                .replace(/,+/g, ',')
+                .replace(/^,|,$/g, '');
+              if (t2) {
+                try {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const fixed = await invoke('zh_traditional', { text: t2 });
+                  if (typeof fixed === 'string' && fixed) t2 = fixed;
+                } catch (_) { /* 無後端 → 只靠 prompt 鎖 */ }
+              }
+              t = (t2 && !zhGuardBad(t2)) ? t2 : '';
+            } catch (_) { t = ''; }
+          }
+          // 過檢後正規化：去重、截 3 義（同 Rust zh_validate）
+          if (t) t = [...new Set(t.split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 3).join(',');
           if (t) { patch.definition = t; bump('trans', 'ok'); } else bump('trans', 'fail');
         }
       } else {
