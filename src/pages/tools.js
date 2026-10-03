@@ -551,14 +551,10 @@ export function render(s) {
     <div class="section">
       <div class="section-title">${icon('sparkle')} 自動補齊</div>
       <div class="card-desc">為缺少欄位的單字自動補上詞性、例句、發音、相關詞、詞形、中文翻譯、同義詞、反義詞、片語、字源與音節（下面一鍵全補組合包，各欄可各別開關＋選來源）</div>
-      <div style="display:flex;align-items:center;gap:var(--s2);margin-bottom:var(--s3)">
-        <div class="switch" id="autofillOverwriteSwitch" role="switch" aria-checked="false" title="覆寫已有欄位"></div>
-        <span style="font-size:12px;color:var(--text-secondary)">覆寫已有欄位<span class="hint-inline" style="color:var(--text-tertiary)">（開＝整欄取代＋無視門檻；關＝只補缺失）</span></span>
-      </div>
     <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
-        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）；全域覆寫開＝全部欄位重跑。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
+        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）。範圍選單可只補某字本（預設全部）。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
           <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
@@ -566,6 +562,7 @@ export function render(s) {
           <button class="btn btn-sm" id="comboAllOff">全關</button>
           <button class="btn btn-sm" id="comboOwAllOn">覆寫全開</button>
           <button class="btn btn-sm" id="comboOwAllOff">覆寫全關</button>
+          <select id="comboScope" title="限制補齊範圍"><option value="">全部字本</option>${(s.state.decks || []).map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select>
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
           <div class="combo-row"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span class="combo-name">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_pos" role="switch" aria-checked="false" title="覆寫已有詞性"></div><span class="combo-ow">覆寫</span></div>
@@ -907,27 +904,6 @@ function _mount(s) {
     }
   };
 
-  // ─── C段：自動補齊全域覆寫開關（db setting autofillOverwrite，預設關）───
-  // 開＝組合包全部欄位取代＋無視門檻；關＝各欄覆寫開關各管各欄。組合包經 _ow() 讀取。
-  let _autofillOverwrite = false;
-  const _ow = () => _autofillOverwrite;
-  const _owTag = () => (_autofillOverwrite ? '（覆寫模式）' : '');
-  import('../lib/db.js').then(m => m.getSetting('autofillOverwrite')).then(v => {
-    _autofillOverwrite = v === '1' || v === true;
-    const sw = document.getElementById('autofillOverwriteSwitch');
-    if (sw) { sw.classList.toggle('on', _autofillOverwrite); sw.setAttribute('aria-checked', String(_autofillOverwrite)); }
-  }).catch(() => {});
-  document.getElementById('autofillOverwriteSwitch')?.addEventListener('click', async () => {
-    _autofillOverwrite = !_autofillOverwrite;
-    const sw = document.getElementById('autofillOverwriteSwitch');
-    if (sw) { sw.classList.toggle('on', _autofillOverwrite); sw.setAttribute('aria-checked', String(_autofillOverwrite)); }
-    try {
-      const { setSetting } = await import('../lib/db.js');
-      await setSetting('autofillOverwrite', _autofillOverwrite ? '1' : '0');
-    } catch (_) {}
-    toast(_autofillOverwrite ? '覆寫模式開：自動補齊將取代已有欄位' : '覆寫模式關：只補缺失欄位', '');
-  });
-
   // ─── 來源記憶載入＋組合包收合開關（每導航一次跑一次；存檔走 module 級 _srcMem）───
   import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
     try {
@@ -1088,15 +1064,18 @@ function _mount(s) {
     };
     const M = {};
     for (const f of on) M[f] = SRC[f];
-    // COMBO2: 逐欄覆寫（全域開＝全部重跑；否則各欄開關各管各欄，預設全關＝只補缺失）
+    // COMBO2: 逐欄覆寫（各欄開關各管各欄，預設全關＝只補缺失）
     const owEff = {};
-    for (const f of on) owEff[f] = _ow() || _comboOw(f);
+    for (const f of on) owEff[f] = _comboOw(f);
     const owFields = on.filter(f => owEff[f]);
-    const owTag = _ow() ? '（覆寫模式）' : (owFields.length ? `（覆寫：${owFields.map(f => COMBO_CN[f]).join('、')}）` : '');
-    // COMBO2: 挑字（全域覆寫開＝全量；否則裸詞＋覆寫欄有料的字；覆寫欄全關時退化成裸詞）
-    const targets = _ow() ? [...s.state.words] : s.state.words.filter(w => _isBare(w) || on.some(f => owEff[f] && !_isEmptyField(f, w)));
+    const owTag = owFields.length ? `（覆寫：${owFields.map(f => COMBO_CN[f]).join('、')}）` : '';
+    // COMBO2: 挑字（裸詞＋覆寫欄有料的字；覆寫全關時退化成裸詞）
+    let targets = s.state.words.filter(w => _isBare(w) || on.some(f => owEff[f] && !_isEmptyField(f, w)));
+    // 範圍：限某字本（words.deck 存字本名；空＝全部字本）
+    const scope = document.getElementById('comboScope')?.value || '';
+    if (scope) targets = targets.filter(w => w.deck === scope);
     if (!targets.length) {
-      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${_ow() || owFields.length ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${owFields.length || scope ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
       return;
     }
     const vals = Object.values(M);

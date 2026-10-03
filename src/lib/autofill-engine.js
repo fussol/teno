@@ -85,10 +85,9 @@ export const comboSelectorId = (field) => 'combo' + field[0].toUpperCase() + fie
  * 提供它的來源勝出**——正是這裡的逐欄 methods 靜態展開。故轉換不損失能力。
  *
  * @param {object|null} mem methodSources 設定的值（{selectors, comboOn, comboOw}）
- * @param {boolean} globalOverwrite 全域覆寫開關（tools 頁那顆）
  * @returns {{methods:object, overwrite:object, enabled:string[]}}
  */
-export function comboConfig(mem, globalOverwrite = false) {
+export function comboConfig(mem) {
   const sel = (mem && typeof mem === 'object' && mem.selectors) || {};
   const on = (mem && typeof mem === 'object' && mem.comboOn) || {};
   const ow = (mem && typeof mem === 'object' && mem.comboOw) || {};
@@ -98,20 +97,19 @@ export function comboConfig(mem, globalOverwrite = false) {
     methods[f] = COMBO_FIXED_MERRIAM.includes(f)
       ? 'merriam'
       : (sel[comboSelectorId(f)] || DEFAULT_METHODS[f]);
-    overwrite[f] = !!globalOverwrite || !!ow[f];          // 未存過＝關（只補缺失）
+    overwrite[f] = !!ow[f];                              // 未存過＝關（只補缺失）
   }
   return { methods, overwrite, enabled: Object.keys(methods) };
 }
 
 /** 讀 DB 設定 → comboConfig（非 tools 頁的自動填入入口用；動態 import 免靜態循環依賴） */
 export async function readComboConfig() {
-  let mem = null, ow = false;
+  let mem = null;
   try {
     const { getSetting } = await import('./db.js');
     mem = await getSetting('methodSources');
-    ow = !!(await getSetting('autofillOverwrite'));
   } catch (_) {}
-  return comboConfig(mem, ow);
+  return comboConfig(mem);
 }
 
 // ── 純函式（語意照抄 tools.js，engine 內自含不跨檔 import）──

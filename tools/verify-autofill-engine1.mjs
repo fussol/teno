@@ -226,9 +226,10 @@ console.log('[E9c] 接線覆蓋（COMBO2：每欄覆寫開關＋記憶＋逐欄�
   chk('覆寫全開/全關鈕存在', /id="comboOwAllOn"/.test(tools) && /id="comboOwAllOff"/.test(tools));
   chk('覆寫記憶進 _srcMem.comboOw（含恢復/合併/點存）', /_srcMem\.comboOw/.test(tools) && /comboOw: \{ \.\.\.\(stored\?\.comboOw/.test(tools) && /_setComboOw/.test(tools));
   chk('收合記憶（comboCollapsed 存取＋恢復）', /_srcMem\.comboCollapsed = collapsed/.test(tools) && /if \(_srcMem\.comboCollapsed\)/.test(tools));
-  chk('執行端組逐欄表（owEff 全域或各欄）', /owEff\[f\] = _ow\(\) \|\| _comboOw\(f\)/.test(tools));
+  chk('執行端組逐欄表（各欄開關各管各欄；全域開關已收掉）', /owEff\[f\] = _comboOw\(f\)/.test(tools) && !/_ow\(\)/.test(tools));
   chk('執行端傳逐欄表給引擎', /overwrite: owEff,/.test(tools));
   chk('挑字含覆寫欄有料的字', /owEff\[f\] && !_isEmptyField\(f, w\)/.test(tools));
+  chk('範圍選單（限某字本）＋挑字套用', /id="comboScope"/.test(tools) && /targets\.filter\(w => w\.deck === scope\)/.test(tools));
   chk('結果行標覆寫', /owMark/.test(tools));
   chk('引擎支援物件 overwrite（逐欄）', /typeof overwrite === 'object'/.test(engine));
 }

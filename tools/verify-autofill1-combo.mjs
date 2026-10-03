@@ -27,7 +27,7 @@ chk('catch 保底仍在', /catch \{ _srcMem = _srcMem \|\| \{ selectors: \{\}, c
 
 console.log('[S] AUTOFILL1 源碼');
 chk('engine 匯出 COMBO_FIELDS', /export const COMBO_FIELDS = \[/.test(engine));
-chk('engine 匯出 comboConfig', /export function comboConfig\(mem, globalOverwrite = false\)/.test(engine));
+chk('engine 匯出 comboConfig', /export function comboConfig\(mem\)/.test(engine));
 chk('engine 匯出 readComboConfig', /export async function readComboConfig\(\)/.test(engine));
 chk('只吃韋氏的欄位寫死 merriam', /COMBO_FIXED_MERRIAM = \['etymology', 'syllables', 'derivative'\]/.test(engine));
 chk('DEFAULT_METHODS 覆蓋全部 COMBO_FIELDS（含 derivative）',
@@ -62,14 +62,14 @@ chk('關掉的欄位從 methods 移除', !('pos' in d2.methods) && !('example' i
 chk('其餘欄位仍在（10 欄）', d2.enabled.length === 10, String(d2.enabled.length));
 chk('未列出的視為開', 'pron' in d2.methods);
 
-console.log('[B] comboConfig：覆寫（逐欄 + 全域）');
+console.log('[B] comboConfig：覆寫（逐欄；全域參數已收掉）');
 const mem3 = { comboOw: { syn: true, ant: true } };
 const d3 = comboConfig(mem3, false);
 chk('逐欄覆寫生效', d3.overwrite.syn === true && d3.overwrite.ant === true);
 chk('未開的欄位仍關', d3.overwrite.pos === false);
 const d4 = comboConfig(mem3, true);
-chk('全域覆寫開 → 全部 true', COMBO_FIELDS.every(f => d4.overwrite[f] === true));
-chk('全域開但 methods 不受影響', d4.methods.pos === DEFAULT_METHODS.pos);
+chk('全域參數已收掉（傳 true 也不全域開）', d4.overwrite.pos === false && COMBO_FIELDS.every(f => d4.overwrite[f] === !!mem3.comboOw[f]));
+chk('傳全域也不影響 methods', d4.methods.pos === DEFAULT_METHODS.pos);
 
 console.log('[B] 邊界 / 壞值');
 chk('mem=undefined 安全', comboConfig(undefined, false).enabled.length === 12);
