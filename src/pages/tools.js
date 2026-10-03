@@ -566,6 +566,7 @@ export function render(s) {
         <div id="comboScopeDeck" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:var(--s2)">
           <span class="muted" style="font-size:12px;font-weight:600">範圍：</span>
           <button class="exam-deck-chip selected" data-scope="">全部</button>
+          <button class="btn btn-sm" id="comboScopeAll">全選</button>
           ${(s.state.decks || []).map(d => `<button class="exam-deck-chip" data-scope="${esc(d.name)}"><span style="width:7px;height:7px;border-radius:50%;background:${d.color || 'var(--text-tertiary)'};display:inline-block"></span>${esc(d.name)}</button>`).join('')}
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
@@ -992,6 +993,10 @@ function _mount(s) {
       b.classList.toggle('selected');
       chips.find(c => c.dataset.scope === '')?.classList.toggle('selected', !deckChips.some(c => c.classList.contains('selected')));
     }
+  });
+  // 範圍：一鍵選取所有字本（逐本點亮、收掉「全部」——與「全部」不同：不含未分本的字）
+  document.getElementById('comboScopeAll')?.addEventListener('click', () => {
+    document.querySelectorAll('#comboScopeDeck [data-scope]').forEach(c => c.classList.toggle('selected', !!c.dataset.scope));
   });
 
   // ─── 組合包：一鍵全補（2026-09-08 使用者裁示；COMBO1 起十一欄各別開關，獨立卡併入；COMBO2 起每欄覆寫開關）───
