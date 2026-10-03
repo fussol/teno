@@ -554,7 +554,7 @@ export function render(s) {
     <!-- 組合包：一鍵全補（2026-09-08 使用者裁示：裸詞一次填滿，各欄來源可調＋記憶＋可收合；COMBO1 起十一欄各別開關，獨立卡併入） -->
       <div class="card" style="margin-bottom:var(--s3)">
         <div class="card-title">${icon('sparkle')} 一鍵全補組合包</div>
-        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）。範圍選單可只補某字本（預設全部）。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
+        <div class="card-desc">只挑已啟用欄位全空的裸詞（只有單字），按下面選的來源一次填完；字源/音節只吃韋氏；開關關掉的欄位不會動；每欄「覆寫」開＝該欄直接覆蓋原本內容（預設全關＝只補缺失）。範圍可選一或多個字本（沒選＝全部）。來源選擇、開關與覆寫都會記住（含收合狀態）。</div>
         <div class="tool-row" style="margin-bottom:var(--s2)">
           <button class="btn btn-sm" id="comboToggle">收合來源設定 ▾</button>
           <button class="btn" onclick="window.__comboFull()">${icon('sparkle')} 開始全補</button>
@@ -562,7 +562,11 @@ export function render(s) {
           <button class="btn btn-sm" id="comboAllOff">全關</button>
           <button class="btn btn-sm" id="comboOwAllOn">覆寫全開</button>
           <button class="btn btn-sm" id="comboOwAllOff">覆寫全關</button>
-          <select id="comboScope" title="限制補齊範圍"><option value="">全部字本</option>${(s.state.decks || []).map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('')}</select>
+        </div>
+        <div id="comboScopeDeck" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:var(--s2)">
+          <span class="muted" style="font-size:12px;font-weight:600">範圍：</span>
+          <button class="exam-deck-chip selected" data-scope="">全部</button>
+          ${(s.state.decks || []).map(d => `<button class="exam-deck-chip" data-scope="${esc(d.name)}"><span style="width:7px;height:7px;border-radius:50%;background:${d.color || 'var(--text-tertiary)'};display:inline-block"></span>${esc(d.name)}</button>`).join('')}
         </div>
         <div id="comboSrcGrid" style="display:grid;gap:var(--s2);margin-bottom:var(--s2)">
           <div class="combo-row"><div class="switch switch-sm on" id="comboOn_pos" role="switch" aria-checked="true" title="是否補詞性"></div><span class="combo-name">詞性</span>${_selHtml('comboPos', [['Cambridge 字典','cambridge'],['韋氏字典','merriam'],['本地 LLM','llm']], 'cambridge')}<div class="switch switch-sm" id="comboOw_pos" role="switch" aria-checked="false" title="覆寫已有詞性"></div><span class="combo-ow">覆寫</span></div>
@@ -974,6 +978,21 @@ function _mount(s) {
   document.getElementById('comboOwAllOff')?.addEventListener('click', () => {
     document.querySelectorAll('[id^="comboOw_"]')?.forEach(el => _setComboOw(el.id.replace('comboOw_', ''), false));
   });
+  // 範圍 chips：沒選＝全部字本；點「全部」清掉其它，點字本則收掉「全部」
+  document.getElementById('comboScopeDeck')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-scope]');
+    if (!b) return;
+    const wrap = document.getElementById('comboScopeDeck');
+    const chips = [...wrap.querySelectorAll('[data-scope]')];
+    const deckChips = chips.filter(c => c.dataset.scope);
+    if (b.dataset.scope === '') {
+      deckChips.forEach(c => c.classList.remove('selected'));
+      b.classList.add('selected');
+    } else {
+      b.classList.toggle('selected');
+      chips.find(c => c.dataset.scope === '')?.classList.toggle('selected', !deckChips.some(c => c.classList.contains('selected')));
+    }
+  });
 
   // ─── 組合包：一鍵全補（2026-09-08 使用者裁示；COMBO1 起十一欄各別開關，獨立卡併入；COMBO2 起每欄覆寫開關）───
   // 只做已啟用欄位全空的裸詞（覆寫開＝全量）。每詞各來源最多抓一次（cam英/cam中/
@@ -1071,11 +1090,11 @@ function _mount(s) {
     const owTag = owFields.length ? `（覆寫：${owFields.map(f => COMBO_CN[f]).join('、')}）` : '';
     // COMBO2: 挑字（裸詞＋覆寫欄有料的字；覆寫全關時退化成裸詞）
     let targets = s.state.words.filter(w => _isBare(w) || on.some(f => owEff[f] && !_isEmptyField(f, w)));
-    // 範圍：限某字本（words.deck 存字本名；空＝全部字本）
-    const scope = document.getElementById('comboScope')?.value || '';
-    if (scope) targets = targets.filter(w => w.deck === scope);
+    // 範圍：一或多個字本（chips 沒選＝全部；words.deck 存字本名）
+    const scope = [...document.querySelectorAll('#comboScopeDeck .exam-deck-chip.selected')].map(b => b.dataset.scope).filter(Boolean);
+    if (scope.length) targets = targets.filter(w => scope.includes(w.deck || ''));
     if (!targets.length) {
-      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${owFields.length || scope ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
+      say(`<div style="color:var(--green)">${icon('check')} 沒有需要全補的單字${owFields.length || scope.length ? '' : '（已啟用欄位全空的裸詞）'}！</div>`);
       return;
     }
     const vals = Object.values(M);

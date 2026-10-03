@@ -229,7 +229,7 @@ console.log('[E9c] 接線覆蓋（COMBO2：每欄覆寫開關＋記憶＋逐欄�
   chk('執行端組逐欄表（各欄開關各管各欄；全域開關已收掉）', /owEff\[f\] = _comboOw\(f\)/.test(tools) && !/_ow\(\)/.test(tools));
   chk('執行端傳逐欄表給引擎', /overwrite: owEff,/.test(tools));
   chk('挑字含覆寫欄有料的字', /owEff\[f\] && !_isEmptyField\(f, w\)/.test(tools));
-  chk('範圍選單（限某字本）＋挑字套用', /id="comboScope"/.test(tools) && /targets\.filter\(w => w\.deck === scope\)/.test(tools));
+  chk('範圍 chips（一或多字本）＋挑字套用', /id="comboScopeDeck"/.test(tools) && /scope\.includes\(w\.deck \|\| ''\)/.test(tools) && /data-scope=""/.test(tools));
   chk('結果行標覆寫', /owMark/.test(tools));
   chk('引擎支援物件 overwrite（逐欄）', /typeof overwrite === 'object'/.test(engine));
 }
