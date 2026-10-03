@@ -634,6 +634,14 @@ function openAddModal(s) {
 
   container.insertAdjacentHTML('beforeend', html);
 
+  // IMEHINT1+IMEJUMP1：與 browser.js 同款——enterkeyhint 強制換行鍵（手機 IME 動作鍵
+  // 原生推焦點、零 keydown 的解法）＋組字旗（Android keydown 常沒標 isComposing/229）。
+  const _dbAm = document.getElementById('deckAddModal');
+  _dbAm?.querySelectorAll('input.form-input').forEach((el) => el.setAttribute('enterkeyhint', 'enter'));
+  _dbAm?.addEventListener('compositionstart', (e) => { e.target._ime = true; });
+  _dbAm?.addEventListener('compositionend', (e) => { e.target._ime = false; });
+  _dbAm?.addEventListener('focusout', (e) => { e.target._ime = false; });
+
   const close = () => document.getElementById('deckAddModal')?.remove();
   document.getElementById('deckAddClose')?.addEventListener('click', close);
   document.getElementById('deckAddCancel')?.addEventListener('click', close);
@@ -678,7 +686,7 @@ function openAddModal(s) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
+      if (e.isComposing || e.keyCode === 229 || input._ime) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄；IMEJUMP1：掛旗補
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -956,6 +964,7 @@ function openAddModal(s) {
   document.getElementById('deckAddModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
+    if (el._ime) return;   // IMEJUMP1：組字中不跳欄
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); _addJumpNext(el.id); }
@@ -1106,6 +1115,14 @@ function openEditModal(s, id) {
 
   container.insertAdjacentHTML('beforeend', html);
 
+  // IMEHINT1+IMEJUMP1：與 browser.js 同款——enterkeyhint 強制換行鍵（手機 IME 動作鍵
+  // 原生推焦點、零 keydown 的解法）＋組字旗（Android keydown 常沒標 isComposing/229）。
+  const _dbEm = document.getElementById('deckEditModal');
+  _dbEm?.querySelectorAll('input.form-input').forEach((el) => el.setAttribute('enterkeyhint', 'enter'));
+  _dbEm?.addEventListener('compositionstart', (e) => { e.target._ime = true; });
+  _dbEm?.addEventListener('compositionend', (e) => { e.target._ime = false; });
+  _dbEm?.addEventListener('focusout', (e) => { e.target._ime = false; });
+
   const close = () => document.getElementById('deckEditModal')?.remove();
   document.getElementById('deckEditModalClose')?.addEventListener('click', close);
   document.getElementById('deckEditCancel')?.addEventListener('click', close);
@@ -1144,7 +1161,7 @@ function openEditModal(s, id) {
       ? v.trim() ? [v.trim()] : []
       : v.split(spl).map(s => s.trim()).filter(Boolean);
     input.addEventListener('keydown', (e) => {
-      if (e.isComposing || e.keyCode === 229) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄
+      if (e.isComposing || e.keyCode === 229 || input._ime) return;   // MOBILE1：IME 組字中 Enter=確認組字，不存不跳欄；IMEJUMP1：掛旗補
       if (e.key === 'Enter') {
         e.preventDefault();
         const vals = parseInput(input.value);
@@ -1343,6 +1360,7 @@ function openEditModal(s, id) {
   document.getElementById('deckEditModal')?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return;
     const el = e.target;
+    if (el._ime) return;   // IMEJUMP1：組字中不跳欄
     if (el.tagName === 'TEXTAREA') {
       // 描述/字源：普通 Enter 換行；Ctrl/Cmd+Enter 跳下一欄
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); _editJumpNext(el.id); }
