@@ -21,6 +21,7 @@ import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import os from 'node:os';
 import path from 'node:path';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0, na = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log(`  PASS ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } };
@@ -35,6 +36,21 @@ function mask(src) {
     const c = src[i], d = src[i + 1];
     if (c === '/' && d === '/') { let j = i; while (j < n && src[j] !== '\n') j++; blank(i, j); i = j; continue; }
     if (c === '/' && d === '*') { let j = i + 2; while (j < n && !(src[j] === '*' && src[j + 1] === '/')) j++; j = Math.min(j + 2, n); blank(i, j); i = j; continue; }
+    if (c === '/') { // regex literal（引號可藏其中）：上一個有效字元指示 regex 開頭才吃
+      let k = i - 1; while (k >= 0 && /\s/.test(src[k])) k--;
+      if (k < 0 || '(,=:[!&|?{};'.includes(src[k])) {
+        let j = i + 1, cls = false, ok = false;
+        while (j < n) {
+          const ch = src[j];
+          if (ch === '\\') { j += 2; continue; }
+          if (ch === '[') cls = true; else if (ch === ']') cls = false;
+          else if (ch === '/' && !cls) { ok = true; j++; break; }
+          else if (ch === '\n') break;
+          j++;
+        }
+        if (ok) { blank(i + 1, j - 1); i = j; continue; }
+      }
+    }
     if (c === '"' || c === "'" || c === '`') {
       let j = i + 1;
       while (j < n) {
@@ -91,7 +107,7 @@ function orderChecks(body, raw) {
 }
 
 // ───────── 源碼與模式判定 ─────────
-const SRC = fs.readFileSync(new URL('../src/pages/settings/backup.js', import.meta.url), 'utf8') + fs.readFileSync(new URL('../src/pages/settings.js', import.meta.url), 'utf8'); // backup 前置：mask() 不識 regex literal 引號，settings 尾段會污染後綴
+const SRC = settingsSrc();
 const SRCM = mask(SRC);
 const fn = extractFn(SRCM, 'runImportDb', SRC);
 if (!fn) { console.error('無法擷取 runImportDb（行首錨定失敗＝結構漂移）'); process.exit(2); }

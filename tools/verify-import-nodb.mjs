@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { settingsSrc } from './lib/page-src.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 let fail = 0;
 const ok = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
@@ -14,6 +15,6 @@ const body = s.slice(s.indexOf('fn backup_db'), s.indexOf('fn prune_backups'));
 ok('缺 DB 早退放行', body.includes('!db_path.exists()') && body.includes('Ok(String::new())'), '無檔不炸');
 ok('真失敗仍響亮', body.includes('複製資料庫失敗'), '讀寫錯照報');
 ok('呼叫點不讀回傳', !body.includes('backupDb() as'), '契約不變');
-const st = readFileSync(join(root, 'src/pages/settings.js'), 'utf8') + readFileSync(join(root, 'src/pages/settings/backup.js'), 'utf8');
+const st = settingsSrc();
 ok('匯入仍先備份', /await backupDb\(\);[\s\S]{0,500}?await importDbDialog/.test(st), '安全網還在');
 process.exit(fail ? 1 : 0);

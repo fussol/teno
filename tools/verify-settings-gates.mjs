@@ -1,6 +1,7 @@
 // SETGATES1: 設定頁可見性閘門 — 介面備註僅 devMode、介面大小僅桌機、手機縮放鎖 100%
 // 跑法：node tools/verify-settings-gates.mjs
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 const R = '/home/jupiter/teno 修檢版';
 let pass = 0, fail = 0;
@@ -9,7 +10,7 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  ❌ ${name} ${extra}`); }
 };
 
-const js = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8');
+const js = settingsSrc();
 const store = readFileSync(`${R}/src/lib/store.js`, 'utf8');
 
 console.log('== T1 介面備註僅 devMode ==');

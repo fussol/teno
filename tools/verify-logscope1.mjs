@@ -2,6 +2,7 @@
 // 跑法：node tools/verify-logscope1.mjs
 import { readFileSync } from 'node:fs';
 import { classifyScope, setLogScopes, isScopeEnabled, LOG_SCOPES } from '../src/lib/app-log.js';
+import { settingsSrc } from './lib/page-src.mjs';
 
 const R = '/home/jupiter/teno 修檢版';
 let pass = 0, fail = 0;
@@ -81,7 +82,7 @@ ok('建表含 scope＋index', rs.includes("scope TEXT NOT NULL DEFAULT 'misc'") 
 ok('scope 單元測試', rs.includes('mod log_scope_tests'));
 
 console.log('== LOG-SCOPE1 static: settings/store/applog-page ==');
-const st = src('src/pages/settings.js')+src('src/pages/settings/sections.js');
+const st = settingsSrc();
 ok('設定頁分類 checkbox', st.includes('data-logscope') && st.includes('記錄哪些分類'));
 ok('設定頁鏡像開關', st.includes('logMirrorToggle') && st.includes('除錯鏡像'));
 ok('設定頁保留天數搬出 devMode', st.includes('logRetentionInput') && !/devMode \? `[^`]*logRetentionInput/s.test(st));

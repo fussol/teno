@@ -3,6 +3,7 @@
 // 用法: node tools/verify-batch5.mjs
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const chk = (name, cond) => { if (cond) { pass++; } else { fail++; console.log(`  FAIL ${name}`); } };
@@ -70,7 +71,7 @@ chk('shuffle icon 存在（svg.js icons）', /shuffle:/.test(svg));
 
 // 回歸: no-hints CSS 仍在
 chk('回歸: no-hints 體系含 mode-desc', /body\.no-hints \.mode-desc\{display:none\}|body\.no-hints[\s\S]*?\.mode-desc[\s\S]*?\{display:none\}/.test(css));
-chk('回歸: uihints toggle 存在', /id="uiHintsToggle"/.test(readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8')));
+chk('回歸: uihints toggle 存在', /id="uiHintsToggle"/.test(settingsSrc()));
 
 console.log(`\nBATCH5: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);
 process.exit(fail === 0 ? 0 : 1);

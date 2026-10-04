@@ -2,6 +2,7 @@
 // 原則：能執行真實程式碼就執行（buildLlmEndpoint 直接從原始碼取出），
 //       其餘做源碼結構斷言。Rust 側另有 5 條單元測試（cargo test --lib dictrebuild）。
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -83,7 +84,7 @@ for (const k of ['llmApiUrl', 'llmModel', 'llmApiFormat', 'llmApiKey']) {
   const hydrates = (store.match(new RegExp(`state\\.${k} =`, 'g')) || []).length;
   chk(`${k} 有讀取與 hydrate`, reads >= 1 && hydrates >= 1, `read=${reads} hydrate=${hydrates}`);
 }
-const settings = src('src/pages/settings.js');
+const settings = settingsSrc();
 chk('設定頁有 API 欄位（標籤就叫 API）', /id="llmApiUrlInput"/.test(settings));
 chk('設定頁有格式選擇（ollama/openai）', /id="llmApiFormatInput"/.test(settings) && settings.includes("value=\"openai\""));
 chk('設定頁有金鑰欄位', /id="llmApiKeyInput"/.test(settings));

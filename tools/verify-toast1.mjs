@@ -2,6 +2,7 @@
 // TOAST1: 右上角 toast（從右滑入＋右框型別色＋進度條＋單擊保留/雙擊關閉）
 // 用法: node tools/verify-toast1.mjs
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const chk = (name, cond, extra = '') => { if (cond) { pass++; } else { fail++; console.log(`  FAIL ${name}${extra ? ' :: ' + extra : ''}`); } };
@@ -48,7 +49,7 @@ console.log('[T5] 接線：容器＋全域＋呼叫點');
 chk('index.html 有容器', /id="toastContainer"/.test(html));
 chk('main.js 掛 window.toast', /window\.toast = toast/.test(main));
 {
-  const files = ['src/main.js', 'src/pages/settings.js', 'src/pages/tools.js', 'src/pages/browser.js', 'src/pages/deck-browser.js',
+  const files = ['src/main.js', 'src/pages/settings.js', 'src/pages/settings/sections.js', 'src/pages/settings/webdav.js', 'src/pages/settings/backup.js', 'src/pages/settings/deck-manager.js', 'src/pages/tools.js', 'src/pages/browser.js', 'src/pages/deck-browser.js',
     'src/pages/ocr.js', 'src/pages/import.js', 'src/pages/export.js', 'src/pages/simulator.js', 'src/pages/app-log.js',
     'src/pages/tag-manager.js', 'src/pages/exam-flip.js', 'src/pages/exam-mc.js', 'src/pages/exam-spell.js',
     'src/engine/session-utils.js', 'src/engine/session-mc-utils.js', 'src/engine/session-spell-utils.js', 'src/lib/easter-eggs.js'];
@@ -59,7 +60,7 @@ chk('warn 有樣式可用（舊 2＋正名 7）', (js.match(/toast-warn/g) || []
   && readFileSync('src/pages/deck-browser.js', 'utf8').includes(`'toast-warn'`)
   && readFileSync('src/pages/browser.js', 'utf8').includes(`'toast-warn'`)
   && readFileSync('src/pages/tools.js', 'utf8').includes(`'toast-warn'`)
-  && readFileSync('src/pages/settings.js', 'utf8').includes(`'toast-warn'`)
+  && settingsSrc().includes(`'toast-warn'`)
   && /\.toast-warn\{[^}]*--toast-accent:var\(--orange\)/.test(css));
 
 console.log(`\nTOAST1: ${fail === 0 ? 'PASS' : 'FAIL'} (${pass} pass, ${fail} fail)`);

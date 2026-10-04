@@ -1,5 +1,6 @@
 // verify-g27g23d18g29: 低影響批次（各靜態）
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 const R = p => readFileSync(p, 'utf8');
 const fail = [], pass = [];
 
@@ -9,7 +10,7 @@ if (/import\('\.\/lib\/human-data\.js'\)\.then\(hd => hd\.track\([^)]*\)\)\.catc
 else fail.push('G27: .then(Human track) 無 catch');
 
 // G23: settings onMount 內 mount 層 button[onclick] 轉 addEventListener
-const s = R('src/pages/settings.js');
+const s = settingsSrc();
 const ons = s.indexOf('export function onMount(s)');
 const onEnd = s.indexOf('function showFilteredDeckModal');
 const onBody = s.slice(ons, onEnd);

@@ -5,6 +5,7 @@
 // 用法: node tools/verify-reps1.mjs
 import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const chk = (name, cond, extra = '') => {
@@ -13,7 +14,7 @@ const chk = (name, cond, extra = '') => {
 };
 
 const store = readFileSync('src/lib/store.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
+const settings = settingsSrc();
 const extraSrc = readFileSync('src/lib/word-extra.js', 'utf8');
 
 console.log('[S] 欄位註冊與僅限學習情境的規則');

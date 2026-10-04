@@ -4,6 +4,7 @@
 // 實彈：起本地 webdav-server.py（127.0.0.1:18089）→ PUT/GET/HEAD/PROPFIND＋401 否定全過
 import { readFileSync, existsSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
+import { settingsSrc } from './lib/page-src.mjs';
 
 const R = '/home/jupiter/teno 修檢版';
 let pass = 0, fail = 0;
@@ -31,7 +32,7 @@ const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');
 for (const f of ['webdavSaveConfig', 'webdavStatus', 'webdavTest', 'webdavUpload', 'webdavDownload', 'webdavLogout'])
   ok(`api:${f}`, api.includes(`export const ${f}`));
 
-const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/webdav.js`, 'utf8');
+const st = settingsSrc();
 for (const id of ['webdavUrl', 'webdavUser', 'webdavPass', 'webdavUploadBtn', 'webdavDownloadBtn', 'webdavClearBtn', 'webdavStatusText', 'webdavSrvToggleBtn'])
   ok(`settings:id ${id}`, st.includes(`id="${id}"`));
 // SIMPLIFY1：儲存／測試連線兩顆按鈕已由「失焦即存＋自動測連線」取代

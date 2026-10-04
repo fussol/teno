@@ -1,6 +1,7 @@
 // SETCOLLAPSE1: 設定頁收合整頓 — 標題常駐＋內容下拉＋狀態記憶
 // 跑法：node tools/verify-settings-collapse.mjs
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 const R = '/home/jupiter/teno 修檢版';
 let pass = 0, fail = 0;
@@ -10,7 +11,7 @@ const ok = (name, cond, extra = '') => {
 };
 
 const css = readFileSync(`${R}/src/styles/base.css`, 'utf8');
-const js = readFileSync(`${R}/src/pages/settings.js`, 'utf8');
+const js = settingsSrc();
 
 console.log('== T1 CSS：收合樣式（作用域只限 .collapsible，不污染他頁） ==');
 ok('collapsible 標題可點（cursor）', css.includes('.section.collapsible > .section-title'));

@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { settingsSrc } from './lib/page-src.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 let fail = 0;
 const ok = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}${x ? ' — ' + x : ''}`); if (!c) fail++; };
@@ -14,6 +15,6 @@ ok('btn-tonal 跟 container', /\.btn-tonal:hover\{[^}]*var\(--accent-container\)
 const ocr = R('src/pages/ocr.js');
 ok('ocr 把手光暈跟 glow', ocr.includes('var(--accent-glow)'), '換 accent 即走');
 ok('ocr 無散裝 accent-rgba', !ocr.includes('182,157,255'), '清乾淨');
-const set = R('src/pages/settings.js');
-ok('無懸空 --danger', !set.includes('--danger'), 'var(--red) 接管');
+const set = settingsSrc();
+ok('無懸空 --danger', !set.replace(/<!--[\s\S]*?-->/g, '').includes('--danger'), 'var(--red) 接管');
 process.exit(fail ? 1 : 0);

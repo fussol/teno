@@ -1,6 +1,7 @@
 // SIMPLIFY1 harness — 設定頁整頓（WebDAV 按鈕簡化 + 折疊手風琴 + API 改名）
 // 原則：斷言「行為還在」，不只是「id 字串在」。
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -8,7 +9,7 @@ const chk = (name, ok, detail = '') => {
   else { fail++; console.log(`  ❌ ${name}${detail ? '  ' + detail : ''}`); }
 };
 const src = (p) => readFileSync(p, 'utf8');
-const settings = src('src/pages/settings.js')+src('src/pages/settings/sections.js')+src('src/pages/settings/webdav.js');
+const settings = settingsSrc();
 const css = src('src/styles/base.css');
 
 console.log('== [A] WebDAV 按鈕簡化：15 → 3 顆可見 ==');

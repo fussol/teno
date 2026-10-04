@@ -5,6 +5,7 @@
 // 負控制: 修前 renderInPlace 不重建 custom-select → 重渲染的 <select> 非 custom。
 // ═══════════════════════════════════════════════════════════════
 import { readFileSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let failures = 0;
 function ok(name, cond, detail='') {
@@ -12,7 +13,7 @@ function ok(name, cond, detail='') {
   if (!cond) failures++;
 }
 
-const src = readFileSync(new URL('../src/pages/settings.js', import.meta.url), 'utf8');
+const src = settingsSrc();
 
 console.log('── G14 renderInPlace 重建 custom-select ──');
 

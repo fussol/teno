@@ -1,5 +1,6 @@
 // MEDIAPEEL1 驗收：sha1 優先／缺檔回退／直連透傳／寫入只存 sha。
 import { readFileSync, existsSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 const R = '/home/jupiter/teno 修檢版';
 const F = (p) => readFileSync(`${R}/${p}`, 'utf8');
 let pass = 0, fail = 0;
@@ -57,7 +58,7 @@ console.log('== MEDIAPEEL static: frontend ==');
 const api = F('src/lib/api.js');
 ok('api mediaPut/Get/List', api.includes('mediaPut') && api.includes('mediaGet') && api.includes('mediaList'));
 ok('api media sync fns', api.includes('webdavMediaUpload') && api.includes('webdavMediaDownload'));
-const st = F('src/pages/settings.js')+F('src/pages/settings/webdav.js')+F('src/pages/settings/sections.js');
+const st = settingsSrc();
 ok('settings piggyback upload', st.includes('webdavMediaUpload()'));
 ok('settings piggyback download', st.includes('webdavMediaDownload()'));
 

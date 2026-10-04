@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0, na = 0;
 const ok = (n, c) => { if (c) { pass++; console.log(`  PASS ${n}`); } else { fail++; console.log(`  FAIL ${n}`); } };
@@ -80,7 +81,7 @@ function extractBlockRaw(raw, anchor) {
 const ROOT = path.join(import.meta.dirname, '..');
 const MAIN = fs.readFileSync(path.join(ROOT, 'src/main.js'), 'utf8');
 const CSS = fs.readFileSync(path.join(ROOT, 'src/styles/base.css'), 'utf8');
-const SETTINGS = fs.readFileSync(path.join(ROOT, 'src/pages/settings.js'), 'utf8');
+const SETTINGS = settingsSrc(ROOT);
 const MAINM = mask(MAIN), CSSM = mask(CSS), SETM = mask(SETTINGS);
 const MAINC = commentMask(MAIN), SETC = commentMask(SETTINGS);
 

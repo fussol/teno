@@ -1,6 +1,7 @@
 // verify-g15-g31.mjs — G15/G17/G22/D13/G31 整合驗證
 // 讀原始碼確認修復落點（無 browser 實跑；本波全為靜態可驗證修法）
 import { readFileSync, accessSync } from 'node:fs';
+import { settingsSrc } from './lib/page-src.mjs';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++; console.log('FAIL', m); } };
@@ -8,7 +9,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++;
 const css = readFileSync('src/styles/base.css', 'utf8');
 const br = readFileSync('src/pages/browser.js', 'utf8');
 const store = readFileSync('src/lib/store.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = settingsSrc();
 const main = readFileSync('src/main.js', 'utf8');
 
 // ── G15: multi-accent distribution block 已刪，且無殘留互動元素撞色覆蓋 ──
