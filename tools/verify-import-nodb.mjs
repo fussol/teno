@@ -14,6 +14,6 @@ const body = s.slice(s.indexOf('fn backup_db'), s.indexOf('fn prune_backups'));
 ok('缺 DB 早退放行', body.includes('!db_path.exists()') && body.includes('Ok(String::new())'), '無檔不炸');
 ok('真失敗仍響亮', body.includes('複製資料庫失敗'), '讀寫錯照報');
 ok('呼叫點不讀回傳', !body.includes('backupDb() as'), '契約不變');
-const st = readFileSync(join(root, 'src/pages/settings.js'), 'utf8');
+const st = readFileSync(join(root, 'src/pages/settings.js'), 'utf8') + readFileSync(join(root, 'src/pages/settings/backup.js'), 'utf8');
 ok('匯入仍先備份', /await backupDb\(\);[\s\S]{0,500}?await importDbDialog/.test(st), '安全網還在');
 process.exit(fail ? 1 : 0);

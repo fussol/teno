@@ -10,7 +10,7 @@ const chk = (name, cond, extra = '') => { if (cond) { pass++; } else { fail++; c
 const rs = readFileSync('src-tauri/src/lib.rs', 'utf8');
 const kt = readFileSync('src-tauri/gen/android/app/src/main/java/com/teno/app/TtsPlugin.kt', 'utf8');
 const api = readFileSync('src/lib/api.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = readFileSync('src/pages/settings.js', 'utf8') + readFileSync('src/pages/settings/backup.js', 'utf8');
 
 console.log('[B1] Rust 直寫命令');
 chk('export_db_to_downloads 存在', /async fn export_db_to_downloads\(app_handle: Ctx, filename: Option<String>\)/.test(rs));

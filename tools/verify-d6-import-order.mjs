@@ -51,11 +51,12 @@ function mask(src) {
 
 // ───────── 函式擷取：行首錨定＋括號計數器（對遮罩後文本） ─────────
 function extractFn(masked, name, raw) {
-  const re = new RegExp(`^async function ${name}\\(\\) \\{`, 'm');
+  const re = new RegExp(`^(?:export\\s+)?async function ${name}\\(\\) \\{`, 'm');
   const m = masked.match(re);
   if (!m) return null;
-  const start = m.index;
-  let depth = 0, i = start + m[0].length - 1;
+  const kw = m[0].indexOf('async');            // P4S3: export 前綴不屬函式本體
+  const start = m.index + kw;
+  let depth = 0, i = start + (m[0].length - kw) - 1;
   for (; i < masked.length; i++) {
     if (masked[i] === '{') depth++;
     else if (masked[i] === '}') { depth--; if (depth === 0) return { masked: masked.slice(start, i + 1), raw: raw !== undefined ? raw.slice(start, i + 1) : undefined }; }
@@ -90,7 +91,7 @@ function orderChecks(body, raw) {
 }
 
 // ───────── 源碼與模式判定 ─────────
-const SRC = fs.readFileSync(new URL('../src/pages/settings.js', import.meta.url), 'utf8');
+const SRC = fs.readFileSync(new URL('../src/pages/settings/backup.js', import.meta.url), 'utf8') + fs.readFileSync(new URL('../src/pages/settings.js', import.meta.url), 'utf8'); // backup 前置：mask() 不識 regex literal 引號，settings 尾段會污染後綴
 const SRCM = mask(SRC);
 const fn = extractFn(SRCM, 'runImportDb', SRC);
 if (!fn) { console.error('無法擷取 runImportDb（行首錨定失敗＝結構漂移）'); process.exit(2); }
