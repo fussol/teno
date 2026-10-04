@@ -1,4 +1,5 @@
-import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload, webdavPatchUpload } from './api.js'
+import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload, webdavPatchUpload, webdavMediaUpload } from './api.js'
+import { pendingCount, flushMediaQueue } from './media-queue.js'
 
 let timer = null;
 let lastBackupMtime = 0;
@@ -75,28 +76,63 @@ async function tick() {
       await checkpointAppLog();
     } catch (_) {}
     const mtime = await currentMaxMtime();
-    if (mtime <= lastBackupMtime) return;
-    await backupDb();
-    const { keepMax } = await readCfg();
-    await pruneBackups(keepMax);
-    lastBackupMtime = mtime;
-    // WebDAV 自動上傳：跟本地自動備份同一 tick，有變更才傳；失敗只記 log 不炸本地備份
-    try {
-      const { getSetting } = await import('./db.js');
-      const flag = await getSetting('webdavAutoUpload');
-      if (flag === 1 || flag === true || flag === '1') {
-        // 差量優先（同手動鈕）；NO_BASE/PAGE_SIZE/PATCH_TOO_BIG 等任一失敗落整包
-        let msg;
-        try { msg = await webdavPatchUpload(); }
-        catch (_) { msg = await webdavUpload(); }
-        console.log('[auto-backup] webdav:', msg);
-      }
-    } catch (e) {
-      console.warn('[auto-backup] webdav skip:', e?.message || e);
+    // 本地備份（D18 seed：首 tick 僅變更才備份；無變更不再早退 — 同步有自己狀態）
+    if (mtime > lastBackupMtime) {
+      await backupDb();
+      const { keepMax } = await readCfg();
+      await pruneBackups(keepMax);
+      lastBackupMtime = mtime;
     }
+    // 雲端同步（SYNC-STATE1）：獨立持久化狀態，成功才推進、失敗下 tick 重試、重啟讀回欠帳即清
+    await syncTick(mtime);
   } catch (e) {
     console.warn('[auto-backup]', e);
   } finally {
     _ticking = false;                // G30: 釋放重入鎖，下一 tick 正常
+  }
+}
+
+// SYNC-STATE1：自動同步自己的狀態（不與本地備份耦合）。
+// webdavLastSyncMtime 只在成功時寫入 DB → 失敗下一 tick 必重試；
+// 啟動讀回持久值 → 上個 session 的欠帳本 session 首個 tick 即清（0＝從未同步）。
+let _syncSeeded = false;
+let _lastSyncMtime = 0;
+
+async function syncTick(mtime) {
+  try {
+    const { getSetting, setSetting } = await import('./db.js');
+    const flag = await getSetting('webdavAutoUpload');
+    if (!(flag === 1 || flag === true || flag === '1')) return;
+    if (!_syncSeeded) {
+      _lastSyncMtime = Number(await getSetting('webdavLastSyncMtime')) || 0;
+      _syncSeeded = true;
+    }
+    const due = mtime > _lastSyncMtime;
+    let pend = 0;
+    try { pend = pendingCount(); } catch (_) {}
+    if (!due && !pend) return;
+    let msg = '';
+    if (due) {
+      // 差量優先（同手動鈕）；NO_BASE/PAGE_SIZE/PATCH_TOO_BIG 等任一失敗落整包
+      try { msg = await webdavPatchUpload(); }
+      catch (_) { msg = await webdavUpload(); }
+      await setSetting('webdavLastSyncMtime', String(mtime));   // 成功才推進
+      await setSetting('webdavLastSyncAt', String(Date.now()));
+      await setSetting('webdavLastSyncErr', '');
+    }
+    console.log('[auto-sync]', msg || 'media-only');
+    // 媒體佇列順帶（兌現 UI「一併帶」；佇列空／僅 WiFi 停機由 flush 內自理；
+    // 媒體失敗不作廢已完成的 DB 同步）
+    if (pend) {
+      try { await flushMediaQueue({ webdavMediaUpload }); }
+      catch (me) { console.warn('[auto-sync] media:', me?.message || me); }
+    }
+  } catch (e) {
+    const err = String(e?.message || e).slice(0, 300);
+    try {
+      const { setSetting } = await import('./db.js');
+      await setSetting('webdavLastSyncErr', err);
+    } catch (_) {}
+    console.warn('[auto-sync] 失敗（下個 tick 重試）:', err);
   }
 }

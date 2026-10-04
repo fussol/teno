@@ -401,7 +401,7 @@ export function renderSettingsContent(s) {
         <div id="webdavSyncSection" style="margin-top:var(--s3)">
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);margin-bottom:var(--s3)">
             <input type="checkbox" id="webdavAutoUpload">
-            自動同步（備份時上傳，有變更才傳；媒體圖檔一併帶）
+            自動同步（備份時上傳，有變更才傳；媒體一併帶；失敗下週期自動重試，狀態列可見）
           </label>
           <div class="config-field">
             <div class="config-field-info">

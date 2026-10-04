@@ -1,6 +1,6 @@
 // settings/webdav.js — WebDAV 同步／內嵌雲／雲端瀏覽／媒體佇列／日誌歸檔 綁定群（P4 Step2 純搬移）
 // 原 settings.js _mount 內 WebDAV 區塊（WIDGET1 先純搬位使其連續）；s 由呼叫端傳入
-import { webdavSaveConfig, webdavTest, backupDb, webdavCloudDelete, webdavCloudList, webdavDownload, webdavLogArchivePrune, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogout, webdavMediaDownload, webdavMediaUpload, webdavPatchDownload, webdavPatchUpload, webdavServerDeleteLocal, webdavServerGetConfig, webdavServerListLocal, webdavServerSaveConfig, webdavServerStart, webdavServerStatus, webdavServerStop, webdavStatus, webdavUpload } from '../../lib/api.js';
+import { getDbMtime, getAppLogMtime, webdavSaveConfig, webdavTest, backupDb, webdavCloudDelete, webdavCloudList, webdavDownload, webdavLogArchivePrune, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogout, webdavMediaDownload, webdavMediaUpload, webdavPatchDownload, webdavPatchUpload, webdavServerDeleteLocal, webdavServerGetConfig, webdavServerListLocal, webdavServerSaveConfig, webdavServerStart, webdavServerStatus, webdavServerStop, webdavStatus, webdavUpload } from '../../lib/api.js';
 import { isAndroid } from '../../lib/platform.js';
 import { toast } from '../../lib/toast.js';
 import { addAudit, checkpoint, closeDB, initDB } from '../../lib/db.js';
@@ -10,12 +10,31 @@ export function bindWebdavSyncPage(s) {
     const st = document.getElementById('webdavStatusText');
     try {
       const status = await webdavStatus();
-      st.textContent = `狀態: ${status}`;
+      let extra = '';
+      try {
+        const { getSetting } = await import('../../lib/db.js');
+        const at = Number(await getSetting('webdavLastSyncAt')) || 0;
+        const err = String((await getSetting('webdavLastSyncErr')) || '');
+        if (err) extra = ` · 自動同步待重試: ${err.slice(0, 80)}`;
+        else if (at) extra = ` · 上次自動同步 ${new Date(at).toLocaleString('zh-TW')}`;
+      } catch (_) {}
+      st.textContent = `狀態: ${status}${extra}`;
     } catch (e) {
       st.textContent = `狀態: ${e}`;
     }
   }
   updateWebdavUI();
+
+  // 手動上傳成功＝同步狀態的另一個合法推進點（清待重試、對齊基準，避免下 tick 冗餘重傳）
+  async function noteManualSyncOk() {
+    try {
+      const { setSetting } = await import('../../lib/db.js');
+      const m = Math.max(await getDbMtime(), await getAppLogMtime().catch(() => 0));
+      await setSetting('webdavLastSyncMtime', String(m));
+      await setSetting('webdavLastSyncAt', String(Date.now()));
+      await setSetting('webdavLastSyncErr', '');
+    } catch (_) {}
+  }
 
   // WebDAV 自動上傳開關（存 db settings，預設關；開了才跟本地自動備份同一 tick 上傳）
   import('../../lib/db.js').then(async ({ getSetting, setSetting }) => {
@@ -51,6 +70,7 @@ export function bindWebdavSyncPage(s) {
           await addAudit('webdav-patch-upload', 'WebDAV 差量上傳').catch(() => {});
         } catch (_) {}
         try { const mr = await webdavMediaUpload(); if (mr) toast(mr, ''); } catch (_) {}
+        await noteManualSyncOk();
         return;
       } catch (_patchErr) {
         // ② 落到整包（下方流程）；失敗原因交由整包路徑的防呆統一呈現
@@ -87,6 +107,7 @@ export function bindWebdavSyncPage(s) {
         }
       }
       await addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
+      await noteManualSyncOk();
       // MEDIAPEEL1：DB 上傳成功後順帶媒體（只傳缺塊；失敗不擋主流程）
       try {
         const mr = await webdavMediaUpload();
