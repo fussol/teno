@@ -57,7 +57,7 @@ console.log('== MEDIAPEEL static: frontend ==');
 const api = F('src/lib/api.js');
 ok('api mediaPut/Get/List', api.includes('mediaPut') && api.includes('mediaGet') && api.includes('mediaList'));
 ok('api media sync fns', api.includes('webdavMediaUpload') && api.includes('webdavMediaDownload'));
-const st = F('src/pages/settings.js');
+const st = F('src/pages/settings.js')+F('src/pages/settings/webdav.js')+F('src/pages/settings/sections.js');
 ok('settings piggyback upload', st.includes('webdavMediaUpload()'));
 ok('settings piggyback download', st.includes('webdavMediaDownload()'));
 

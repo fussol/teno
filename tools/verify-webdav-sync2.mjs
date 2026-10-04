@@ -87,7 +87,7 @@ console.log('== SYNC2 static: frontend ==');
 const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');
 for (const f of ['webdavServerGetConfig', 'webdavServerSaveConfig', 'webdavServerStart', 'webdavServerStop', 'webdavServerStatus'])
   ok(`api:${f}`, api.includes(`export const ${f}`));
-const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8');
+const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/webdav.js`, 'utf8');
 // SIMPLIFY1：儲存／啟動／停止三顆 → 一顆「啟動⇄停止」切換（欄位改自動儲存）
 for (const id of ['webdavSrvPort', 'webdavSrvUser', 'webdavSrvPass', 'webdavSrvAutostart', 'webdavSrvToggleBtn', 'webdavSrvStatusText'])
   ok(`settings:id ${id}`, st.includes(`id="${id}"`));
