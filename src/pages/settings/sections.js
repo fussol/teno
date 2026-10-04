@@ -10,7 +10,8 @@ import { ICON_PRESETS } from '../../lib/icon-presets.js';
 import { UI_SCALE_LABELS } from '../../lib/store.js';
 import { FIELD_LABELS, FIELD_KEYS, FIELD_STUDY_ONLY } from '../../lib/word-extra.js';
 import { FIELD_VIS_GROUPS, _ankiMode, escapeAttr, formatCutoffHHMM,
-         renderAnkiFields, renderDeckManager, renderFilteredDecks } from '../settings.js';
+         renderAnkiFields } from '../settings.js';
+import { renderDeckManager, renderFilteredDecks } from './deck-manager.js';
 
 export function renderSettingsContent(s) {
   const { ankiSettings, goalStreak, stats, decks, words } = s.state;
