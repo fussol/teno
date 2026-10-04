@@ -2,7 +2,7 @@
 
 ## 回歸測試協定（P2 起唯一定義，勿用人肉記憶）
 - 全量：`node tools/run-all.mjs`（repo 根目錄）＝ 216 顆 verify-*.mjs 帶 `--experimental-test-module-mocks` 跑，與 `tools/harness-baseline.txt` diff；**出線（基線外新紅）→ exit 1 = 回歸**。
-- 既有紅 60 顆的分類原因在基線檔頭（# 註解）；修掉一顆就 `--update` 收斂並審 diff。
+- 既有紅 38 顆的分類原因在基線檔頭（# 註解）；另有 `SKIP tools/<檔>` 21 顆＝環境隔離（A 過期/B git缺物件/C 外網），照跑報 ↷ 不算紅——修掉就刪該 SKIP 行。修掉紅顆就 `--update` 收斂並審 diff。
 - 單顆：`node --experimental-test-module-mocks tools/verify-<名>.mjs`（不帶旗標會誤報，30 顆用 mock.module）。
 - 例行 gates：`node tools/bank.mjs validate` → `npm run build` → `node tools/verify-plugin-seam.mjs`；動 Rust 加 `cargo test`（134+4）。
 
