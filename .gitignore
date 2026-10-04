@@ -38,3 +38,5 @@ pkg-src/
 
 # OCR 建置期資產（npm run ocr:assets 再生，勿入 repo）
 public/assets/ocr/
+dist-web/
+src-tauri/gen/android/app/src/debug/
