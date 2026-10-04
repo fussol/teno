@@ -48,7 +48,7 @@ chk('fields synonym 非空', f.synonym.includes('coarse'), `head=${f.synonym.sli
 chk('fields antonym 非空', f.antonym.trim().length > 0, `got=${f.antonym.slice(0, 40)}`);
 const rs = readFileSync('src-tauri/src/lib.rs', 'utf8');
 chk('lib.rs thesaurus→ithesaurus fallback 在', rs.includes('mw_url("ithesaurus"'));
-const st = readFileSync('src/pages/settings.js', 'utf8');
+const st = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
 chk('設定頁 thesaurus 標示相容 Intermediate', /Intermediate Thesaurus/.test(st));
 
 console.log('[NEG] 反向驗證');
@@ -57,7 +57,7 @@ try { headHas = /ithesaurus/.test(execSync('git show HEAD:src-tauri/src/lib.rs',
 catch { headHas = false; }
 if (headHas) { console.log('  NEG-SKIP: 特徵已在 HEAD'); }
 else {
-  execSync('git stash push -q -- src/lib/merriam.js src-tauri/src/lib.rs src/pages/settings.js');
+  execSync('git stash push -q -- src/lib/merriam.js src-tauri/src/lib.rs src/pages/settings.js src/pages/settings/sections.js');
   try {
     const { parseDictionaryEntries: p2, merriamToFields: m2 } = await import('../src/lib/merriam.js?neg=1');
     const r2 = p2(dict);

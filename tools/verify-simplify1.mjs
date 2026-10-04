@@ -8,7 +8,7 @@ const chk = (name, ok, detail = '') => {
   else { fail++; console.log(`  ❌ ${name}${detail ? '  ' + detail : ''}`); }
 };
 const src = (p) => readFileSync(p, 'utf8');
-const settings = src('src/pages/settings.js');
+const settings = src('src/pages/settings.js')+src('src/pages/settings/sections.js');
 const css = src('src/styles/base.css');
 
 console.log('== [A] WebDAV 按鈕簡化：15 → 3 顆可見 ==');

@@ -9,7 +9,7 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  ❌ ${name} ${extra}`); }
 };
 
-const js = readFileSync(`${R}/src/pages/settings.js`, 'utf8');
+const js = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8');
 const store = readFileSync(`${R}/src/lib/store.js`, 'utf8');
 
 console.log('== T1 介面備註僅 devMode ==');

@@ -194,7 +194,7 @@ console.log('── 5) JS ──');
 const api = read('src/lib/api.js');
 for (const c of ['widgetGetStatus', 'widgetSaveConfig', 'widgetRefresh', 'widgetRequestPerms'])
   ok(api.includes(`export const ${c} `) || api.includes(`export const ${c}=`), `api.js ${c}`);
-const st = read('src/pages/settings.js');
+const st = read('src/pages/settings.js')+read('src/pages/settings/sections.js');
 ok(st.includes('桌面 Widget</div>') || st.includes('} 桌面 Widget'), 'settings Widget 區塊標題');
 ok(st.includes('提醒通知'), 'settings 通知區塊標題（與 Widget 分家）');
 for (const id of ['widgetRotate', 'widgetNotifyOn', 'widgetNotifyInterval',

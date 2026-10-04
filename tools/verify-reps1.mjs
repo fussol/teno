@@ -13,7 +13,7 @@ const chk = (name, cond, extra = '') => {
 };
 
 const store = readFileSync('src/lib/store.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
 const extraSrc = readFileSync('src/lib/word-extra.js', 'utf8');
 
 console.log('[S] 欄位註冊與僅限學習情境的規則');

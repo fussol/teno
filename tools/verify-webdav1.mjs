@@ -31,7 +31,7 @@ const api = readFileSync(`${R}/src/lib/api.js`, 'utf8');
 for (const f of ['webdavSaveConfig', 'webdavStatus', 'webdavTest', 'webdavUpload', 'webdavDownload', 'webdavLogout'])
   ok(`api:${f}`, api.includes(`export const ${f}`));
 
-const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8');
+const st = readFileSync(`${R}/src/pages/settings.js`, 'utf8')+readFileSync(`${R}/src/pages/settings/sections.js`, 'utf8');
 for (const id of ['webdavUrl', 'webdavUser', 'webdavPass', 'webdavUploadBtn', 'webdavDownloadBtn', 'webdavClearBtn', 'webdavStatusText', 'webdavSrvToggleBtn'])
   ok(`settings:id ${id}`, st.includes(`id="${id}"`));
 // SIMPLIFY1：儲存／測試連線兩顆按鈕已由「失焦即存＋自動測連線」取代

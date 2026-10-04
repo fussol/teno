@@ -40,8 +40,10 @@ for (const f of files) {
 const current = [...new Set(now)].sort();
 
 if (update) {
-  writeFileSync(baselinePath, current.join('\n') + '\n');
-  console.log(`\n基線已更新: ${current.length} 行（記得 git diff 審過再 commit）`);
+  // 保留既有 # 檔頭（分類註解/協定），只重寫 FAIL 本體
+  const hdr = readFileSync(baselinePath, 'utf8').split('\n').filter(l => l.startsWith('#'));
+  writeFileSync(baselinePath, hdr.join('\n') + '\n' + current.join('\n') + '\n');
+  console.log(`\n基線已更新: ${current.length} 行（# 檔頭 ${hdr.length} 行保留；記得 git diff 審過再 commit）`);
   process.exit(0);
 }
 

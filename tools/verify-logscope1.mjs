@@ -81,7 +81,7 @@ ok('建表含 scope＋index', rs.includes("scope TEXT NOT NULL DEFAULT 'misc'") 
 ok('scope 單元測試', rs.includes('mod log_scope_tests'));
 
 console.log('== LOG-SCOPE1 static: settings/store/applog-page ==');
-const st = src('src/pages/settings.js');
+const st = src('src/pages/settings.js')+src('src/pages/settings/sections.js');
 ok('設定頁分類 checkbox', st.includes('data-logscope') && st.includes('記錄哪些分類'));
 ok('設定頁鏡像開關', st.includes('logMirrorToggle') && st.includes('除錯鏡像'));
 ok('設定頁保留天數搬出 devMode', st.includes('logRetentionInput') && !/devMode \? `[^`]*logRetentionInput/s.test(st));

@@ -18,7 +18,7 @@ let pass = 0, fail = 0;
 const chk = (name, cond) => { if (cond) { pass++; } else { fail++; console.log(`  FAIL ${name}`); } };
 
 const store = readFileSync('src/lib/store.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
 const css = readFileSync('src/styles/base.css', 'utf8');
 const index = readFileSync('index.html', 'utf8');
 
@@ -52,11 +52,11 @@ catch { headHasUiHints = false; }
 if (headHasUiHints) {
   console.log('  NEG-SKIP: 特徵已在 HEAD（已 commit），stash 拔 HEAD 不可能 — 跳過');
 } else {
-execSync('git stash push -q -- src/lib/store.js src/pages/settings.js src/styles/base.css index.html');
+execSync('git stash push -q -- src/lib/store.js src/pages/settings.js src/pages/settings/sections.js src/styles/base.css index.html');
 let negFail = 0;
 try {
   const s2 = readFileSync('src/lib/store.js', 'utf8');
-  const st2 = readFileSync('src/pages/settings.js', 'utf8');
+  const st2 = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
   const cs2 = readFileSync('src/styles/base.css', 'utf8');
   const ix2 = readFileSync('index.html', 'utf8');
   if (/uiHints/.test(s2)) { negFail++; console.log('  NEG-FAIL: stash 後 store 仍有 uiHints'); }

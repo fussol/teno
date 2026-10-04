@@ -7,7 +7,7 @@ import { merriamToFields } from '../src/lib/merriam.js';
 let pass = 0, fail = 0;
 const chk = (name, cond, extra = '') => { if (cond) { pass++; } else { fail++; console.log(`  FAIL ${name}${extra ? ' :: ' + extra : ''}`); } };
 
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
 
 console.log('[T1] 按鈕＋結果區接線');
 chk('測試鈕 HTML 存在', /id="mwKeysTestBtn"/.test(settings));

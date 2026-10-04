@@ -13,7 +13,7 @@ let pass = 0, fail = 0;
 const chk = (name, cond) => { if (cond) { pass++; } else { fail++; console.log(`  FAIL ${name}`); } };
 
 const svg = readFileSync('src/lib/svg.js', 'utf8');
-const settings = readFileSync('src/pages/settings.js', 'utf8');
+const settings = readFileSync('src/pages/settings.js', 'utf8')+readFileSync('src/pages/settings/sections.js', 'utf8');
 const browser = readFileSync('src/pages/browser.js', 'utf8');
 const deck = readFileSync('src/pages/deck-browser.js', 'utf8');
 
@@ -65,7 +65,7 @@ try { headHas = /ex-toggle/.test(execSync('git show HEAD:src/lib/svg.js', { enco
 catch { headHas = false; }
 if (headHas) {
   // HEAD 還有 ex-toggle（未 commit Fix3）→ stash 後必須回來 = 紅
-  execSync('git stash push -q -- src/lib/svg.js src/pages/settings.js src/pages/browser.js src/pages/deck-browser.js');
+  execSync('git stash push -q -- src/lib/svg.js src/pages/settings.js src/pages/settings/sections.js src/pages/browser.js src/pages/deck-browser.js');
   let negFail = 0;
   try {
     const sv2 = readFileSync('src/lib/svg.js', 'utf8');
