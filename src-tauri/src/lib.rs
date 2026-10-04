@@ -1051,7 +1051,8 @@ async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: tauri:
     // AI API：新鍵優先，舊 ollama* 為相容 fallback；留空時用本地預設
     let pick = |a: &str, b: &str| cfg.get(a).or_else(|| cfg.get(b)).cloned().unwrap_or_default();
     let llm_url = { let v = pick("llmApiUrl", "ollamaUrl"); if v.trim().is_empty() { "http://localhost:11434".to_string() } else { v } };
-    let llm_model = { let v = pick("llmModel", "ollamaModel"); if v.trim().is_empty() { "qwen2.5:14b".to_string() } else { v } };
+    // 預設模型 gemma3:12b：48 字對照實測 語意 43/49（qwen2.5:14b=41）、同速 ~1.2s/字、結構滿分（GEMMASWAP1）
+    let llm_model = { let v = pick("llmModel", "ollamaModel"); if v.trim().is_empty() { "gemma3:12b".to_string() } else { v } };
     let llm_format = cfg.get("llmApiFormat").map(|s| s.as_str()).unwrap_or("ollama").to_string();
     let llm_key = cfg.get("llmApiKey").cloned().unwrap_or_default();
 
