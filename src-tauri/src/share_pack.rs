@@ -11,6 +11,7 @@
 //! 匯入 Rust 解包放 temp，前端逐張 get_share_media 取 data URL（單張 10MB 守門，吃
 //! 到 word_images，跟 apkg 圖片管線同形）。
 
+use crate::Ctx;
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
 
@@ -231,8 +232,7 @@ fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
 
 // ─── temp（share-temp；apkg-temp 同形，token 綁定防串檔）───
 
-fn share_temp_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    use tauri::Manager as _;
+fn share_temp_dir(app: &Ctx) -> Result<std::path::PathBuf, String> {
     let dir = app
         .path()
         .app_cache_dir()
@@ -499,12 +499,11 @@ pub(crate) fn pack_from_db(
 /// 回 JSON {path, images, skipped}（圖位元組零 IPC，EXPORTBIG1 同課）。
 #[tauri::command]
 pub async fn export_share_pack(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     csv: String,
     filename: String,
     word_ids: Vec<String>,
 ) -> Result<String, String> {
-    use tauri::Manager as _;
     if word_ids.is_empty() {
         return Err("沒有單字可打包".to_string());
     }
@@ -525,14 +524,22 @@ pub async fn export_share_pack(
     let zip_bytes = packed.bytes;
     let (media_len, skipped) = (packed.images, packed.skipped);
 
-    // 存檔：桌機對話框；Android 走 MediaStore（EXPORTBIG1 同路）
+    // 存檔：桌機對話框；Android 走 MediaStore（EXPORTBIG1 同路）；
+    // 網站版無對話框 → 回 b64 讓前端 Blob 下載（FE export.js 解 raw.b64）
+    if app_handle.is_web() {
+        return Ok(serde_json::json!({
+            "path": fname, "images": media_len, "skipped": skipped,
+            "b64": base64_encode(&zip_bytes),
+        })
+        .to_string());
+    }
     #[cfg(target_os = "android")]
     {
         let exports = app_dir.join("exports");
         std::fs::create_dir_all(&exports).map_err(|e| e.to_string())?;
         let tmp = exports.join(&fname);
         std::fs::write(&tmp, &zip_bytes).map_err(|e| format!("寫入暫存失敗: {}", e))?;
-        let r = app_handle
+        let r = app_handle.handle()
             .state::<crate::tts_android::TtsHandle>()
             .0
             .run_mobile_plugin::<serde_json::Value>(
@@ -556,7 +563,7 @@ pub async fn export_share_pack(
         use tauri_plugin_dialog::DialogExt;
         use tokio::sync::oneshot;
         let (tx, rx) = oneshot::channel();
-        app_handle
+        app_handle.handle()
             .dialog()
             .file()
             .add_filter("Teno 分享包", &["zip"])
@@ -608,12 +615,12 @@ pub async fn export_share_pack(
 /// 匯入：選分享包 → 回 csv＋manifest＋媒體清單；本體存 temp，圖片逐張取。
 #[tauri::command]
 pub async fn import_share_pack_dialog(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
 ) -> Result<SharePackInspect, String> {
     use tauri_plugin_dialog::DialogExt;
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle
+    app_handle.handle()
         .dialog()
         .file()
         .add_filter("Teno 分享包", &["zip"])
@@ -637,6 +644,19 @@ pub async fn import_share_pack_dialog(
     #[cfg(not(target_os = "android"))]
     let src = file.into_path().map_err(|_| "無法取得路徑".to_string())?;
     let data = std::fs::read(&src).map_err(|e| format!("讀取檔案失敗: {}", e))?;
+    let file_name = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    pack_inspect_store(&app_handle, data, file_name)
+}
+
+/// 匯入核心（dialog 與 bytes 兩路共用）：驗包 → 暫存 → 回 inspect
+fn pack_inspect_store(
+    app_handle: &Ctx,
+    data: Vec<u8>,
+    file_name: String,
+) -> Result<SharePackInspect, String> {
     if data.len() > MAX_PACK_BYTES {
         return Err(format!(
             "檔案過大（{}MB > 500MB），拒絕匯入",
@@ -644,18 +664,14 @@ pub async fn import_share_pack_dialog(
         ));
     }
     let (csv, manifest, files) = inspect_pack_bytes(&data)?;
-    let file_name = src
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let dir = share_temp_dir(&app_handle)?;
+    let dir = share_temp_dir(app_handle)?;
     cleanup_old_temp(&dir);
     let token = random_temp_name();
     std::fs::write(dir.join(format!("{token}.tenopack")), &data)
         .map_err(|e| format!("寫入暫存失敗: {e}"))?;
     log::info!(
-        "import_share_pack src={:?} csv_len={} media={}",
-        src,
+        "import_share_pack file_name={:?} csv_len={} media={}",
+        file_name,
         csv.len(),
         files.len()
     );
@@ -666,6 +682,16 @@ pub async fn import_share_pack_dialog(
         media_token: token,
         file_name,
     })
+}
+
+// WEB：瀏覽器 <input type=file> 選檔 → bytes 直送（與 dialog 同一條 inspect/store 路）
+#[tauri::command]
+pub async fn import_share_pack_bytes(
+    app_handle: Ctx,
+    data: Vec<u8>,
+    file_name: String,
+) -> Result<SharePackInspect, String> {
+    pack_inspect_store(&app_handle, data, file_name)
 }
 
 fn inspect_pack_bytes(
@@ -712,7 +738,7 @@ fn inspect_pack_bytes(
 /// 匯入時逐張取圖 → data URL（單張 10MB 守門；失敗記 skipped 不整批掛）。
 #[tauri::command]
 pub async fn get_share_media(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     filename: String,
     token: Option<String>,
 ) -> Result<String, String> {

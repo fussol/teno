@@ -1,8 +1,8 @@
+use crate::Ctx;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
 const AUTH_URI: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -21,19 +21,19 @@ struct DriveCreds {
     client_secret: String,
 }
 
-fn creds_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn creds_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("drive_creds.json");
     p
 }
 
-fn tokens_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn tokens_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("drive_tokens.json");
     p
 }
 
-fn db_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn db_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("teno.db");
     p
@@ -52,7 +52,7 @@ const DEFAULT_CLIENT_SECRET: &str = match option_env!("TENO_DRIVE_CLIENT_SECRET"
     None => "",
 };
 
-fn load_creds(app_handle: &tauri::AppHandle) -> DriveCreds {
+fn load_creds(app_handle: &Ctx) -> DriveCreds {
     let p = creds_path(app_handle);
     std::fs::read_to_string(p).ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -81,26 +81,26 @@ fn write_private(path: &std::path::Path, s: &str) -> std::io::Result<()> {
     std::fs::write(path, s)
 }
 
-fn save_creds(app_handle: &tauri::AppHandle, creds: &DriveCreds) {
+fn save_creds(app_handle: &Ctx, creds: &DriveCreds) {
     if let Ok(s) = serde_json::to_string(creds) {
         let _ = write_private(&creds_path(app_handle), &s);
     }
 }
 
-fn load_tokens(app_handle: &tauri::AppHandle) -> DriveTokens {
+fn load_tokens(app_handle: &Ctx) -> DriveTokens {
     let p = tokens_path(app_handle);
     std::fs::read_to_string(p).ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_tokens(app_handle: &tauri::AppHandle, tokens: &DriveTokens) {
+fn save_tokens(app_handle: &Ctx, tokens: &DriveTokens) {
     if let Ok(s) = serde_json::to_string(tokens) {
         let _ = write_private(&tokens_path(app_handle), &s);
     }
 }
 
-fn creds_valid(app_handle: &tauri::AppHandle) -> bool {
+fn creds_valid(app_handle: &Ctx) -> bool {
     let c = load_creds(app_handle);
     !c.client_id.is_empty() && !c.client_secret.is_empty()
 }
@@ -227,7 +227,7 @@ fn json_from_resp(resp: ureq::Response) -> Result<serde_json::Value, String> {
     serde_json::from_slice(&buf).map_err(|e| format!("JSON 解析失敗: {}", e))
 }
 
-fn ensure_token(app_handle: &tauri::AppHandle) -> Result<String, String> {
+fn ensure_token(app_handle: &Ctx) -> Result<String, String> {
     let creds = load_creds(app_handle);
     if creds.client_id.is_empty() {
         return Err("尚未設定 Google Drive 憑證，請先在設定頁填入".into());
@@ -316,7 +316,7 @@ fn create_db_file(token: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn drive_save_creds(app_handle: tauri::AppHandle, client_id: String, client_secret: String) -> Result<String, String> {
+pub async fn drive_save_creds(app_handle: Ctx, client_id: String, client_secret: String) -> Result<String, String> {
     if client_id.is_empty() || client_secret.is_empty() {
         return Err("Client ID 和 Client Secret 不能為空".into());
     }
@@ -325,7 +325,12 @@ pub async fn drive_save_creds(app_handle: tauri::AppHandle, client_id: String, c
 }
 
 #[tauri::command]
-pub async fn drive_oauth(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn drive_oauth(app_handle: Ctx) -> Result<String, String> {
+    if app_handle.is_web() {
+        // ponytail: 網站版 OAuth 要 origin 回呼端點 + Google console 登記 redirect，
+        // FE 長出 Drive UI 時再做；目前 drive_* 無前端呼叫點。
+        return Err("網站版 Google Drive 授權未啟用（請在桌面版完成授權）".into());
+    }
     let creds = load_creds(&app_handle);
     if creds.client_id.is_empty() {
         return Err("請先在設定頁填入 Google Drive Client ID 和 Secret".into());
@@ -343,7 +348,7 @@ pub async fn drive_oauth(app_handle: tauri::AppHandle) -> Result<String, String>
         urlencode(&actual_redirect),
     );
 
-    if let Err(e) = app_handle.opener().open_url(&auth_url, None::<&str>) {
+    if let Err(e) = app_handle.handle().opener().open_url(&auth_url, None::<&str>) {
         return Err(format!("開啟瀏覽器失敗: {e}\n請手動複製網址:\n{auth_url}"));
     }
 
@@ -385,7 +390,7 @@ pub async fn drive_oauth(app_handle: tauri::AppHandle) -> Result<String, String>
 }
 
 #[tauri::command]
-pub async fn drive_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn drive_upload(app_handle: Ctx) -> Result<String, String> {
     let token = ensure_token(&app_handle)?;
     let file_id = match find_db_file(&token)? {
         Some(id) => id,
@@ -420,7 +425,7 @@ fn validate_drive_download(buf: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-pub async fn drive_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn drive_download(app_handle: Ctx) -> Result<String, String> {
     let token = ensure_token(&app_handle)?;
     let file_id = find_db_file(&token)?
         .ok_or("遠端尚未有備份，請先上傳")?;
@@ -450,7 +455,7 @@ pub async fn drive_download(app_handle: tauri::AppHandle) -> Result<String, Stri
 }
 
 #[tauri::command]
-pub async fn drive_status(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn drive_status(app_handle: Ctx) -> Result<String, String> {
     if !creds_valid(&app_handle) {
         return Ok("未設定".into());
     }
@@ -469,7 +474,7 @@ pub async fn drive_status(app_handle: tauri::AppHandle) -> Result<String, String
 }
 
 #[tauri::command]
-pub async fn drive_logout(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn drive_logout(app_handle: Ctx) -> Result<String, String> {
     let tp = tokens_path(&app_handle);
     if tp.exists() { let _ = std::fs::remove_file(tp); }
     Ok("已登出".into())

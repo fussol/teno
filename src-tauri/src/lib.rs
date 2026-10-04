@@ -6,6 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod ctx;
+pub use ctx::Ctx;
 mod tts_android;
 mod icon_android;
 mod drive_sync;
@@ -15,6 +17,9 @@ mod apkg;
 mod share_pack;
 mod media_store;
 mod widget_android;
+// WEB-SERVE1：網站版伺服器（feature="web" 才編譯，桌面/Android 零接觸）
+#[cfg(feature = "web")]
+pub mod web;
 
 struct PiperAudio {
     handle: rodio::OutputStreamHandle,
@@ -22,13 +27,13 @@ struct PiperAudio {
 
 static TTS_PLAYING: AtomicBool = AtomicBool::new(false);
 
-fn piper_models_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+fn piper_models_dir(app_handle: &Ctx) -> Result<std::path::PathBuf, String> {
     let mut dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     dir.push("piper-models");
     Ok(dir)
 }
 
-fn piper_resource_dir(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+fn piper_resource_dir(app_handle: &Ctx) -> Result<std::path::PathBuf, String> {
     let r = app_handle.path().resource_dir().map(|p| p.join("resources").join("piper"));
     if let Ok(ref dir) = r {
         if dir.join("piper").exists() { return Ok(dir.clone()); }
@@ -76,7 +81,7 @@ fn collect_piper_voices(data_dir: &std::path::Path) -> Vec<String> {
 }
 
 #[tauri::command]
-fn list_piper_voices(app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
+fn list_piper_voices(app_handle: Ctx) -> Result<Vec<String>, String> {
     let data_dir = piper_models_dir(&app_handle)?;
     Ok(collect_piper_voices(&data_dir))
 }
@@ -86,7 +91,7 @@ fn list_piper_voices(app_handle: tauri::AppHandle) -> Result<Vec<String>, String
 /// 2. bundled resource: <resource_dir>/resources/cli/cli.mjs
 /// 3. packaged path: /usr/lib/teno/resources/cli/cli.mjs
 /// 4. dev repo fallback: $HOME/teno/tools/cli.mjs
-fn resolve_cli_path(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+fn resolve_cli_path(app_handle: &Ctx) -> Option<std::path::PathBuf> {
     if let Ok(p) = std::env::var("TENO_CLI") {
         let pb = std::path::PathBuf::from(p);
         if pb.exists() { return Some(pb); }
@@ -105,7 +110,7 @@ fn resolve_cli_path(app_handle: &tauri::AppHandle) -> Option<std::path::PathBuf>
 
 /// App paths the frontend needs (config dir, sim-logs dir) — no hardcoded HOME paths.
 #[tauri::command]
-fn get_app_paths(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+fn get_app_paths(app_handle: Ctx) -> Result<serde_json::Value, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
         "configDir": app_dir.to_string_lossy(),
@@ -115,7 +120,7 @@ fn get_app_paths(app_handle: tauri::AppHandle) -> Result<serde_json::Value, Stri
 }
 
 #[tauri::command]
-async fn run_cli(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<String, String> {
+async fn run_cli(app_handle: Ctx, args: Vec<String>) -> Result<String, String> {
     log::info!("run_cli args={:?}", args);
     let cli_path = resolve_cli_path(&app_handle).ok_or_else(|| {
         "CLI 工具不存在（開發者模式需 tools/cli.mjs，或設 TENO_CLI 環境變數）".to_string()
@@ -152,7 +157,7 @@ async fn run_cli(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<Stri
     Ok(out)
 }
 
-fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app_handle: &tauri::AppHandle) -> Result<(), String> {
+fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app_handle: &Ctx) -> Result<(), String> {
     let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
     let tmp_wav = std::env::temp_dir().join(format!("teno_piper_out_{}.wav", ts));
 
@@ -806,8 +811,7 @@ fn llm_generate(base_url: &str, model: &str, format: &str, api_key: &str, prompt
 }
 
 /// 從 teno.db 讀取設定值（DICTREBUILD 需要 mwDictKey / ollamaUrl / ollamaModel）
-fn dict_read_settings(app: &tauri::AppHandle, keys: &[&str]) -> std::collections::HashMap<String, String> {
-    use tauri::Manager;
+fn dict_read_settings(app: &Ctx, keys: &[&str]) -> std::collections::HashMap<String, String> {
     let mut out = std::collections::HashMap::new();
     let dir = match app.path().app_config_dir() { Ok(d) => d, Err(_) => return out };
     let path = dir.join("teno.db");
@@ -1034,7 +1038,7 @@ mod dictrebuild_tests {
 }
 
 #[tauri::command]
-async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: Ctx) -> Result<String, String> {
     // DICTREBUILD：對外簽名與回傳形狀不變（JS 端零改動），內部來源換成韋氏 +
     //   本地 ollama 翻譯。函式名保留 `cambridge` 是刻意的 —— 使用者既有的
     //   methodSources 設定以字串 'cambridge' 記錄來源，改名會讓設定失效。
@@ -1172,7 +1176,7 @@ async fn lookup_merriam(word: String, dict_key: Option<String>, thes_key: Option
 
 
 #[tauri::command]
-async fn speak_text(text: String, voice: Option<String>, length_scale: Option<f64>, noise_scale: Option<f64>, app_handle: tauri::AppHandle) -> Result<(), String> {
+async fn speak_text(text: String, voice: Option<String>, length_scale: Option<f64>, noise_scale: Option<f64>, app_handle: Ctx) -> Result<(), String> {
     if TTS_PLAYING.swap(true, Ordering::Acquire) {
         return Err("已有語音正在播放".to_string());
     }
@@ -1193,10 +1197,10 @@ async fn speak_text(text: String, voice: Option<String>, length_scale: Option<f6
 }
 
 #[tauri::command]
-async fn import_piper_model_dialog(app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
+async fn import_piper_model_dialog(app_handle: Ctx) -> Result<Vec<String>, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("Piper 語音模型", &["onnx"])
         .pick_file(move |file| { let _ = tx.send(file); });
@@ -1231,7 +1235,7 @@ async fn import_piper_model_dialog(app_handle: tauri::AppHandle) -> Result<Vec<S
 }
 
 #[tauri::command]
-fn delete_piper_model(name: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+fn delete_piper_model(name: String, app_handle: Ctx) -> Result<(), String> {
     let data_dir = piper_models_dir(&app_handle)?;
     let safe: String = name.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '.').collect();
     let onnx = data_dir.join(format!("{}.onnx", safe));
@@ -1315,7 +1319,7 @@ pub fn download_url_to_file(url: &str, dest: &std::path::Path, overall_secs: u64
 }
 
 #[tauri::command]
-fn install_piper_model(url: String, app_handle: tauri::AppHandle) -> Result<Vec<String>, String> {
+fn install_piper_model(url: String, app_handle: Ctx) -> Result<Vec<String>, String> {
     let data_dir = piper_models_dir(&app_handle)?;
     std::fs::create_dir_all(&data_dir).map_err(|e| format!("建立模型目錄失敗: {}", e))?;
 
@@ -1512,7 +1516,7 @@ fn json_to_sql(v: &serde_json::Value) -> Box<dyn rusqlite::ToSql> {
 /// DB-TX1: 在單一連線上執行一批語句的真交易。回傳受影響列數。
 /// 任何一句失敗 → 整批 ROLLBACK（不會留下半套資料）。
 #[tauri::command]
-async fn sql_tx(app_handle: tauri::AppHandle, statements: Vec<TxStmt>) -> Result<u64, String> {
+async fn sql_tx(app_handle: Ctx, statements: Vec<TxStmt>) -> Result<u64, String> {
     let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let path = dir.join("teno.db");
     // 交易內不做 async → 丟到 blocking 執行緒；
@@ -1668,7 +1672,7 @@ mod sql_tx_tests {
 }
 
 #[tauri::command]
-fn write_db_bytes(app_handle: tauri::AppHandle, data: Vec<u8>) -> Result<(), String> {
+fn write_db_bytes(app_handle: Ctx, data: Vec<u8>) -> Result<(), String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     log::info!("write_db_bytes app_dir={:?} data_len={}", app_dir, data.len());
     let (teno, log) = unpack_db_container(&data)?;
@@ -1678,10 +1682,10 @@ fn write_db_bytes(app_handle: tauri::AppHandle, data: Vec<u8>) -> Result<(), Str
 }
 
 #[tauri::command]
-async fn import_db_dialog(app_handle: tauri::AppHandle) -> Result<(), String> {
+async fn import_db_dialog(app_handle: Ctx) -> Result<(), String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("SQLite Database", &["db", "sqlite", "sqlite3"])
         .pick_file(move |file| { let _ = tx.send(file); });
@@ -2283,7 +2287,7 @@ fn open_monitor_log(dir: &std::path::Path) -> Option<std::fs::File> {
 }
 
 #[tauri::command]
-fn log_msg(msg: String, app_handle: tauri::AppHandle) {
+fn log_msg(msg: String, app_handle: Ctx) {
     use std::io::Write;
     log::info!("[js] {msg}");
     // F14: 舊實作把前端 console 轉發寫進世界可寫 /tmp 下固定檔名（目錄
@@ -2297,10 +2301,10 @@ fn log_msg(msg: String, app_handle: tauri::AppHandle) {
 }
 
 #[tauri::command]
-async fn export_db_dialog(app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn export_db_dialog(app_handle: Ctx) -> Result<String, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("SQLite Database", &["db", "tenoc"])
         .set_file_name("teno-backup.db")
@@ -2333,10 +2337,10 @@ async fn export_db_dialog(app_handle: tauri::AppHandle) -> Result<String, String
 
 // B段：捆包存檔對話框（teno.db＋app-log.db；export_db_dialog 的 include_log 版）。
 #[tauri::command]
-async fn export_bundle_dialog(app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn export_bundle_dialog(app_handle: Ctx) -> Result<String, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("Teno 完整備份", &["db", "tenoc"])
         .set_file_name("teno-full-backup.db")
@@ -2368,10 +2372,10 @@ async fn export_bundle_dialog(app_handle: tauri::AppHandle) -> Result<String, St
 }
 
 #[tauri::command]
-async fn export_csv_dialog(app_handle: tauri::AppHandle, csv: String, filename: String) -> Result<String, String> {
+async fn export_csv_dialog(app_handle: Ctx, csv: String, filename: String) -> Result<String, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("CSV 檔案", &["csv"])
         .set_file_name(&filename)
@@ -2573,7 +2577,7 @@ fn backup_ts_of_filename(name: &str) -> Option<(u64, &'static str)> {
 }
 
 #[tauri::command]
-fn backup_db(app_handle: tauri::AppHandle) -> Result<String, String> {
+fn backup_db(app_handle: Ctx) -> Result<String, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let db_path = app_dir.join("teno.db");
     let backups_dir = app_dir.join("backups");
@@ -2623,7 +2627,7 @@ fn backup_db(app_handle: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn prune_backups(app_handle: tauri::AppHandle, max_count: u32) -> Result<u32, String> {
+fn prune_backups(app_handle: Ctx, max_count: u32) -> Result<u32, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let backups_dir = app_dir.join("backups");
     if !backups_dir.exists() { return Ok(0); }
@@ -2658,7 +2662,7 @@ fn prune_keep_ts(all_ts: &[u64], max_count: u32) -> std::collections::HashSet<u6
 }
 
 #[tauri::command]
-fn get_db_mtime(app_handle: tauri::AppHandle) -> Result<u64, String> {
+fn get_db_mtime(app_handle: Ctx) -> Result<u64, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let db_path = app_dir.join("teno.db");
     let metadata = std::fs::metadata(&db_path).map_err(|e| format!("讀取資料庫資訊失敗: {}", e))?;
@@ -2669,7 +2673,7 @@ fn get_db_mtime(app_handle: tauri::AppHandle) -> Result<u64, String> {
 
 /// LOG-BACKUP1: app-log.db mtime——自動備份的變更偵測取兩庫 max，缺檔回 0（不擋主庫）。
 #[tauri::command]
-fn get_app_log_mtime(app_handle: tauri::AppHandle) -> Result<u64, String> {
+fn get_app_log_mtime(app_handle: Ctx) -> Result<u64, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let p = app_dir.join("app-log.db");
     if !p.exists() { return Ok(0); }
@@ -2702,7 +2706,7 @@ fn count_patch_rows(path: &std::path::Path) -> Option<usize> {
 }
 
 #[tauri::command]
-fn list_backups(app_handle: tauri::AppHandle) -> Result<Vec<BackupEntry>, String> {
+fn list_backups(app_handle: Ctx) -> Result<Vec<BackupEntry>, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let backups_dir = app_dir.join("backups");
     if !backups_dir.exists() { return Ok(Vec::new()); }
@@ -2754,7 +2758,7 @@ fn is_leap(y: i64) -> bool {
 }
 
 #[tauri::command]
-fn restore_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), String> {
+fn restore_backup(app_handle: Ctx, filename: String) -> Result<(), String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let backups_dir = app_dir.join("backups");
     let safe_name = std::path::Path::new(&filename).file_name().ok_or("非法檔名")?.to_string_lossy().to_string();
@@ -2788,7 +2792,7 @@ fn restore_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), 
 }
 
 #[tauri::command]
-fn delete_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), String> {
+fn delete_backup(app_handle: Ctx, filename: String) -> Result<(), String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let backups_dir = app_dir.join("backups");
     let safe_name = std::path::Path::new(&filename).file_name().ok_or("非法檔名")?.to_string_lossy().to_string();
@@ -2812,7 +2816,7 @@ fn delete_backup(app_handle: tauri::AppHandle, filename: String) -> Result<(), S
 }
 
 #[tauri::command]
-async fn export_db_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+async fn export_db_data(app_handle: Ctx) -> Result<Vec<u8>, String> {
     // 2026-09-04: 匯出永遠只帶 teno.db（含 log 的 15MB+ 容器在 Android WebView
     // IPC/btoa 炸 OOM，且使用者已裁示 app-log 永不綁匯出）。操作日誌另走
     // devMode 文字檔匯出（export_app_log_text）。捆包需求走 export_db_bundle_data。
@@ -2824,7 +2828,7 @@ async fn export_db_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String>
 // WebView b64 兩次膨脹會 OOM）。Rust 打包→寫私有暫存→同進程調 Kotlin 流式寫
 // MediaStore，全程零位元組經過 IPC/WebView。多大都出得來。檔名沿 sanitize 慣例。
 #[tauri::command]
-async fn export_db_to_downloads(app_handle: tauri::AppHandle, filename: Option<String>) -> Result<String, String> {
+async fn export_db_to_downloads(app_handle: Ctx, filename: Option<String>) -> Result<String, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let data = pack_db_container(&app_dir, false)?;
     let len = data.len();
@@ -2836,7 +2840,7 @@ async fn export_db_to_downloads(app_handle: tauri::AppHandle, filename: Option<S
         std::fs::create_dir_all(&exports).map_err(|e| e.to_string())?;
         let tmp = exports.join(&fname);
         std::fs::write(&tmp, &data).map_err(|e| format!("寫入暫存失敗: {}", e))?;
-        let r = app_handle.state::<tts_android::TtsHandle>().0
+        let r = app_handle.handle().state::<tts_android::TtsHandle>().0
             .run_mobile_plugin::<serde_json::Value>(
                 "saveFileToDownloads",
                 serde_json::json!({
@@ -2860,7 +2864,7 @@ async fn export_db_to_downloads(app_handle: tauri::AppHandle, filename: Option<S
 // B段：捆包匯出（teno.db＋app-log.db TENOC 容器；呼叫端先做雙 checkpoint＋
 // 大小守門，Android 大檔走 chunked base64 既有路徑）。
 #[tauri::command]
-async fn export_db_bundle_data(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+async fn export_db_bundle_data(app_handle: Ctx) -> Result<Vec<u8>, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let data = pack_db_container(&app_dir, true)?;
     log::info!("export_db_bundle_data OK data_len={}", data.len());
@@ -2883,7 +2887,7 @@ fn normalize_scope(s: &str) -> &str {
 }
 
 #[tauri::command]
-async fn export_app_log_text(app_handle: tauri::AppHandle) -> Result<Vec<u8>, String> {
+async fn export_app_log_text(app_handle: Ctx) -> Result<Vec<u8>, String> {
     // LOG-SCOPE1：app_log 全表 → 文字檔（ts ISO | level | scope | message）。
     // 直接讀 sqlite 檔（不經 plugin-sql 連線，避免與前端 flush 競態）。
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -3064,7 +3068,7 @@ fn import_app_log_text_into(conn: &mut rusqlite::Connection, text: &str) -> Resu
 }
 
 #[tauri::command]
-async fn import_app_log_text(app_handle: tauri::AppHandle, text: String) -> Result<AppLogImportResult, String> {
+async fn import_app_log_text(app_handle: Ctx, text: String) -> Result<AppLogImportResult, String> {
     // 50MB 守門（WebView IPC 大字串先擋；正常匯出檔約 9MB）
     if text.len() > 50 * 1024 * 1024 {
         return Err("檔案過大（>50MB），拒絕匯入".to_string());
@@ -3079,7 +3083,7 @@ async fn import_app_log_text(app_handle: tauri::AppHandle, text: String) -> Resu
 }
 
 #[tauri::command]
-async fn export_backup_data(app_handle: tauri::AppHandle, filename: String) -> Result<Vec<u8>, String> {
+async fn export_backup_data(app_handle: Ctx, filename: String) -> Result<Vec<u8>, String> {
     let app_dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let safe_name = std::path::Path::new(&filename).file_name().ok_or("非法檔名")?.to_string_lossy().to_string();
     if safe_name == "." || safe_name == ".." { return Err("非法檔名".to_string()); }
@@ -3088,10 +3092,10 @@ async fn export_backup_data(app_handle: tauri::AppHandle, filename: String) -> R
 }
 
 #[tauri::command]
-async fn export_backup_dialog(app_handle: tauri::AppHandle, filename: String) -> Result<String, String> {
+async fn export_backup_dialog(app_handle: Ctx, filename: String) -> Result<String, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle.dialog()
+    app_handle.handle().dialog()
         .file()
         .add_filter("SQLite Database", &["db"])
         .set_file_name(&filename)
@@ -3455,8 +3459,10 @@ fn preensure_upgrade_columns(app_dir: &std::path::Path) {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    let migrations = vec![
+// WEB-SERVE1: 抽自 run() 原 inline vec — 桌面與網站伺服器共用同一份（migration 內容一字不動）。
+/// teno.db（sqlite:teno.db）migration 清單。
+pub fn teno_db_migrations() -> Vec<Migration> {
+    vec![
         Migration {
             version: 1,
             description: V1_DESC,
@@ -3592,10 +3598,12 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
-    ];
+    ]
+}
 
-    // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)
-    let log_migrations = vec![
+/// app-log.db（sqlite:app-log.db）migration 清單（LOG-SCOPE1 隔離庫）。
+pub fn app_log_db_migrations() -> Vec<Migration> {
+    vec![
         Migration {
             version: 1,
             description: "create app_log and sim_runs tables",
@@ -3637,7 +3645,14 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
-    ];
+    ]
+}
+
+pub fn run() {
+    let migrations = teno_db_migrations();
+
+    // 隔離 DB: 操作日誌 + 模擬歷史 (不污染 teno.db 真實學習資料)
+    let log_migrations = app_log_db_migrations();
 
     tauri::Builder::default()
         // log 先註冊：後面 setup（d17-preensure 等）的 log::info!/warn! 才有地方去；
@@ -3669,7 +3684,7 @@ pub fn run() {
         .plugin(icon_android::init())
         .plugin(widget_android::init())
         // ponytail: removed single-instance for dev builds
-        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_cloud_get, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list, widget_android::widget_get_status, widget_android::widget_save_config, widget_android::widget_refresh, widget_android::widget_request_perms, sql_tx, zh_traditional])
+        .invoke_handler(tauri::generate_handler![log_msg, run_cli, get_app_paths, speak_text, fetch_llm, fetch_get, lookup_cambridge, lookup_merriam, list_piper_voices, scrape_quizlet, write_db_bytes, import_db_dialog, export_db_dialog, export_csv_dialog, export_db_data, export_db_to_downloads, export_db_bundle_data, export_bundle_dialog, export_app_log_text, import_app_log_text, export_backup_data, backup_db, prune_backups, get_db_mtime, get_app_log_mtime, list_backups, restore_backup, delete_backup, export_backup_dialog, import_piper_model_dialog, install_piper_model, delete_piper_model, tts_android::speak_android, tts_android::finish_app, optimize_fsrs, simulate_fsrs, tts_android::stop_android, tts_android::list_voices_android, tts_android::save_export_file, icon_android::set_launcher_icon, icon_android::get_launcher_icon, icon_android::reset_app_log, drive_sync::drive_save_creds, drive_sync::drive_oauth, drive_sync::drive_upload, drive_sync::drive_download, drive_sync::drive_status, drive_sync::drive_logout, webdav_sync::webdav_save_config, webdav_sync::webdav_status, webdav_sync::webdav_test, webdav_sync::webdav_upload, webdav_sync::webdav_download, webdav_sync::webdav_patch_upload, webdav_sync::webdav_patch_download, webdav_sync::webdav_log_archive_status, webdav_sync::webdav_log_archive_upload, webdav_sync::webdav_log_archive_prune, webdav_sync::webdav_media_upload, webdav_sync::webdav_media_download, webdav_sync::webdav_cloud_list, webdav_sync::webdav_cloud_delete, webdav_sync::webdav_cloud_get, webdav_sync::webdav_logout, webdav_serve::webdav_server_get_config, webdav_serve::webdav_server_save_config, webdav_serve::webdav_server_start, webdav_serve::webdav_server_stop, webdav_serve::webdav_server_status, webdav_serve::webdav_server_list_local, webdav_serve::webdav_server_delete_local, apkg::inspect_apkg_dialog, apkg::inspect_apkg_data, apkg::get_apkg_media, share_pack::export_share_pack, share_pack::import_share_pack_dialog, share_pack::import_share_pack_bytes, share_pack::get_share_media, media_store::media_put, media_store::media_get, media_store::media_list, widget_android::widget_get_status, widget_android::widget_save_config, widget_android::widget_refresh, widget_android::widget_request_perms, sql_tx, zh_traditional])
         .setup(|app| {
             #[cfg(not(target_os = "android"))]
             {
@@ -3706,7 +3721,7 @@ pub fn run() {
                 }
             }
             // WEBDAV-EMBED1：跟隨啟動（autostart 有開才起；Android 內部直接 no-op）
-            webdav_serve::maybe_autostart(&app.handle());
+            webdav_serve::maybe_autostart(&Ctx::Desktop(app.handle().clone()));
             Ok(())
         })
         .run(tauri::generate_context!())

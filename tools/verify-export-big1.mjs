@@ -13,7 +13,7 @@ const api = readFileSync('src/lib/api.js', 'utf8');
 const settings = readFileSync('src/pages/settings.js', 'utf8');
 
 console.log('[B1] Rust 直寫命令');
-chk('export_db_to_downloads 存在', /async fn export_db_to_downloads\(app_handle: tauri::AppHandle, filename: Option<String>\)/.test(rs));
+chk('export_db_to_downloads 存在', /async fn export_db_to_downloads\(app_handle: Ctx, filename: Option<String>\)/.test(rs));
 chk('走 pack_db_container(app_dir, false)（僅 teno.db，同舊語意）', /export_db_to_downloads[\s\S]{0,600}pack_db_container\(&app_dir, false\)/.test(rs));
 chk('檔名 sanitize（file_name 守門）', /export_db_to_downloads[\s\S]{0,1200}file_name\(\)\.ok_or\("非法檔名"\)/.test(rs));
 chk('暫存寫私有 exports 目錄', /export_db_to_downloads[\s\S]{0,1600}app_dir\.join\("exports"\)/.test(rs));

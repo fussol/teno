@@ -3,7 +3,7 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.18.25"
+version = "5.18.26"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"
@@ -27,7 +27,7 @@ tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2"
 # tauri-plugin-single-instance disabled for dev
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros", "net", "rt-multi-thread"] }
 ureq = { version = "2", default-features = false, features = ["gzip", "tls"] }
 url = "2"
 rodio = "0.19"
@@ -42,6 +42,13 @@ sha2 = "0.10"
 sha1 = "0.10" # MEDIAPEEL1: 媒體 CAS 檔名 SHA-1（lock 本就有，零新增下載）
 zip = "2"
 flate2 = "1" # SYNC-GZ1: 同步容器 v2 段級 gzip（pure-Rust 後端，Android 可用；lock 檔本就有，零新增下載）
+axum = { version = "0.8", optional = true }
+tower-http = { version = "0.6", features = ["fs"], optional = true }
+argon2 = { version = "0.5", optional = true }
+# WEB-SERVE1: 與 tauri-plugin-sql 同款 sqlx（migrator/bind/decode 行為零漂移；lock 既有，零新增編譯）
+sqlx = { version = "0.8", default-features = false, features = ["json", "time", "sqlite", "runtime-tokio-rustls"], optional = true }
+# WEB-SERVE1: decode 對齊 plugin 的 DATE/DATETIME 分支（lock 既有，零新增編譯）
+time = { version = "0.3", optional = true }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 cpal = "0.15"
 
@@ -49,3 +56,13 @@ cpal = "0.15"
 # 桌面＋手機通用，零行為影響（只去 debug symbols）。
 [profile.release]
 strip = true
+
+[features]
+# WEB-SERVE1: 網站版伺服器（axum 靜態站＋invoke 路由）。桌面/Android 不帶 → 二進位零增肥。
+# 啟動: cargo run --features web --bin teno-server
+web = ["dep:axum", "dep:tower-http", "dep:argon2", "dep:sqlx", "dep:time"]
+
+[[bin]]
+name = "teno-server"
+path = "src/bin/teno-server.rs"
+required-features = ["web"]

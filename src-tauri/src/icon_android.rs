@@ -1,5 +1,5 @@
+use crate::Ctx;
 use tauri::{
-    Manager,
     plugin::{self, PluginApi},
 };
 
@@ -25,10 +25,10 @@ pub fn init() -> plugin::TauriPlugin<tauri::Wry> {
 /// 讀取目前 launcher icon（Android activity-alias 機制，resolve LAUNCHER intent）。
 /// 回傳 icon key："original" | "ocean" | ... | "ch10"。
 #[tauri::command]
-pub async fn get_launcher_icon(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn get_launcher_icon(app_handle: Ctx) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<IconHandle>().0;
+        let handle = &app_handle.handle().state::<IconHandle>().0;
         let val: serde_json::Value = handle
             .run_mobile_plugin("getCurrentIcon", serde_json::json!({}))
             .map_err(|e| format!("Android icon query: {:?}", e))?;
@@ -51,7 +51,7 @@ pub async fn get_launcher_icon(app_handle: tauri::AppHandle) -> Result<String, S
 /// teno.db 學習資料絕不受影響。
 /// DB 位置 = tauri-plugin-sql 的 app_config_dir()（wrapper.rs connect 同源路徑）。
 #[tauri::command]
-pub async fn reset_app_log(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn reset_app_log(app_handle: Ctx) -> Result<String, String> {
     use std::fs;
     let dir = app_handle
         .path()
@@ -80,10 +80,10 @@ pub async fn reset_app_log(app_handle: tauri::AppHandle) -> Result<String, Strin
 /// 切換 launcher icon（Android activity-alias 機制）。
 /// name: "original" | "ocean" | "forest" | "sunset" | "midnight" | "lemon" | "mint" | "rose" | "graphite" | "cream"
 #[tauri::command]
-pub async fn set_launcher_icon(app_handle: tauri::AppHandle, name: String) -> Result<(), String> {
+pub async fn set_launcher_icon(app_handle: Ctx, name: String) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<IconHandle>().0;
+        let handle = &app_handle.handle().state::<IconHandle>().0;
         handle
             .run_mobile_plugin::<serde_json::Value>(
                 "setIcon",

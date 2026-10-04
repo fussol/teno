@@ -1,12 +1,14 @@
 {
   "name": "teno",
   "private": true,
-  "version": "5.18.25",
+  "version": "5.18.26",
   "buildHash": "a029123",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite --mode web",
     "build": "vite build",
+    "build:web": "vite build --mode web",
     "preview": "vite preview",
     "ocr:assets": "node tools/copy-ocr-assets.mjs",
     "tauri": "tauri",

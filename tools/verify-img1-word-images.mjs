@@ -41,7 +41,7 @@ const v11sql = v11 ? v11[0].match(/sql:\s*"([\s\S]*?)",/)?.[1] : null;
 // 限縮主 migrations vec——log_migrations（隔離 DB，lib.rs:1822 起）是另一個
 // Migrator，版本序列獨立從 1 起，兩 vec 各自重複不算搶號
 {
-  const mainVec = LIBRS.slice(0, LIBRS.indexOf('log_migrations'));
+  const mainVec = LIBRS.slice(0, LIBRS.indexOf('app_log_db_migrations'));
   const vers = [...mainVec.matchAll(/version:\s*(\d+),/g)].map(m => +m[1]);
   const dup = vers.filter((v, i) => vers.indexOf(v) !== i);
   assert(dup.length === 0, `T0 主 migrations vec 版號重複: ${dup.join(',')}（sqlx 會靜默跳過第二條）`);

@@ -5,10 +5,10 @@
 //! 讀路徑 sha1 優先、缺檔回退 DB data 欄（搬遷中間態不斷圖）。
 //! 寫入只存 sha1，不再產生新的內嵌巨圖。
 
-use tauri::Manager;
+use crate::Ctx;
 
 /// media 目錄（不存在即建；建失敗回錯，不靜默）。
-fn media_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+fn media_dir(app: &Ctx) -> Result<std::path::PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
@@ -79,7 +79,7 @@ fn decode_data_url(s: &str) -> Option<(String, Vec<u8>)> {
 /// http 下載失敗回錯（呼叫端記 skipped，不整批掛）。
 #[tauri::command]
 pub async fn media_put(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     data: String,
     filename: Option<String>,
 ) -> Result<String, String> {
@@ -116,7 +116,7 @@ pub async fn media_put(
 
 /// 讀一張圖 → data URL（渲染用；單張 10MB 守門）。
 #[tauri::command]
-pub async fn media_get(app_handle: tauri::AppHandle, sha: String, ext: Option<String>) -> Result<String, String> {
+pub async fn media_get(app_handle: Ctx, sha: String, ext: Option<String>) -> Result<String, String> {
     let safe: String = sha.chars().filter(|c| c.is_ascii_hexdigit()).collect();
     if safe.len() != 40 || safe != sha {
         return Err("sha 非法（要 40 位 hex）".into());
@@ -165,7 +165,7 @@ fn read_as_data_url(fp: &std::path::Path) -> Result<String, String> {
 
 /// 列出本地 media shas（同步對帳用；回 [{sha, size}]）。
 #[tauri::command]
-pub async fn media_list(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn media_list(app_handle: Ctx) -> Result<String, String> {
     let dir = media_dir(&app_handle)?;
     let mut out = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {

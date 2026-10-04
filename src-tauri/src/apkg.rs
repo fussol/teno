@@ -1,3 +1,4 @@
+use crate::Ctx;
 // ─── Anki .apkg 匯入後端（plan 2026-09-09_170000 Tasks 3-5）───
 // .apkg = zip（collection.anki2 SQLite + media 對照 JSON + 編號媒體檔）。
 // 本檔三層：純函式（inspect_apkg_bytes / clean_anki_field）→ tauri commands。
@@ -486,11 +487,10 @@ fn decode_entity(s: &str, consumed: &mut usize) -> String {
 }
 
 // ─── Task 5: Tauri commands ───
-use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 /// temp apkg 存放：app cache dir 下的固定子目錄（新 inspect 覆蓋舊檔）。
-fn apkg_temp_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+fn apkg_temp_dir(app: &Ctx) -> Result<std::path::PathBuf, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     let d = dir.join("apkg-temp");
     std::fs::create_dir_all(&d).map_err(|e| format!("建立暫存目錄失敗: {}", e))?;
@@ -519,10 +519,10 @@ fn random_temp_name() -> String {
 
 /// 選檔 + 解析 + 回傳欄位對應表；apkg bytes 存 temp 供 get_apkg_media 取圖。
 #[tauri::command]
-pub async fn inspect_apkg_dialog(app_handle: tauri::AppHandle) -> Result<ApkgInspect, String> {
+pub async fn inspect_apkg_dialog(app_handle: Ctx) -> Result<ApkgInspect, String> {
     use tokio::sync::oneshot;
     let (tx, rx) = oneshot::channel();
-    app_handle
+    app_handle.handle()
         .dialog()
         .file()
         .add_filter("Anki Deck", &["apkg"])
@@ -546,13 +546,23 @@ pub async fn inspect_apkg_dialog(app_handle: tauri::AppHandle) -> Result<ApkgIns
     #[cfg(not(target_os = "android"))]
     let src = file.into_path().map_err(|_| "無法取得路徑".to_string())?;
     let data = std::fs::read(&src).map_err(|e| format!("讀取檔案失敗: {}", e))?;
-    log::info!("inspect_apkg_dialog src={:?} bytes={}", src, data.len());
+    let file_name = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    apkg_inspect_store(&app_handle, data, file_name)
+}
+
+/// 匯入核心（dialog 與 bytes 兩路共用）：inspect → 暫存 zip 供 get_apkg_media
+fn apkg_inspect_store(
+    app_handle: &Ctx,
+    data: Vec<u8>,
+    file_name: String,
+) -> Result<ApkgInspect, String> {
+    log::info!("apkg_inspect_store file_name={:?} bytes={}", file_name, data.len());
     let mut res = inspect_apkg_bytes(&data)?;
     // D-NAME1: 真實檔名（stem；取不到退回空字串，前端再退回列數標籤）
-    res.file_name = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    res.file_name = file_name;
 
     // temp 存 bytes 供 get_apkg_media 重開 zip（新 inspect 覆蓋舊檔）
-    let dir = apkg_temp_dir(&app_handle)?;
+    let dir = apkg_temp_dir(app_handle)?;
     cleanup_old_temp(&dir);
     // F-RACE1: token 即 temp 檔名 stem（32 hex），回傳給前端；取圖帶 token
     // 精確開檔，不再靠 mtime 猜，重疊 inspect 不串牌。
@@ -561,8 +571,17 @@ pub async fn inspect_apkg_dialog(app_handle: tauri::AppHandle) -> Result<ApkgIns
     std::fs::write(&tmp_path, &data).map_err(|e| format!("寫入暫存失敗: {e}"))?;
     log::info!("apkg temp saved: {tmp_path:?}");
     res.media_token = token;
-
     Ok(res)
+}
+
+// WEB：瀏覽器選檔 → bytes 直送（與 dialog 同一條 inspect/store 路）
+#[tauri::command]
+pub async fn inspect_apkg_data(
+    app_handle: Ctx,
+    data: Vec<u8>,
+    file_name: String,
+) -> Result<ApkgInspect, String> {
+    apkg_inspect_store(&app_handle, data, file_name)
 }
 
 /// F-RACE1: token 即 temp 檔名 stem（[A-Za-z0-9_-]{1,64}）；拒絕一切路徑字元。
@@ -609,7 +628,7 @@ fn resolve_media_tmp(dir: &std::path::Path, token: Option<&str>) -> Option<std::
 #[tauri::command]
 pub async fn get_apkg_media(
     filename: String,
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     token: Option<String>,
 ) -> Result<String, String> {
     let safe_name = std::path::Path::new(&filename)

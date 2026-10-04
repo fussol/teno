@@ -6,6 +6,7 @@
 //! - 設定存 app_config_dir/webdav_server.json（0600；port/user/pass/autostart），預設關（autostart=false）
 //! - Android：命令直接回「桌機限定」，不跑 listener
 
+use crate::Ctx;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -14,7 +15,6 @@ use std::sync::{
     Mutex, OnceLock,
 };
 use std::time::Duration;
-use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct ServerConfig {
@@ -53,7 +53,7 @@ fn state() -> &'static Mutex<ServerState> {
     STATE.get_or_init(|| Mutex::new(ServerState::default()))
 }
 
-fn server_config_path(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
+fn server_config_path(app_handle: &Ctx) -> std::path::PathBuf {
     let mut p = app_handle
         .path()
         .app_config_dir()
@@ -211,7 +211,7 @@ fn write_private(path: &std::path::Path, s: &str) -> std::io::Result<()> {
     std::fs::write(path, s)
 }
 
-fn load_server_config(app_handle: &tauri::AppHandle) -> ServerConfig {
+fn load_server_config(app_handle: &Ctx) -> ServerConfig {
     std::fs::read_to_string(server_config_path(app_handle))
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -1066,7 +1066,7 @@ fn stop_server_inner() -> bool {
 }
 
 /// setup 期呼叫：autostart 有開才起（Android 永不起）
-pub fn maybe_autostart(app_handle: &tauri::AppHandle) {
+pub fn maybe_autostart(app_handle: &Ctx) {
     #[cfg(target_os = "android")]
     {
         let _ = app_handle;
@@ -1094,7 +1094,7 @@ pub fn maybe_autostart(app_handle: &tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn webdav_server_get_config(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
 ) -> Result<serde_json::Value, String> {
     #[cfg(target_os = "android")]
     {
@@ -1118,7 +1118,7 @@ pub async fn webdav_server_get_config(
 
 #[tauri::command]
 pub async fn webdav_server_save_config(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     port: u16,
     username: String,
     password: String,
@@ -1169,7 +1169,7 @@ pub async fn webdav_server_save_config(
 }
 
 #[tauri::command]
-pub async fn webdav_server_start(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_server_start(app_handle: Ctx) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
         let _ = &app_handle;
@@ -1188,7 +1188,7 @@ pub async fn webdav_server_start(app_handle: tauri::AppHandle) -> Result<String,
 }
 
 #[tauri::command]
-pub async fn webdav_server_stop(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_server_stop(app_handle: Ctx) -> Result<String, String> {
     let _ = &app_handle;
     #[cfg(target_os = "android")]
     {
@@ -1205,7 +1205,7 @@ pub async fn webdav_server_stop(app_handle: tauri::AppHandle) -> Result<String, 
 }
 
 #[tauri::command]
-pub async fn webdav_server_status(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_server_status(app_handle: Ctx) -> Result<String, String> {
     let _ = &app_handle;
     #[cfg(target_os = "android")]
     {
@@ -1233,7 +1233,7 @@ pub async fn webdav_server_status(app_handle: tauri::AppHandle) -> Result<String
 /// 回 JSON {source:"local", path, entries:[{name,size,mtime,isdir}]}，形狀跟遠端一致。
 #[tauri::command]
 pub async fn webdav_server_list_local(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     path: Option<String>,
 ) -> Result<String, String> {
     let _ = &app_handle;
@@ -1303,7 +1303,7 @@ pub async fn webdav_server_list_local(
 /// CLOUDBROWSE1：本機直刪（零網路；拒刪根／隱藏／歷史）。
 #[tauri::command]
 pub async fn webdav_server_delete_local(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     path: String,
 ) -> Result<String, String> {
     let _ = &app_handle;

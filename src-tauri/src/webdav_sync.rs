@@ -9,10 +9,10 @@
 //! - ureq 2 無 base64 依賴，Basic Auth 自帶最小 base64_encode（標準字母表）
 //! - HEAD 404＝伺服器可達＋認證 OK＋遠端尚無檔（測試連線視為成功）
 
+use crate::Ctx;
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::PathBuf;
-use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 struct WebdavConfig {
@@ -21,13 +21,13 @@ struct WebdavConfig {
     password: String,
 }
 
-fn config_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn config_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("webdav_config.json");
     p
 }
 
-fn db_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn db_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("teno.db");
     p
@@ -53,14 +53,14 @@ fn write_private(path: &std::path::Path, s: &str) -> std::io::Result<()> {
     std::fs::write(path, s)
 }
 
-fn load_config(app_handle: &tauri::AppHandle) -> WebdavConfig {
+fn load_config(app_handle: &Ctx) -> WebdavConfig {
     std::fs::read_to_string(config_path(app_handle))
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_config(app_handle: &tauri::AppHandle, cfg: &WebdavConfig) {
+fn save_config(app_handle: &Ctx, cfg: &WebdavConfig) {
     if let Ok(s) = serde_json::to_string(cfg) {
         let _ = write_private(&config_path(app_handle), &s);
     }
@@ -86,20 +86,20 @@ struct SyncState {
     at: u64,
 }
 
-fn sync_state_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn sync_state_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("webdav_sync_state.json");
     p
 }
 
-fn load_sync_state(app_handle: &tauri::AppHandle) -> SyncState {
+fn load_sync_state(app_handle: &Ctx) -> SyncState {
     std::fs::read_to_string(sync_state_path(app_handle))
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_sync_state(app_handle: &tauri::AppHandle, st: &SyncState) {
+fn save_sync_state(app_handle: &Ctx, st: &SyncState) {
     if let Ok(s) = serde_json::to_string(st) {
         let _ = std::fs::write(sync_state_path(app_handle), s);
     }
@@ -107,17 +107,17 @@ fn save_sync_state(app_handle: &tauri::AppHandle, st: &SyncState) {
 
 /// PATCHDIFF base 檔：上次成功同步的 teno.db 原始位元組（page_diff 的比對基準）。
 /// 存 app_config_dir/teno.base.db；壞了就當無 base（回 None，不炸）。
-fn base_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn base_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("teno.base.db");
     p
 }
-fn load_base_bytes(app_handle: &tauri::AppHandle) -> Option<Vec<u8>> {
+fn load_base_bytes(app_handle: &Ctx) -> Option<Vec<u8>> {
     let b = std::fs::read(base_path(app_handle)).ok()?;
     if b.len() < 100 || !b.starts_with(b"SQLite format 3\0") { return None; }
     Some(b)
 }
-fn save_base_copy(app_handle: &tauri::AppHandle, raw_teno: &[u8]) {
+fn save_base_copy(app_handle: &Ctx, raw_teno: &[u8]) {
     if raw_teno.len() >= 100 && raw_teno.starts_with(b"SQLite format 3\0") {
         let _ = std::fs::write(base_path(app_handle), raw_teno);
     }
@@ -131,7 +131,7 @@ fn now_epoch() -> u64 {
 }
 
 /// 本地指紋（mtime＋size；讀不到＝None）
-fn local_fingerprint(app_handle: &tauri::AppHandle) -> (Option<u64>, Option<u64>) {
+fn local_fingerprint(app_handle: &Ctx) -> (Option<u64>, Option<u64>) {
     let m = std::fs::metadata(db_path(app_handle)).ok();
     match m {
         Some(m) => (
@@ -356,7 +356,7 @@ pub(crate) fn try_snapshot_read(db_path: &std::path::Path) -> Result<Vec<u8>, St
 }
 
 /// 讀本地要上傳的位元組：teno.db 必讀＋魔數驗＋下限驗；app-log.db 有就帶，無就空段
-fn read_upload_payload(app_handle: &tauri::AppHandle) -> Result<Vec<u8>, String> {
+fn read_upload_payload(app_handle: &Ctx) -> Result<Vec<u8>, String> {
     let tp = db_path(app_handle);
     // HOLE5：撕裂讀守門——先探鎖再讀檔，忙就放棄這次（呼叫端重試或下次再傳）
     let teno = try_snapshot_read(&tp).map_err(|e| format!("讀取資料庫失敗：{e}"))?;
@@ -420,7 +420,7 @@ fn file_url(cfg: &WebdavConfig) -> Result<String, String> {
     Ok(format!("{}/teno.db", normalize_base(&cfg.url)?))
 }
 
-fn require_config(app_handle: &tauri::AppHandle) -> Result<WebdavConfig, String> {
+fn require_config(app_handle: &Ctx) -> Result<WebdavConfig, String> {
     let cfg = load_config(app_handle);
     if cfg.url.trim().is_empty() {
         return Err("尚未設定 WebDAV，請先在設定頁填入 URL 並儲存".into());
@@ -454,7 +454,7 @@ fn fmt_mb(bytes: u64) -> String {
     format!("{:.1}MB", bytes as f64 / 1048576.0)
 }
 
-fn local_meta(app_handle: &tauri::AppHandle) -> Result<(u64, String), String> {
+fn local_meta(app_handle: &Ctx) -> Result<(u64, String), String> {
     let p = db_path(app_handle);
     let m = std::fs::metadata(&p).map_err(|e| format!("讀取本機資料庫失敗：{e}"))?;
     let epoch = m
@@ -469,7 +469,7 @@ fn local_meta(app_handle: &tauri::AppHandle) -> Result<(u64, String), String> {
 }
 
 /// 本機 mtime epoch（版本比對用；讀不到＝None＝不擋）
-fn local_epoch(app_handle: &tauri::AppHandle) -> Option<u64> {
+fn local_epoch(app_handle: &Ctx) -> Option<u64> {
     std::fs::metadata(db_path(app_handle))
         .ok()?
         .modified()
@@ -571,7 +571,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 /// 分叉保留檔：app_config_dir/teno-conflict-<nanos>.db（遠端／本地被擋下的那一邊先落這，不丟）
-fn conflict_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn conflict_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -582,7 +582,7 @@ fn conflict_path(app_handle: &tauri::AppHandle) -> PathBuf {
 }
 
 /// 下載落檔：teno＋log 雙寫（tmp＋rename；跟 write_db_container 同範式）
-fn write_downloaded(app_handle: &tauri::AppHandle, teno: &[u8], log: &[u8]) -> Result<(), String> {
+fn write_downloaded(app_handle: &Ctx, teno: &[u8], log: &[u8]) -> Result<(), String> {
     use std::io::Write as _;
     let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let db = dir.join("teno.db");
@@ -654,16 +654,16 @@ fn check_remote_version(remote: u32, mine: u32) -> Result<(), String> {
     Ok(())
 }
 
-fn guard_remote_db(app_handle: &tauri::AppHandle, db: &[u8]) -> Result<(), String> {
+fn guard_remote_db(app_handle: &Ctx, db: &[u8]) -> Result<(), String> {
     // 殘缺檔不是本閘的責任（交給既有驗包守門拒）；格式對才讀指紋
     let Ok(remote) = remote_user_version(db) else { return Ok(()) };
-    let mine = version_int(&app_handle.package_info().version.to_string());
+    let mine = version_int(&app_handle.version());
     check_remote_version(remote, mine)
 }
 
 #[tauri::command]
 pub async fn webdav_save_config(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     url: String,
     username: String,
     password: String,
@@ -685,7 +685,7 @@ pub async fn webdav_save_config(
 }
 
 #[tauri::command]
-pub async fn webdav_status(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_status(app_handle: Ctx) -> Result<String, String> {
     let cfg = load_config(&app_handle);
     if cfg.url.trim().is_empty() {
         return Ok("未設定".into());
@@ -694,7 +694,7 @@ pub async fn webdav_status(app_handle: tauri::AppHandle) -> Result<String, Strin
 }
 
 #[tauri::command]
-pub async fn webdav_test(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_test(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let file = file_url(&cfg)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -710,7 +710,7 @@ pub async fn webdav_test(app_handle: tauri::AppHandle) -> Result<String, String>
 
 #[tauri::command]
 pub async fn webdav_upload(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     force: Option<bool>,
 ) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
@@ -844,7 +844,7 @@ pub async fn webdav_upload(
 
 #[tauri::command]
 pub async fn webdav_download(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     force: Option<bool>,
 ) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
@@ -1045,7 +1045,7 @@ fn media_base_url(cfg: &WebdavConfig) -> Result<String, String> {
     Ok(format!("{}/media/", normalize_base(&cfg.url)?))
 }
 
-fn media_local_dir(app_handle: &tauri::AppHandle) -> std::path::PathBuf {
+fn media_local_dir(app_handle: &Ctx) -> std::path::PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("media");
     p
@@ -1079,7 +1079,7 @@ fn local_media_names(dir: &std::path::Path) -> Vec<String> {
 
 /// MEDIAPEEL1：媒體上傳（只傳遠端缺的；MKCOL 冪等；單檔 10MB 守門；失敗記 skipped 不整批掛）。
 #[tauri::command]
-pub async fn webdav_media_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_media_upload(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let base = media_base_url(&cfg)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -1140,7 +1140,7 @@ pub async fn webdav_media_upload(app_handle: tauri::AppHandle) -> Result<String,
 
 /// MEDIAPEEL1：媒體下載（只拉本地缺的；單檔 10MB 守門；失敗記 skipped）。
 #[tauri::command]
-pub async fn webdav_media_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_media_download(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let base = media_base_url(&cfg)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -1225,7 +1225,7 @@ pub(crate) fn sqlite_page_size(db: &[u8]) -> usize {
 /// 流程：base 檔＋現檔 → page_diff → pack → gzip → 70% 逃生 → PUT /teno.patch（X-Base/X-Target/X-Page-Size）→ server 套用驗 hash。
 /// 任一步對不上（無 base／base 不可用／patch 太大／server 409）一律回 Err 叫呼叫端走整包（fallback，不自動重試）。
 #[tauri::command]
-pub async fn webdav_patch_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_patch_upload(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let base_url = normalize_base(&cfg.url)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -1284,7 +1284,7 @@ pub async fn webdav_patch_upload(app_handle: tauri::AppHandle) -> Result<String,
 
 /// PATCHDIFF1 真收發：下載 patch（base sha 對得上才拿 patch，對不上 409 走整包）。
 #[tauri::command]
-pub async fn webdav_patch_download(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_patch_download(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let base_url = normalize_base(&cfg.url)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -1340,23 +1340,23 @@ pub async fn webdav_patch_download(app_handle: tauri::AppHandle) -> Result<Strin
 /// 流程：讀 app-log.db 全表 → txt → gzip → PUT logs/<ts>.txt.gz → 記 uploaded_until（最大 ts）。
 /// 回傳 "bytes=..KB rows=.. uploaded_until=.."（UI 顯示本次多大）。
 /// 上傳完本地 24h 後釋放由 webdav_log_archive_prune 做（只清已上傳區間＋非 error）。
-fn log_archive_state_path(app_handle: &tauri::AppHandle) -> PathBuf {
+fn log_archive_state_path(app_handle: &Ctx) -> PathBuf {
     let mut p = app_handle.path().app_config_dir().unwrap_or_default();
     p.push("log_archive_state.json");
     p
 }
-fn load_uploaded_until(app_handle: &tauri::AppHandle) -> i64 {
+fn load_uploaded_until(app_handle: &Ctx) -> i64 {
     std::fs::read_to_string(log_archive_state_path(app_handle))
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0)
 }
-fn save_uploaded_until(app_handle: &tauri::AppHandle, ts: i64) {
+fn save_uploaded_until(app_handle: &Ctx, ts: i64) {
     let _ = std::fs::write(log_archive_state_path(app_handle), ts.to_string());
 }
 
 #[tauri::command]
-pub async fn webdav_log_archive_status(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_log_archive_status(app_handle: Ctx) -> Result<String, String> {
     let dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     let lp = dir.join("app-log.db");
     if !lp.is_file() {
@@ -1372,7 +1372,7 @@ pub async fn webdav_log_archive_status(app_handle: tauri::AppHandle) -> Result<S
 }
 
 #[tauri::command]
-pub async fn webdav_log_archive_upload(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_log_archive_upload(app_handle: Ctx) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
     let base = normalize_base(&cfg.url)?;
     let auth = format!("Basic {}", auth_header(&cfg));
@@ -1442,7 +1442,7 @@ pub async fn webdav_log_archive_upload(app_handle: tauri::AppHandle) -> Result<S
 /// LOGARCHIVE1：24h 後釋放已上傳區間（只清 ts<=uploaded_until 且超過 24h 且 level!=error）。
 /// error 多留（90 天政策由既有 retention 管，不在這裡動）。
 #[tauri::command]
-pub async fn webdav_log_archive_prune(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_log_archive_prune(app_handle: Ctx) -> Result<String, String> {
     let until = load_uploaded_until(&app_handle);
     if until <= 0 {
         return Ok("無已上傳區間，不需釋放".into());
@@ -1466,7 +1466,7 @@ pub async fn webdav_log_archive_prune(app_handle: tauri::AppHandle) -> Result<St
 }
 
 #[tauri::command]
-pub async fn webdav_logout(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub async fn webdav_logout(app_handle: Ctx) -> Result<String, String> {
     let p = config_path(&app_handle);
     if p.exists() {
         let _ = std::fs::remove_file(p);
@@ -1551,7 +1551,7 @@ fn cloud_join(base: &str, sub: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn webdav_cloud_list(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     path: Option<String>,
 ) -> Result<String, String> {
     let cfg = require_config(&app_handle)?;
@@ -1583,7 +1583,7 @@ pub async fn webdav_cloud_list(
 
 #[tauri::command]
 pub async fn webdav_cloud_delete(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     path: String,
 ) -> Result<String, String> {
     let sub = path.trim().trim_start_matches('/').to_string();
@@ -1608,7 +1608,7 @@ pub async fn webdav_cloud_delete(
 
 /// LIBRARY1：公開圖書館單檔下載（GET 字串，題包級大小；上限 32MB）
 #[tauri::command]
-pub async fn webdav_cloud_get(app_handle: tauri::AppHandle, path: String) -> Result<String, String> {
+pub async fn webdav_cloud_get(app_handle: Ctx, path: String) -> Result<String, String> {
     let sub = path.trim().trim_start_matches('/').to_string();
     if sub.is_empty() || sub.contains("..") || sub.starts_with('.') {
         return Err("不合法的路徑".into());

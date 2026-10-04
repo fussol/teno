@@ -1,5 +1,5 @@
+use crate::Ctx;
 use tauri::{
-    Manager,
     plugin::{self, PluginApi},
 };
 use serde::Deserialize;
@@ -31,14 +31,14 @@ pub fn init() -> plugin::TauriPlugin<tauri::Wry> {
 
 #[tauri::command]
 pub async fn speak_android(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     text: String,
     voice: Option<String>,
     speed: Option<f64>,
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         handle
             .run_mobile_plugin::<serde_json::Value>(
                 "speak",
@@ -54,10 +54,10 @@ pub async fn speak_android(
 }
 
 #[tauri::command]
-pub async fn stop_android(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn stop_android(app_handle: Ctx) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         handle
             .run_mobile_plugin::<serde_json::Value>("stop", serde_json::json!({}))
             .map_err(|e| format!("Android TTS stop: {:?}", e))?;
@@ -68,10 +68,10 @@ pub async fn stop_android(app_handle: tauri::AppHandle) -> Result<(), String> {
 // F1：Android back/退出 — run_mobile_plugin 轉發到 Kotlin TtsPlugin.finishApp（finishAndRemoveTask）。
 // 非 Android：no-op Ok(())（cfg block 在函數體內，與 stop_android 同款）— __handleAndroidBack 僅 Android native 呼叫，desktop 零影響。
 #[tauri::command]
-pub async fn finish_app(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub async fn finish_app(app_handle: Ctx) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         handle
             .run_mobile_plugin::<serde_json::Value>("finishApp", serde_json::json!({}))
             .map_err(|e| format!("Android finish: {:?}", e))?;
@@ -81,14 +81,14 @@ pub async fn finish_app(app_handle: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn save_export_file(
-    app_handle: tauri::AppHandle,
+    app_handle: Ctx,
     filename: String,
     data_b64: String,
     mime: Option<String>,
 ) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         handle
             .run_mobile_plugin::<serde_json::Value>(
                 "saveExportFile",
@@ -106,10 +106,10 @@ pub async fn save_export_file(
 }
 
 #[tauri::command]
-pub async fn copy_uri_to_cache(app_handle: tauri::AppHandle, uri: String) -> Result<String, String> {
+pub async fn copy_uri_to_cache(app_handle: Ctx, uri: String) -> Result<String, String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         let resp = handle
             .run_mobile_plugin::<serde_json::Value>(
                 "copyUriToCache",
@@ -123,10 +123,10 @@ pub async fn copy_uri_to_cache(app_handle: tauri::AppHandle, uri: String) -> Res
 }
 
 #[tauri::command]
-pub async fn list_voices_android(app_handle: tauri::AppHandle) -> Result<Vec<VoiceInfo>, String> {
+pub async fn list_voices_android(app_handle: Ctx) -> Result<Vec<VoiceInfo>, String> {
     #[cfg(target_os = "android")]
     {
-        let handle = &app_handle.state::<TtsHandle>().0;
+        let handle = &app_handle.handle().state::<TtsHandle>().0;
         let resp = handle
             .run_mobile_plugin::<VoicesResponse>("listVoices", serde_json::json!({}))
             .map_err(|e| format!("Android TTS list: {:?}", e))?;
