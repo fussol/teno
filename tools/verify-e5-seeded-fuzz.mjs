@@ -3,6 +3,7 @@
 // FSRS 構造脫離 ankiSettings（audit 假 mismatch 真兇）。
 // 全部跑 tmp DB 副本，嚴禁碰 ~/.config/com.teno.app/teno.db。
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync, mkdirSync, symlinkSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { FSRS, generateFuzzFactor, parseStepsStr } from '../src/core/fsrs.js';
 import { getToday, toLocalDateStr, computeDueIso, computeFutureDueCounts } from '../src/core/scheduler.js';
 
-const CLI = new URL('./cli.mjs', import.meta.url).pathname;
+const CLI = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 let pass = 0, fail = 0;
 const T = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
@@ -23,7 +24,7 @@ const dir = mkdtempSync(join(tmpdir(), 'e5-verify-'));
 // dir/src symlink → teno/src，副本放 dir/bugsub/（../src == dir/src）。dir 於 finally 整刪。
 const bugDir = join(dir, 'bugsub');
 mkdirSync(bugDir);
-symlinkSync(new URL('../src', import.meta.url).pathname, join(dir, 'src'));
+symlinkSync(fileURLToPath(new URL('../src', import.meta.url)), join(dir, 'src'));
 function mkTmpDb(name, extraSettings = {}) {
   const p = join(dir, name + '.db');
   const d = new DatabaseSync(p);

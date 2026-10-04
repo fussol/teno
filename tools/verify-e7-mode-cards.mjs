@@ -3,12 +3,13 @@
 // 修復：mode 化卡圖（modeCardMap）＋容器欄存檔分流（mc_data/spell_data，flip 欄不動）。
 // 全部跑 tmp DB 副本，嚴禁碰 ~/.config/com.teno.app/teno.db。
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync, mkdirSync, symlinkSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const CLI = new URL('./cli.mjs', import.meta.url).pathname;
+const CLI = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 let pass = 0, fail = 0;
 const T = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
@@ -18,7 +19,7 @@ const T = (name, cond, extra = '') => {
 const dir = mkdtempSync(join(tmpdir(), 'e7-verify-'));
 const bugDir = join(dir, 'bugsub');
 mkdirSync(bugDir);
-symlinkSync(new URL('../src', import.meta.url).pathname, join(dir, 'src'));
+symlinkSync(fileURLToPath(new URL('../src', import.meta.url)), join(dir, 'src'));
 
 function mkTmpDb(name) {
   const p = join(dir, name + '.db');

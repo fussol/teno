@@ -1,0 +1,124 @@
+# harness 既有紅基線（P2 整理入庫；run-all.mjs 比對用，# = 註解）
+# 來源：P0 盤點 2026-10-04；協定=必須帶 --experimental-test-module-mocks（見 run-all.mjs 頭）
+# 既有紅 60 顆（FAIL tools/ 行）＋其內容 FAIL 行；新出線=回歸，轉綠=收斂
+# 原因分類（2026-10-04 triage，詳見 Phase2 commit）：
+#   [A] harness 載入器/環境過期（mock stub 缺 export、import outside module、缺 DOM）:
+#       b5-b9, d14, d15, g5, g13, g24, g9, f18, tts-contract, w1-windows-tts, ocr2-vision, d8
+#   [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）: f6, f10, o3-api29, e16
+#   [C] 外網/反爬環境性: f13（cambridge.org 403 Cloudflare）
+#   [D] DB/cli schema 漂移（fixture 缺欄 etymology/decks、v15 登記、指紋 join）:
+#       e9, a5, ocr2-enrich/importfile/override/graylist/imp/import, db-compat, d7
+#   [E] 命令清單計數過期（got=87 vs 舊期望 41/45，command 已成長）: f15, f16
+#   [F] source/行為斷言過期或真失敗（量大，逐顆修=專案）:
+#       antfix, d19, d20, d20-dual, d5, dictrebuild, e8, e10-e13, e14, g10, g15, g18,
+#       g28, g-icon1, g-tool1, logfix1, ocr-ui, settings-collapse, toast1
+#   [G] 已修（%20→fileURLToPath，2026-10-04）但暴露更深問題仍紅: e4, e5, e6, e7, f9
+FAIL all icon() names resolve — missing: archive
+FAIL C 登記到頂 v14 — 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+FAIL D13 drive upload 加 audit
+FAIL D 新版開機 no-op — 未知登記 [15] VersionMissing
+FAIL F4 入庫詞集正確（fast-path 跳過 OCR 直入）: got=[] expect=["cat","hello","world"]
+FAIL G22 data.synonym 帶入
+FAIL G22 save 讀取 fAntonyms
+FAIL G22 save 讀取 fDerivatives
+FAIL G22 save 讀取 fSynonyms
+FAIL G 真庫修後新版 no-op — 未知登記 [15] VersionMissing
+FAIL H 產物新版開機 no-op — 未知登記 [15] VersionMissing
+FAIL NC1 錨點漂移
+FAIL NC2 錨點漂移
+FAIL _normalizePos 委派 core — 寫入路徑
+FAIL T0d D15 rollback：tx 失敗回滾 state.words 新字: got=false expect=true
+FAIL T1 apple 真入庫: got=false expect=true
+FAIL T1 cat 真入庫: got=false expect=true
+FAIL T1 db.js 有 saveWordsInTx 批次 API
+FAIL T1 pron 填 uk/us 併: got="/ˈæp.əl/ / /ˈæp.əl/" expect="ˈæp.əl / ˈæp.əl"
+FAIL  T1 ./svg 旁支 import 零命中（304 檔掃）  [/home/jupiter/teno 修檢版/src/lib/custom-select.js,/home/jupiter/teno 修檢版/src/lib/sharepack.js,/home/jupiter/teno 修檢版/src/lib/word-image.js]
+FAIL T1 失敗事務回傳 added=0（幽靈消除）: got=3 expect=0
+FAIL T1 落盤詞集（正規化＋白名單）: got=[] expect=["don't","neon","upper","well-known","zebra"]
+FAIL T2a 呼叫順序 = checkpoint → invoke(backup_db)  «["checkpoint","plugin:sql|load","plugin:sql|execute","backup_db"]»
+FAIL T2 DB 實查 2+3=5 行: got=2 expect=5
+FAIL T2 deck 預設 OCR Inbox: got=undefined expect="OCR Inbox"
+FAIL T2 definition 空串（後續 Cambridge 補全 P3）: got=undefined expect=""
+FAIL T2 修後 點.card-panel-word → 觸發
+FAIL T3 修後 點.card-panel-def → 觸發
+FAIL T4b 正常字 gizmo 入庫: got=[] expect=["gizmo"]
+FAIL T4 cat 真入庫（override 過第二道）: got=false expect=true
+FAIL T4 deckName 透傳: got=[1,null] expect=[1,"Physics"]
+FAIL T4 修後 點.card-panel-example → 觸發
+FAIL T6 修後 點.tts-click → 觸發
+FAIL T9 loadAll migration DB 落庫: got=null expect={"wA":"2026-10-04"}
+FAIL T9 loadAll migration 補 today: got=undefined expect="2026-10-04"
+FAIL tools/verify-a5-unbury.mjs
+FAIL tools/verify-antfix.mjs
+FAIL tools/verify-b5-exam-id.mjs
+FAIL tools/verify-b6-exam-delete.mjs
+FAIL tools/verify-b7-mc-tags.mjs
+FAIL tools/verify-b8-temp-fields.mjs
+FAIL tools/verify-b9-progress.mjs
+FAIL tools/verify-d14-delete-orphans.mjs
+FAIL tools/verify-d15-import-rollback.mjs
+FAIL tools/verify-d19-import-magic.mjs
+FAIL tools/verify-d20-delete-deck.mjs
+FAIL tools/verify-d20-dual-generations.mjs
+FAIL tools/verify-d5-checkpoint.mjs
+FAIL tools/verify-d7-restore-wal.mjs
+FAIL tools/verify-d8-csv-roundtrip.mjs
+FAIL tools/verify-db-compat.mjs
+FAIL tools/verify-dictrebuild.mjs
+FAIL tools/verify-e10-selftest-container.mjs
+FAIL tools/verify-e11-report-totalwords.mjs
+FAIL tools/verify-e12-mature-totalreviews.mjs
+FAIL tools/verify-e13-simparams-guard.mjs
+FAIL tools/verify-e14-settings-get.mjs
+FAIL tools/verify-e16-orphan-deletion.mjs
+FAIL tools/verify-e4-rate-log.mjs
+FAIL tools/verify-e5-seeded-fuzz.mjs
+FAIL tools/verify-e6-study-log.mjs
+FAIL tools/verify-e7-mode-cards.mjs
+FAIL tools/verify-e8-selftest.mjs
+FAIL tools/verify-e9-rate-date.mjs
+FAIL tools/verify-f10-piper-import.mjs
+FAIL tools/verify-f13-url-encode.mjs
+FAIL tools/verify-f15-report-surface.mjs
+FAIL tools/verify-f16-csv-data.mjs
+FAIL tools/verify-f18-timeout.mjs
+FAIL tools/verify-f6-manifest.mjs
+FAIL tools/verify-f9-piper-url.mjs
+FAIL tools/verify-g10-card-body-click.mjs
+FAIL tools/verify-g13-custom-select-kbd.mjs
+FAIL tools/verify-g15-g31.mjs
+FAIL tools/verify-g18-tag-batch.mjs
+FAIL tools/verify-g24-export-render.mjs
+FAIL tools/verify-g28-import-reentry.mjs
+FAIL tools/verify-g5-doclistener.mjs
+FAIL tools/verify-g9-tts-fallback.mjs
+FAIL tools/verify-g-icon1.mjs
+FAIL tools/verify-g-tool1-pos.mjs
+FAIL tools/verify-logfix1.mjs
+FAIL tools/verify-o3-api29.mjs
+FAIL tools/verify-ocr2-enrich.mjs
+FAIL tools/verify-ocr2-importfile.mjs
+FAIL tools/verify-ocr2-override.mjs
+FAIL tools/verify-ocr2-vision.mjs
+FAIL tools/verify-ocr-graylist.mjs
+FAIL tools/verify-ocr-imp.mjs
+FAIL tools/verify-ocr-import.mjs
+FAIL tools/verify-ocr-ui.mjs
+FAIL tools/verify-settings-collapse.mjs
+FAIL tools/verify-toast1.mjs
+FAIL tools/verify-tts-contract.mjs
+FAIL tools/verify-w1-windows-tts.mjs
+FAIL U1a tools.js import listEngines
+FAIL U1b 選項由 listEngines().map 生成
+FAIL U2a #ocrEngineSelect class=form-input
+FAIL U2b 讀值用原生 engSel.value
+FAIL U3a getSetting(ocr_engine) 還原
+FAIL U3b change→setSetting(ocr_engine, engSel.value)
+FAIL U3c change 事件綁定
+FAIL U4c tools.js OCR 區塊用 icon(camera)
+FAIL U4d icon(check) 用於入庫按鈕
+FAIL U5 OCR 區塊位於 Generate Forms 與 Cambridge 之間
+FAIL U8a 九元素 HTML＋綁定齊備
+FAIL U8b busy 態 capBtn.disabled 切換
+FAIL U8c 辨識中點擊防重入（_ocrBusy 守衛）
+FAIL U9 registry 全部 id 有標籤

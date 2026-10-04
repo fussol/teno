@@ -1,5 +1,11 @@
 # AGENTS.md
 
+## 回歸測試協定（P2 起唯一定義，勿用人肉記憶）
+- 全量：`node tools/run-all.mjs`（repo 根目錄）＝ 216 顆 verify-*.mjs 帶 `--experimental-test-module-mocks` 跑，與 `tools/harness-baseline.txt` diff；**出線（基線外新紅）→ exit 1 = 回歸**。
+- 既有紅 60 顆的分類原因在基線檔頭（# 註解）；修掉一顆就 `--update` 收斂並審 diff。
+- 單顆：`node --experimental-test-module-mocks tools/verify-<名>.mjs`（不帶旗標會誤報，30 顆用 mock.module）。
+- 例行 gates：`node tools/bank.mjs validate` → `npm run build` → `node tools/verify-plugin-seam.mjs`；動 Rust 加 `cargo test`（134+4）。
+
 ## 題庫共編窗口（人只丟資料，AI 負責整理）
 - `ai-input/`：使用者丟原始出題資料（txt/md，可未定稿、可含答案）。
 - `ai-output/`：AI 寫出整理好的新題（與 `public/packs/grammar/questions.jsonl` 同 schema，每行一題）。

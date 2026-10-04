@@ -7,11 +7,12 @@
 //  T3 負控制：HEAD 舊解析段（byte-identity 釘）機械抽出同向量 → bug 精準重現
 //  T4 結構釘：呼叫點委派＋瞎拼殘留零＋curl 本體未動（F12 域界線）
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '');
 const LIB = join(ROOT, 'src-tauri/src/lib.rs');
 const src = readFileSync(LIB, 'utf8');
 

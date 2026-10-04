@@ -3,12 +3,13 @@
 // scheduled_days/stability/difficulty）＋ cards.elapsed_days 永不寫回（delta_t stale）。
 // 全部跑 tmp DB 副本，嚴禁碰 ~/.config/com.teno.app/teno.db。
 import { DatabaseSync } from 'node:sqlite';
+import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const CLI = new URL('./cli.mjs', import.meta.url).pathname;
+const CLI = fileURLToPath(new URL('./cli.mjs', import.meta.url));
 let pass = 0, fail = 0;
 const T = (name, cond, extra = '') => {
   if (cond) { pass++; console.log(`  ✅ ${name}`); }
@@ -165,7 +166,7 @@ try {
     if (!buggy.includes(from)) throw new Error(`負控制剝除失敗，找不到的片段: ${from.slice(0, 60)}...`);
     buggy = buggy.split(from).join(to);
   }
-  const buggyCli = new URL('./.e4-buggy-cli.mjs', import.meta.url).pathname;
+  const buggyCli = fileURLToPath(new URL('./.e4-buggy-cli.mjs', import.meta.url));
   writeFileSync(buggyCli, buggy);
   try {
     const db6 = mkTmpDb('t6');
