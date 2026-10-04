@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evalPageModule, loadRng } from './lib/newfn-harness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -52,8 +53,10 @@ const documentStub = {
   querySelectorAll() { return []; },
   addEventListener() {}, removeEventListener() {},
   activeElement: null,
+  head: { insertAdjacentHTML() {} },
 };
 const windowStub = {};
+
 const iconStub = () => '';
 const toastStub = () => {};
 const renderSavedSessionsStub = () => '';
@@ -71,10 +74,14 @@ function loadBuildSession() {
 }
 const buildSessionReal = loadBuildSession();
 
+// 真實 rng（exam-mc startExam 選項擲用 mulberry32/hashCode — 測真品，不 stub）
+const { mulberry32, hashCode } = loadRng(ROOT);
+
 // ---------- 頁面載入器（真實源碼 → new Function；可選 stripB5 = 剝除 B5 重置行做負控制） ----------
 function loadPage(file, exportNames, { stripB5 = false } = {}) {
   for (const k of Object.keys(els)) if (k !== 'pageContainer') delete els[k];   // 重置共享 DOM stub
-  let src = fs.readFileSync(file, 'utf8')
+  const raw = fs.readFileSync(file, 'utf8');
+  let src = raw
     .replace(/^import .*;$/gm, '')
     .replace(/\bexport function/g, 'function')
     .replace(/\bexport async function/g, 'async function');
@@ -83,10 +90,13 @@ function loadPage(file, exportNames, { stripB5 = false } = {}) {
     src = src.replace(/^[ \t]*e\.id[ \t]*=[ \t]*(?:undefined|null)[ \t]*;.*$/gm, '');
     if (src === before) throw new Error(`[harness] stripB5: 源碼中找不到 e.id 重置行 — ${file}`);
   }
-  const getters = exportNames.map(n => `get ${n}() { return typeof ${n} !== 'undefined' ? ${n} : undefined; }`).join(',');
-  const factory = new Function('icon', 'toast', 'renderSavedSessions', 'buildSession', 'bindSpeakClick', 'splitFieldsHtml', 'fmtExample', 'document', 'window',
-    src + `\n;return { ${getters} };`);
-  return factory(iconStub, toastStub, renderSavedSessionsStub, buildSessionReal, bindSpeakClickStub, splitFieldsHtmlStub, fmtExampleStub, documentStub, windowStub);
+  const fixed = new Map([
+    ['icon', iconStub], ['toast', toastStub], ['renderSavedSessions', renderSavedSessionsStub],
+    ['buildSession', buildSessionReal], ['bindSpeakClick', bindSpeakClickStub],
+    ['splitFieldsHtml', splitFieldsHtmlStub], ['fmtExample', fmtExampleStub],
+    ['mulberry32', mulberry32], ['hashCode', hashCode],
+  ]);
+  return evalPageModule({ raw, src, exportNames, fixed, documentStub, windowStub });
 }
 
 // ---------- FakeStore：store.js:1658-1666 saveExamSession 逐行複刻 ----------

@@ -14,11 +14,6 @@
 #       g28, g-tool1, logfix1, ocr-ui, settings-collapse, toast1
 #   SKIP tools/<檔> # 原因 = 環境隔離（run-all 照跑 ↷ 不算紅）：A/B/C 共 21 顆（2026-10-04 P5）；修掉→刪該 SKIP 行
 #   [G] 已修（%20→fileURLToPath，2026-10-04）但暴露更深問題仍紅: e4, e5, e6, e7, f9
-SKIP tools/verify-b5-exam-id.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-b6-exam-delete.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-b7-mc-tags.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-b8-temp-fields.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-b9-progress.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-d14-delete-orphans.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-d15-import-rollback.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-d8-csv-roundtrip.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
