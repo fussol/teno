@@ -14,8 +14,8 @@ import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
 import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
-import { isAndroid, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
-import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal, widgetGetStatus, widgetSaveConfig, widgetRefresh, widgetRequestPerms } from '../lib/api.js';
+import { isAndroid, isWeb, downloadBlob, downloadBlobFromArray, pickFile } from '../lib/platform.js';
+import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, writeDbBytes, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavSaveConfig, webdavStatus, webdavTest, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal, widgetGetStatus, widgetSaveConfig, widgetRefresh, widgetRequestPerms } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
 import { renderContent as renderTagContent, onMount as onMountTag } from './tag-manager.js';
@@ -190,6 +190,7 @@ function renderSettingsContent(s) {
             <span class="tnum" id="accentIntensityLabel" style="font-size:12px;min-width:4ch;flex-shrink:0;color:var(--text-tertiary)">${Math.round(s.state.themeAccentIntensity * 100)}%</span>
           </div>
         </div>
+        ${isWeb ? '' : `
         <div class="config-field config-field-stack">
           <div class="config-field-info">
             <div class="config-field-label">${icon('appWindow')} App 圖示</div>
@@ -204,6 +205,7 @@ function renderSettingsContent(s) {
             `).join('')}
           </div>
         </div>
+        `}
       </div>
     </div>
 
@@ -218,9 +220,9 @@ function renderSettingsContent(s) {
           <div id="ttsVoiceGroup" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:32px">
             <span style="color:var(--text-secondary);font-size:13px">掃描中…</span>
           </div>
-          ${isAndroid ? '' : `<button class="btn btn-sm" id="importPiperModelBtn" title="從本機選擇 .onnx 檔案">${icon('upload')}</button>`}
+          ${isAndroid || isWeb ? '' : `<button class="btn btn-sm" id="importPiperModelBtn" title="從本機選擇 .onnx 檔案">${icon('upload')}</button>`}
         </div>
-        ${isAndroid ? '' : `
+        ${isAndroid || isWeb ? '' : `
         <div class="config-field">
           <div style="display:flex;align-items:center;gap:var(--s3);width:100%">
             <input type="text" class="form-input" id="piperUrlInput" placeholder="貼上 HuggingFace 網址自動安裝" style="flex:1;min-width:0">
@@ -541,7 +543,7 @@ function renderSettingsContent(s) {
               </label>
               <button class="btn btn-sm btn-secondary" id="webdavClearBtn">${icon('x')} 清除設定</button>
             </div>
-            ${isAndroid ? '' : `
+            ${isAndroid || isWeb ? '' : `
             <div id="webdavServerSection" style="border-top:1px solid var(--border-subtle);padding-top:var(--s2)">
               <div class="config-field">
                 <div class="config-field-info">
@@ -839,6 +841,11 @@ async function runExportDb() {
         await d.addAudit('export-db', '匯出 .db 備份 (Android 舊路)').catch(() => {});
         toast('資料庫已匯出（僅 teno.db）', 'toast-success');
       }
+    } else if (isWeb) {
+      const data = await exportDbData();
+      downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
+      await d.addAudit('export-db', '匯出 .db（網站版下載）').catch(() => {});
+      toast('資料庫已匯出（瀏覽器下載）', 'toast-success');
     } else {
       const path = await exportDbDialog();
       await d.addAudit('export-db', `匯出 → ${path}`).catch(() => {});
@@ -863,7 +870,13 @@ async function runImportDb() {
     await checkpointAppLog();
     await closeDB();
     await closeAppLog();
-    await importDbDialog();
+    if (isWeb) {
+      const f = await pickFile('.db,.sqlite,.sqlite3');
+      if (!f) throw '使用者取消';
+      await writeDbBytes(new Uint8Array(await f.arrayBuffer()));
+    } else {
+      await importDbDialog();
+    }
     toast('匯入成功，重新載入中…', 'toast-success');
     setTimeout(() => window.location.reload(), 500);
   } catch (e) {
@@ -956,7 +969,7 @@ async function restoreBackup(filename, btn) {
 
 async function exportBackup(filename) {
   try {
-    if (isAndroid) {
+    if (isAndroid || isWeb) {
       const data = await apiExportBackupData(filename);
       downloadBlobFromArray(data, filename, 'application/octet-stream');
       toast('備份已匯出', 'toast-success');
@@ -1191,7 +1204,7 @@ function _mount(s) {
     const group = document.getElementById('ttsVoiceGroup');
     if (!group) return;
     if (!voices || !voices.length) {
-      group.innerHTML = `<span style="color:var(--text-secondary);font-size:13px">${isAndroid ? '無可用語音' : '無可用語音，請匯入模型'}</span>`;
+      group.innerHTML = `<span style="color:var(--text-secondary);font-size:13px">${isAndroid || isWeb ? '無可用語音' : '無可用語音，請匯入模型'}</span>`;
       return;
     }
     // Android voices are objects { name, language }, Piper voices are strings
@@ -1243,6 +1256,14 @@ function _mount(s) {
 
   if (isAndroid) {
     listAndroidVoices().then(voices => { if (voices && voices.length) updateVoices(voices); }).catch(() => {});
+  } else if (isWeb) {
+    // 網站版語音清單 = 瀏覽器 speechSynthesis（voices 常需等載入事件）
+    const fillWebVoices = () => {
+      const vs = (typeof speechSynthesis !== 'undefined' ? speechSynthesis.getVoices() : []) || [];
+      updateVoices(vs.map(v => v.name));
+    };
+    fillWebVoices();
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.addEventListener?.('voiceschanged', fillWebVoices);
   } else {
     listPiperVoices().then(voices => { if (voices && voices.length) updateVoices(voices); }).catch(() => {});
   }

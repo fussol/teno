@@ -70,7 +70,10 @@ export function isScopeEnabled(scope) {
 // 但 withGlobalTauri=false → 桌面/Android 上該全域不存在 → noBackend() 恆真
 // → 操作日誌從 2026-09-09 起全部只進記憶體、永不入 app-log.db（靜默）。
 import { isTauri } from './platform.js';
-const noBackend = () => !isTauri;
+// 網站版（vite mode=web → __TENO_WEB__=true）有真後端 → 操作日誌走 DB；
+// 桌面 build 檔案伺服器直開（無 Tauri 也無 /api）→ 保留舊示範記憶體路。
+// harness/node 未 define 時 typeof 防護 → 行為與改裝前一致。
+const noBackend = () => !isTauri && !(typeof __TENO_WEB__ !== 'undefined' && __TENO_WEB__);
 let demoLogSeq = -1;
 const demoLogs = [
   { id: -1, ts: Date.now() - 5 * 60000, level: 'log', scope: 'system', message: '展示模式啟動：載入 36 個示範單字' },

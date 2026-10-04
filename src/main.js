@@ -8,6 +8,7 @@ import { icon } from './lib/svg.js';
 import { computeStreak } from './core/scheduler.js';
 import { initCustomSelects, closeAll } from './lib/custom-select.js';
 import { invoke } from '@tauri-apps/api/core';
+import { isTauri } from './lib/platform.js';
 import { logToDb, classifyScope } from './lib/app-log.js';
 import { ICON_PRESETS, iconImgPath } from './lib/icon-presets.js';
 import { PLUGINS, PLUGIN_PARENT } from './lib/plugins.js';
@@ -942,7 +943,7 @@ store.subscribe((state) => {
 
 // ─── F11 fullscreen ───
 document.addEventListener('keydown', async (e) => {
-  if (e.key === 'F11') {
+  if (e.key === 'F11' && isTauri) {
     e.preventDefault();
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const w = getCurrentWindow();

@@ -1,7 +1,7 @@
 import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
-import { scrapeQuizlet, inspectApkgDialog, getApkgMedia, importSharePackDialog, getShareMedia } from '../lib/api.js';
-import { isMobile } from '../lib/platform.js';
+import { scrapeQuizlet, inspectApkgDialog, getApkgMedia, importSharePackDialog, getShareMedia, importSharePackBytes, inspectApkgData } from '../lib/api.js';
+import { isMobile, isWeb, pickFile } from '../lib/platform.js';
 import {
   parseCSVTable, parseAnkiTSV, mapWords, hasHeaderRow,
   resolveField, CANONICAL_FIELDS, FIELD_LABELS,
@@ -852,7 +852,15 @@ function mountPack(s) {
 async function pickPack(s) {
   if (_phase === 'importing') { toast('匯入進行中…'); return; }
   try {
-    const r = await importSharePackDialog();
+    let r;
+    if (isWeb) {
+      const f = await pickFile('.zip');
+      if (!f) return; // 取消不打擾（與桌面 dialog 取消同感）
+      r = await importSharePackBytes(new Uint8Array(await f.arrayBuffer()),
+        f.name.replace(/\.zip$/i, ''));
+    } else {
+      r = await importSharePackDialog();
+    }
     if (!r || !r.csv) { toast('分享包為空或格式錯誤', 'toast-error'); return; }
     const table = parseCSVTable(r.csv);
     if (table.headers.length === 0 || table.rows.length === 0) {
@@ -1088,7 +1096,15 @@ async function runQuizletImport(s) {
 async function pickApkg(s) {
   if (_phase === 'importing') { toast('匯入進行中…'); return; }
   try {
-    const r = await inspectApkgDialog();
+    let r;
+    if (isWeb) {
+      const f = await pickFile('.apkg');
+      if (!f) return;
+      r = await inspectApkgData(new Uint8Array(await f.arrayBuffer()),
+        f.name.replace(/\.apkg$/i, ''));
+    } else {
+      r = await inspectApkgDialog();
+    }
     if (!r || !r.headers || !r.rows || r.rows.length === 0) {
       toast('牌組為空或格式錯誤', 'toast-error');
       return;

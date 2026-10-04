@@ -93,13 +93,13 @@ export function speak(text, speed, voice, pitch) {
   // TAURIGATE1: 原本查 window.__TAURI__?.core（withGlobalTauri=false → 恆不存在）
   // → 桌面被誤判成「無原生 TTS」而退回瀏覽器 speechSynthesis。改用 isTauri。
   if (!isTauri && typeof speechSynthesis !== 'undefined') {
-    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50);
+    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice);
   }
   // 2026-09-05 方案 C（使用者裁示）：Windows 走 WebView2 speechSynthesis（Edge/Microsoft
   // 自然語音，免 piper 免安裝）；Linux 維持 piper。speechSynthesis 不可用或零語音時
   // fallback piper（speakAsync，Windows 無 piper 會失敗並反映在 ttsAvailable）。
   if (isWindows && typeof speechSynthesis !== 'undefined' && speechSynthesis.getVoices().length > 0) {
-    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50);
+    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice);
   }
   return speakAsync(text, speed ?? 0.9, _voiceMap[voice] || voice || 'en_US-ryan-high', pitch ?? 50);
 }
@@ -117,11 +117,12 @@ function pickWindowsEnVoice() {
     || null;
   return _wsVoice;
 }
-function speakWebSpeech(text, speed, pitch) {
+function speakWebSpeech(text, speed, pitch, voice) {
   return new Promise((resolve, reject) => {
     try {
       const u = new SpeechSynthesisUtterance(text);
-      const v = pickWindowsEnVoice();
+      // 選定語音優先（web 語音選擇器）；找不到才退回 Windows 英語挑選
+      const v = (voice && speechSynthesis.getVoices().find(x => x.name === voice)) || pickWindowsEnVoice();
       if (v) u.voice = v;
       u.lang = v?.lang || 'en-US';
       u.rate = Math.max(0.5, Math.min(2.0, speed));

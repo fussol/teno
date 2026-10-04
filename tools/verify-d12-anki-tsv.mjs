@@ -8,7 +8,7 @@ const fail = [], pass = [];
 
 // ── T1 靜態：TSV 分支有 Anki 位置式回退 ──
 const p = readFileSync('src/pages/import.js', 'utf8');
-const tsvBlock = p.slice(p.indexOf('const isTsv'), p.indexOf('else {'));
+const tsvBlock = p.slice(p.indexOf('const isTsv'), p.indexOf('else {', p.indexOf('const isTsv')));
 const hasFallback = /fro?nt/i.test(tsvBlock) && /back/i.test(tsvBlock) && /note/i.test(tsvBlock) && /return i === 0 \? 'word'/.test(tsvBlock);
 if (hasFallback) pass.push('T1: TSV 分支含 Anki 位置式回退（Front/Back/Notes + 位置兜底）');
 else fail.push('T1: TSV 分支缺位置式回退');

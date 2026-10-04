@@ -6,7 +6,7 @@ import { icon } from '../lib/svg.js';
 import { toast } from '../lib/toast.js';
 import { buildCSV, buildShareCSV } from '../core/import.js';
 import { exportCsvDialog, exportSharePack, webdavCloudList, webdavCloudGet } from '../lib/api.js';
-import { isAndroid, downloadBlob } from '../lib/platform.js';
+import { isAndroid, isWeb, downloadBlob, downloadBlobFromArray } from '../lib/platform.js';
 import { getSetting, setSetting } from '../lib/db.js';
 import {
   BUILTIN_PACKS, importBuiltin, exportBuiltinPackJson, exportOverlayPackJson,
@@ -469,8 +469,15 @@ async function saveSharePack(list, packLabel) {
     const raw = await exportSharePack(csv, fname, wordIds);
     let info = null;
     try { info = JSON.parse(raw); } catch (_) {}
+    // 網站版回 {b64,...} → 解碼瀏覽器下載（桌面 dialog 路不變）
+    if (info && info.b64) {
+      const bin = atob(info.b64);
+      const u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      await downloadBlobFromArray(u8, fname, 'application/zip');
+    }
     const detail = info
-      ? `${list.length} 詞${info.images ? `＋${info.images} 圖` : '（無圖）'}${info.skipped ? `（${info.skipped} 張跳過）` : ''} → ${info.path}`
+      ? `${list.length} 詞${info.images ? `＋${info.images} 圖` : '（無圖）'}${info.skipped ? `（${info.skipped} 張跳過）` : ''} → ${info.path}${info.b64 ? '（已下載）' : ''}`
       : `${list.length} 詞 → ${raw}`;
     toast(`已打包 ${detail}`, 'toast-success');
   } catch (e) {
@@ -492,7 +499,7 @@ async function saveShareCSV(list, deckLabel) {
   const fname = `teno-share${deckTag}-${stamp}.csv`;
 
   try {
-    if (isAndroid) {
+    if (isAndroid || isWeb) {
       downloadBlob('\uFEFF' + csv, fname, 'text/csv');
       toast(`已分享 ${list.length} 詞（不含 tag）`, 'toast-success');
     } else {
@@ -528,7 +535,7 @@ async function runExport(s) {
   const fname = `teno-export${deckTag}-${stamp}.csv`;
 
   try {
-    if (isAndroid) {
+    if (isAndroid || isWeb) {
       downloadBlob('\uFEFF' + csv, fname, 'text/csv');
       toast(`已匯出 ${filtered.length} 詞`, 'toast-success');
     } else {

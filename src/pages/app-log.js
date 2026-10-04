@@ -4,7 +4,7 @@
 import { icon } from '../lib/svg.js';
 import { fetchLogs, fetchSimRuns, countLogs, getRetentionDays, checkpointAppLog } from '../lib/app-log.js';
 import { exportAppLogText, importAppLogText, exportDbBundleData, exportBundleDialog } from '../lib/api.js';
-import { isAndroid, downloadBlobFromArray } from '../lib/platform.js';
+import { isAndroid, isWeb, downloadBlobFromArray } from '../lib/platform.js';
 import { toast } from '../lib/toast.js';
 
 const PAGE = 200;
@@ -167,7 +167,7 @@ export function onMount(s) {
       const { checkpoint } = await import('../lib/db.js');
       await checkpoint().catch(() => {});
       await checkpointAppLog().catch(() => {});
-      if (isAndroid) {
+      if (isAndroid || isWeb) {
         const bytes = await exportDbBundleData();
         const mb = bytes.length / 1048576;
         if (mb > 50 && !confirm(`完整備份約 ${mb.toFixed(1)}MB，超過 50MB 在手機上可能記憶體不足，確定繼續？`)) return;

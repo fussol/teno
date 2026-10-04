@@ -12,6 +12,9 @@ export const isWindows = /Windows/i.test(ua);
 export const isTauri = typeof window !== 'undefined'
   && !!(window.__TAURI_INTERNALS__ || window.__TAURI__?.core);
 export const isMobile = isAndroid || /Mobi|iPhone|iPad|iPod/i.test(ua);
+// 網站版（無 Tauri 後端）＝瀏覽器直連 /api；桌面/Android 皆 false。
+// 舊靜態示範（desktop build 檔案伺服器直開）不是 isWeb → 舊路徑行為保留。
+export const isWeb = !isTauri;
 
 // 分塊 base64（與 ocr/vision-adapter.js bytesToBase64 同法）：逐 byte 串接在大檔
 // （15MB+ 含操作日誌匯出）會在 Android WebView 炸 RangeError/OOM — 2026-09-04 實測。
@@ -41,6 +44,25 @@ export async function downloadBlob(content, filename, mime = 'text/plain') {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// 網站版檔案選擇（取代原生 dialog）：取消回 null（非 throw；呼叫端自行處理）
+export function pickFile(accept = '') {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    if (accept) inp.accept = accept;
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    let blurred = false;
+    window.addEventListener('blur', () => { blurred = true; });
+    inp.onchange = () => finish(inp.files[0] || null);
+    // 對話框關閉（視窗重新聚焦）且未選檔 → 取消
+    window.addEventListener('focus', () => {
+      if (blurred) setTimeout(() => finish(null), 300);
+    });
+    inp.click();
+  });
 }
 
 export async function downloadBlobFromArray(bytes, filename, mime = 'application/octet-stream') {

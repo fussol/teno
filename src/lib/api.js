@@ -369,3 +369,13 @@ export const widgetRefresh = () =>
 
 export const widgetRequestPerms = () =>
   invoke('widget_request_perms')
+
+// WEB-SERVE：網站版匯入三件套（瀏覽器選檔 → bytes；桌面仍走 dialog，不 import 亦可）
+export const writeDbBytes = (data) =>
+  invoke('write_db_bytes', { data });
+
+export const importSharePackBytes = (data, fileName) =>
+  invoke('import_share_pack_bytes', { data, fileName });
+
+export const inspectApkgData = (data, fileName) =>
+  invoke('inspect_apkg_data', { data, fileName });
