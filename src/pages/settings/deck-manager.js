@@ -1,6 +1,7 @@
 // settings/deck-manager.js — 牌組管理渲染＋綁定＋浮層（P4 Step4 純搬移）
 // 原 settings.js 兩段：renderDeckManager/renderFilteredDecks ＋ bindDeckManager 及 modal 群
-import { pageRoot, renderInPlace, getDeckPalette, escapeHtml, escapeAttr } from '../settings.js'; // 循環引用：執行期取值
+import { pageRoot, getDeckPalette, escapeHtml, escapeAttr } from './_shared.js';
+import { renderInPlace } from '../settings.js'; // 循環保留：renderInPlace 需 render/onMount // 循環引用：執行期取值
 import { icon } from '../../lib/svg.js';
 import { toast } from '../../lib/toast.js';
 

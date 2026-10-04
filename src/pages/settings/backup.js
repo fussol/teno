@@ -4,11 +4,11 @@ import { backupDb, deleteBackup as apiDeleteBackup, exportBackupData as apiExpor
 import { downloadBlobFromArray, isAndroid, isWeb, pickFile } from '../../lib/platform.js';
 import { icon } from '../../lib/svg.js';
 import { toast } from '../../lib/toast.js';
-import { escapeHtml, escapeAttr } from '../settings.js'; // P4S3 漏接：模板需 HTML 轉義
+import { escapeHtml, escapeAttr } from './_shared.js';
+import { addAudit, checkpoint, closeDB, initDB, setSetting } from '../../lib/db.js';
 
 export async function runExportDb() {
   try {
-    const d = await import('../../lib/db.js');
     try {
       // H3（2026-09-01 顧問報告）：humanEvents 上限 50000 事件全量塞 DB 曾實測 700KB+ 累積。
       // 備份只帶最近 500 筆（90 天內、分析統計足夠），體積歸零、還原端照吃。
@@ -18,36 +18,36 @@ export async function runExportDb() {
           const arr = JSON.parse(ev);
           if (Array.isArray(arr)) {
             const trimmed = JSON.stringify(arr.slice(-500));
-            await d.setSetting('_backup_humanEvents', trimmed);
+            await setSetting('_backup_humanEvents', trimmed);
           } else {
-            await d.setSetting('_backup_humanEvents', ev);
+            await setSetting('_backup_humanEvents', ev);
           }
-        } catch (_) { await d.setSetting('_backup_humanEvents', ev); }
+        } catch (_) { await setSetting('_backup_humanEvents', ev); }
       }
       const pf = localStorage.getItem('humanProfile');
-      if (pf) await d.setSetting('_backup_humanProfile', pf);
+      if (pf) await setSetting('_backup_humanProfile', pf);
     } catch (_) {}
-    await d.checkpoint();
+    await checkpoint();
     if (isAndroid) {
       // EXPORTBIG1: 大檔直寫優先（零 IPC 資料；回傳含大小）；失敗才退回舊 IPC 路（小檔用）
       try {
         const msg = await exportDbToDownloads('teno-backup.db');
-        await d.addAudit('export-db', `匯出 .db 備份 (Android 直寫) ${msg}`).catch(() => {});
+        await addAudit('export-db', `匯出 .db 備份 (Android 直寫) ${msg}`).catch(() => {});
         toast(`資料庫已匯出到 下載/Teno（${msg}）`, 'toast-success');
       } catch (e2) {
         const data = await exportDbData();
         downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
-        await d.addAudit('export-db', '匯出 .db 備份 (Android 舊路)').catch(() => {});
+        await addAudit('export-db', '匯出 .db 備份 (Android 舊路)').catch(() => {});
         toast('資料庫已匯出（僅 teno.db）', 'toast-success');
       }
     } else if (isWeb) {
       const data = await exportDbData();
       downloadBlobFromArray(data, 'teno-backup.db', 'application/octet-stream');
-      await d.addAudit('export-db', '匯出 .db（網站版下載）').catch(() => {});
+      await addAudit('export-db', '匯出 .db（網站版下載）').catch(() => {});
       toast('資料庫已匯出（瀏覽器下載）', 'toast-success');
     } else {
       const path = await exportDbDialog();
-      await d.addAudit('export-db', `匯出 → ${path}`).catch(() => {});
+      await addAudit('export-db', `匯出 → ${path}`).catch(() => {});
       toast(`資料庫已匯出 → ${path}`, 'toast-success');
     }
   } catch (e) {
@@ -58,7 +58,6 @@ export async function runExportDb() {
 export async function runImportDb() {
   if (!confirm('匯入備份將取代所有現有資料（會自動備份原資料庫），確定繼續？')) return;
   try {
-    const { checkpoint, closeDB } = await import('../../lib/db.js');
     const { checkpointAppLog, closeAppLog } = await import('../../lib/app-log.js');
     // 順序（D6）：checkpoint（WAL 合併→備份完整）→ backupDb（安全網）→ flush app-log
     // → 關閉連線（teno.db + app-log.db）→ 匯入覆寫 → reload。
@@ -81,7 +80,7 @@ export async function runImportDb() {
   } catch (e) {
     // 連線可能已關閉 → 重開避免半死狀態（與 restoreBackup catch 同構；
     // app-log 由 getDb() 惰性重連）。取消發生在覆寫前 → 舊檔完好無損。
-    try { const { initDB } = await import('../../lib/db.js'); await initDB(2); } catch (_) {}
+    try { await initDB(2); } catch (_) {}
     if (e !== '使用者取消') toast('匯入失敗: ' + e, 'toast-error');
   }
 }
@@ -146,7 +145,6 @@ async function restoreBackup(filename, btn) {
   if (!confirm('確定要還原此備份？所有現有資料將被取代（會自動備份目前資料庫）。')) return;
   if (btn) btn.disabled = true;
   try {
-    const { checkpoint, closeDB, initDB } = await import('../../lib/db.js');
     const { closeAppLog } = await import('../../lib/app-log.js');
     // 順序：checkpoint（WAL 合併→備份完整）→ backupDb（安全網）→ closeDB + closeAppLog → 還原 → reload
     await checkpoint();
@@ -160,7 +158,7 @@ async function restoreBackup(filename, btn) {
   } catch (e) {
     toast('還原失敗: ' + e, 'toast-error');
     // DB 已關閉 → 重開避免半死狀態
-    try { const { initDB } = await import('../../lib/db.js'); await initDB(2); } catch (_) {}
+    try { await initDB(2); } catch (_) {}
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -219,7 +217,7 @@ async function replayAppLogTo(filename, btn) {
     setTimeout(() => window.location.reload(), 800);
   } catch (e) {
     toast('日誌回放失敗: ' + e, 'toast-error');
-    try { const { initDB } = await import('../../lib/db.js'); await initDB(2); } catch (_) {}
+    try { await initDB(2); } catch (_) {}
   } finally {
     if (btn) btn.disabled = false;
   }

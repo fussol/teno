@@ -13,6 +13,7 @@ import { toast } from '../lib/toast.js';
 import { listEngines } from '../lib/ocr/engine.js';
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_KEYS } from '../lib/ocr/preprocess.js';
 import { cornersToRect, defaultCorners, moveCorner, untangleCorners } from '../lib/ocr/crop.js';
+import { setSetting } from '../lib/db.js';
 
 // OCR token 白名單（計畫 v1.3 §5，與 tools.js 舊 block / store.importOcrText 同一正則）
 const _OCR_TOKEN_RE=/^[a-z][a-z'-]{1,30}$/i;
@@ -532,7 +533,6 @@ export function onMount(s) {
     if (_busy || _mode !== 'highlight') return;
     _applyHlColor(btn.dataset.hlColor);
     try {
-      const { setSetting } = await import('../lib/db.js');
       await setSetting('ocrHighlightColor', _hlColor);
     } catch (_) {}
   }));
@@ -554,7 +554,6 @@ export function onMount(s) {
         b.style.background = b.dataset.mode === m ? 'var(--bg-hover)' : 'var(--bg-surface)';
       });
       try {
-        const { setSetting } = await import('../lib/db.js');
         await setSetting('ocrMode', m);
       } catch (_) {}
     });

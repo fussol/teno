@@ -6,6 +6,7 @@ import { fetchLogs, fetchSimRuns, countLogs, getRetentionDays, checkpointAppLog 
 import { exportAppLogText, importAppLogText, exportDbBundleData, exportBundleDialog } from '../lib/api.js';
 import { isAndroid, isWeb, downloadBlobFromArray } from '../lib/platform.js';
 import { toast } from '../lib/toast.js';
+import { checkpoint } from '../lib/db.js';
 
 const PAGE = 200;
 let _logs = [];
@@ -164,7 +165,6 @@ export function onMount(s) {
   // importDbDialog，本來就吃容器，零改動）。
   document.getElementById('applogExportBundleBtn')?.addEventListener('click', async () => {
     try {
-      const { checkpoint } = await import('../lib/db.js');
       await checkpoint().catch(() => {});
       await checkpointAppLog().catch(() => {});
       if (isAndroid || isWeb) {

@@ -9,8 +9,7 @@ import { renderContent as renderTagContent } from '../tag-manager.js';
 import { ICON_PRESETS } from '../../lib/icon-presets.js';
 import { UI_SCALE_LABELS } from '../../lib/store.js';
 import { FIELD_LABELS, FIELD_KEYS, FIELD_STUDY_ONLY } from '../../lib/word-extra.js';
-import { FIELD_VIS_GROUPS, _ankiMode, escapeAttr, formatCutoffHHMM,
-         renderAnkiFields } from '../settings.js';
+import { FIELD_VIS_GROUPS, _ankiMode, escapeAttr, formatCutoffHHMM, renderAnkiFields } from './_shared.js';
 import { renderDeckManager, renderFilteredDecks } from './deck-manager.js';
 
 export function renderSettingsContent(s) {

@@ -8,7 +8,7 @@ import { withPageScope } from '../lib/scope-dom.js';
 import { initCustomSelects } from '../lib/custom-select.js';   // G14: renderInPlace 重渲染後重建 custom-select
 
 // KEEPALIVE1：本頁圖層根（預渲染後不再是 #pageContainer）
-export const pageRoot = () => document.getElementById('page-settings') || document.getElementById('pageContainer');
+
 
 import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
@@ -22,114 +22,28 @@ import { renderContent as renderTagContent, onMount as onMountTag } from './tag-
 import { ICON_PRESETS } from '../lib/icon-presets.js';
 import { clampLearnAhead, UI_SCALE_LABELS } from '../lib/store.js';
 import { FIELD_LABELS, FIELD_KEYS, FIELD_STUDY_ONLY } from '../lib/word-extra.js';
+import { pageRoot, escapeHtml, _ankiMode, setAnkiMode } from './settings/_shared.js';
 import { renderSettingsContent } from './settings/sections.js';
 import { bindWebdavSyncPage } from './settings/webdav.js';
 import { runExportDb, runImportDb, showBackups } from './settings/backup.js';
 import { bindDeckManager, renderDeckManager, renderFilteredDecks } from './settings/deck-manager.js';
+import { setSetting } from '../lib/db.js';
 
 // 欄位顯示三組（設定頁 master）：瀏覽器字卡正面／背面＋學習測驗共用
-export const FIELD_VIS_GROUPS = [
-  ['browserFront', '瀏覽器・正面', '字庫／字本點開字卡先看到的面（點一下翻到背面）'],
-  ['browserBack', '瀏覽器・背面', '點一下正面後翻到的面'],
-  ['study', '學習／測驗', '翻卡／多選／拼字，學習和測驗共用同一組'],
-];
+
 
 // ─── 模組級狀態 ───
-export let _ankiMode = 'flip'; // 'flip' | 'mc' | 'spell'
+ // 'flip' | 'mc' | 'spell'
 
-const DECK_PALETTE = [
-  '#ef4444', '#f97316', '#f59e0b', '#eab308',
-  '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-  '#6366f1', '#8b5cf6', '#a855f7', '#d946ef',
-  '#ec4899', '#f43f5e', '#b69dff', '#78716c',
-];
 
-export function getDeckPalette(s) { return s.state.colorPalette || DECK_PALETTE; }
+
+
 
 export function render(s) {
   return renderSettingsContent(s);
 }
 
-export function renderAnkiFields(s, mode) {
-  const ankiSettings = mode === 'mc' ? s.state.ankiSettingsMc
-    : mode === 'spell' ? s.state.ankiSettingsSpell
-    : s.state.ankiSettings;
-  const logLength = s.state.reviewLog.length;
-  const modeLabels = { flip: '翻卡', mc: '多選', spell: '拼字' };
-  return `
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">最大間隔 (天)</div>
-      </div>
-      <input type="number" id="setMaxIvl" min="1" max="3650" value="${ankiSettings.maxIvl}">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">每日新卡片</div>
-      </div>
-      <input type="number" id="setCardsPerDay" min="1" max="9999" value="${ankiSettings.cardsPerDay}">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">每日最大複習</div>
-        <div class="config-field-hint">每天最多複習多少張卡 (0 = 不限)</div>
-      </div>
-      <input type="number" id="setMaxReviewsPerDay" min="0" max="100000" value="${s.state.simParams?.maxReviewsPerDay ?? 1000}">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">${icon('clock')} 期望保留率 (DR)</div>
-        <div class="config-field-hint">數值越高，複習越頻繁但保留越好 (0.8~0.97)</div>
-      </div>
-      <input type="number" id="setDesiredRetention" min="0.8" max="0.97" step="0.01" value="${Math.round(Number(ankiSettings.desiredRetention) * 100) / 100}">
-    </div>
-    <div class="config-field" style="flex-wrap:wrap;">
-      <div class="config-field-info" style="flex-basis:100%;">
-        <div class="config-field-label">${icon('cup')} FSRS 權重</div>
-        <div class="config-field-hint">21 個數值，逗號分隔。留空 = 預設</div>
-      </div>
-      <textarea id="setFsrsWeights" rows="2" style="width:100%;margin-top:6px;font-family:monospace;font-size:11px;resize:vertical"
-        placeholder="0.212, 1.2931, 2.3065, ...">${escapeHtml(ankiSettings.fsrsWeights || '')}</textarea>
-      <div style="margin-top:6px;display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
-        <button class="btn btn-sm" id="optimizeWeightsBtn">${icon('galleryHorizontalEnd')} 從歷史資料最佳化</button>
-        <button class="btn btn-sm" id="healthCheckBtn">${icon('brain')} 健康檢查</button>
-        <span id="optimizeStatus" style="font-size:11px;color:var(--text-tertiary)">${logLength} 筆記錄</span>
-      </div>
-      <div id="healthCheckResult" style="margin-top:6px;font-size:12px;display:none"></div>
-      <div id="optimizeDetail" style="margin-top:6px;font-size:12px;display:none"></div>
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">${icon('galleryHorizontalEnd')} 水蛭門檻</div>
-        <div class="config-field-hint">忘記次數達此值後標記（0 = 關閉）</div>
-      </div>
-      <input type="number" id="setLeechThreshold" min="0" max="20" value="${ankiSettings.leechThreshold}">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">${icon('clock')} 學習步驟</div>
-        <div class="config-field-hint">新卡片的學習間隔（分鐘，逗號分隔）</div>
-      </div>
-      <input type="text" id="setLearnSteps" value="${escapeAttr(ankiSettings.learnSteps || '1,10')}" style="width:120px" placeholder="1,10">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">${icon('clock')} 重學步驟</div>
-        <div class="config-field-hint">忘記後重新學習的間隔（分鐘，逗號分隔）</div>
-      </div>
-      <input type="text" id="setRelearnSteps" value="${escapeAttr(ankiSettings.relearnSteps || '10')}" style="width:120px" placeholder="10">
-    </div>
-    <div class="config-field">
-      <div class="config-field-info">
-        <div class="config-field-label">${icon('sliders')} 提前學習上限</div>
-        <div class="config-field-hint">學習中卡片到期前多少分鐘視為可複習（0 = 關閉）</div>
-      </div>
-      <input type="number" id="setLearnAheadLimit" min="0" max="20" value="${ankiSettings.learnAheadLimit ?? 20}" style="width:70px">
-    </div>
-    <button class="btn-primary" id="saveAnkiBtn" style="width:100%;justify-content:center;margin-top:var(--s3)">${icon('check')} 儲存 ${modeLabels[mode]} Ankiiv>
-    </div>
-  `;
-}
+
 
 const COLLAPSE_KEY = 'teno-settings-collapsed';
 function _collapseKeyOf(titleEl) {
@@ -377,7 +291,6 @@ function _mount(s) {
     const am = (document.getElementById('llmModelInput')?.value || '').trim();
     const af = document.getElementById('llmApiFormatInput')?.value === 'openai' ? 'openai' : 'ollama';
     const ak = (document.getElementById('llmApiKeyInput')?.value || '').trim();
-    const { setSetting } = await import('../lib/db.js');
     try {
       await setSetting('mwDictKey', dk); await setSetting('mwThesKey', tk);
       await setSetting('llmApiUrl', au); await setSetting('llmModel', am);
@@ -436,7 +349,6 @@ function _mount(s) {
   document.getElementById('ocrRestoreModelBtn')?.addEventListener('click', async () => {
     const input = document.getElementById('ocrRestoreModelInput');
     const v = (input?.value || '').trim();
-    const { setSetting } = await import('../lib/db.js');
     try { await setSetting('ocrRestoreModel', v); } catch (_) {}
     toast(v ? `AI 還原已啟用：${v}` : 'AI 還原已關閉（純離線）', v ? 'toast-success' : '');
     renderInPlace(s);
@@ -498,7 +410,7 @@ function _mount(s) {
       const preset = ICON_PRESETS.find(p => p.key === key);
       // 樂觀更新：先改 UI + 存 DB，再呼叫 Android（即使切換 crash，指示/狀態也正確）
       document.querySelectorAll('[data-icon-key]').forEach(c => c.classList.toggle('selected', c.dataset.iconKey === key));
-      try { const d = await import('../lib/db.js'); await d.setSetting('launcherIcon', key); } catch { /* 非 Tauri 環境可忽略 */ }
+      try { await setSetting('launcherIcon', key); } catch { /* 非 Tauri 環境可忽略 */ }
       // F7：切 icon 成功點同步寫 splash cache（localStorage，渲染快取非業務資料），
       // 消「切換後首次冷啟動殘留舊底色」窗口——cache 與 DB 同點更新
       try { localStorage.setItem('_splashIconKey', key); } catch { /* 無痕吞 */ }
@@ -536,8 +448,7 @@ function _mount(s) {
     el.value = val;
     window.__maxExampleLines = val;
     try {
-      const d = await import('../lib/db.js');
-      await d.setSetting('exampleDisplayMax', String(val));
+      await setSetting('exampleDisplayMax', String(val));
       toast(val === 0 ? '例句顯示：全部顯示' : `例句顯示：最多 ${val} 句`, 'toast-success');
     } catch (e) {
       toast('例句顯示設定儲存失敗: ' + e, 'toast-error');
@@ -553,10 +464,9 @@ function _mount(s) {
       // 學習組英文單字強制保留（checkbox disabled 仍會被 :checked 選中，雙保險）
       if (ctx === 'study' && !vals.includes('word')) vals.unshift('word');
       try {
-        const d = await import('../lib/db.js');
         for (const c of ctxs) {
           const key = 'fieldVis' + c[0].toUpperCase() + c.slice(1);
-          await d.setSetting(key, JSON.stringify(vals));
+          await setSetting(key, JSON.stringify(vals));
           s.state[key] = [...vals];
           window.__fieldVis = window.__fieldVis || {};
           window.__fieldVis[c] = [...vals];
@@ -675,7 +585,7 @@ function _mount(s) {
   // ── Anki 模式分頁 ──
   document.querySelectorAll('.study-mode-tab[data-anki-mode]').forEach(el => {
     el.addEventListener('click', () => {
-      _ankiMode = el.dataset.ankiMode;
+      setAnkiMode(el.dataset.ankiMode);
       renderInPlace(s);
     });
   });
@@ -828,9 +738,8 @@ function _mount(s) {
     const h = Math.max(1, Math.min(168, parseInt(biEl?.value) || 24));
     const n = Math.max(1, Math.min(100, parseInt(bkEl?.value) || 7));
     try {
-      const d = await import('../lib/db.js');
-      await d.setSetting('backupIntervalH', h);
-      await d.setSetting('backupKeepMax', n);
+      await setSetting('backupIntervalH', h);
+      await setSetting('backupKeepMax', n);
       s.state.backupIntervalH = h;
       s.state.backupKeepMax = n;
       const { startAutoBackup, stopAutoBackup } = await import('../lib/backup-scheduler.js');
@@ -913,14 +822,7 @@ function parseTagsInput(str) {
 }
 
 // ─── HTML escaping ─────────────────────────────
-export function escapeHtml(str) {
-  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
-}
-export function escapeAttr(str) { return escapeHtml(str); }
 
-export function formatCutoffHHMM(minutes) {
-  const m = Math.max(0, Math.min(1439, minutes | 0));
-  return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-}
+
+
+

@@ -12,6 +12,7 @@ import { isTauri } from './lib/platform.js';
 import { logToDb, classifyScope } from './lib/app-log.js';
 import { ICON_PRESETS, iconImgPath } from './lib/icon-presets.js';
 import { PLUGINS, PLUGIN_PARENT } from './lib/plugins.js';
+import { initDB, getSetting, isReady } from './lib/db.js';
 
 // ─── G3：子頁 → 主頁 mapping（nav 高亮用）——子頁（study-v4/exam-flip/deck-browser…）
 // 屬主頁的「深度態」，active 應落在所屬主頁，而非 nav 全滅。
@@ -42,11 +43,9 @@ const _splashDeps = {
     return getLauncherIcon();
   },
   async initDB() {
-    const { initDB } = await import('./lib/db.js');
     await initDB(2);
   },
   async getSetting() {
-    const { getSetting } = await import('./lib/db.js');
     return getSetting('launcherIcon');
   },
   sleep: (ms) => new Promise(r => setTimeout(r, ms)),
@@ -935,8 +934,7 @@ store.subscribe((state) => {
   applyTheme(store.state.themeMode, store.state.themeAccent, store.state.themeAccentIntensity);
 
   // Show a non-blocking toast if DB isn't available
-  const dbMod = await import('./lib/db.js');
-  if (!dbMod.isReady()) {
+  if (!isReady()) {
     toast('資料庫無法連線，部分功能可能受限', 'toast-error');
   }
 })();

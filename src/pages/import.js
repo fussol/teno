@@ -6,6 +6,7 @@ import {
   parseCSVTable, parseAnkiTSV, mapWords, hasHeaderRow,
   resolveField, CANONICAL_FIELDS, FIELD_LABELS,
 } from '../core/import.js';
+import { addWordImage } from '../lib/db.js';
 
 let _importMode = 'csv';
 // CSV/TSV state
@@ -905,7 +906,6 @@ async function runPackImport(s) {
 // importWords 跳過的舊字也能掛到（對方缺的圖補上）；逐張失敗記 skipped 不整批掛。
 async function importPackImages(s, res) {
   if (!_importImages || _packManifest.length === 0) return;
-  const { addWordImage } = await import('../lib/db.js');
   // word＋deck → id（含新增與原本庫裡的舊字；forceDeck 下以目標字本為準）
   const byKey = new Map();
   for (const w of (s.state.words || [])) {
@@ -1187,7 +1187,6 @@ async function importApkgImages(s, res, wordRowIdx) {
     toast(`圖片已略過（${jobs.length} 張未匯入）`, '');
     return;
   }
-  const { addWordImage } = await import('../lib/db.js');
   let ok = 0, skipped = 0;
   // D-PROG1: 圖片階段併入同一進度條 — 逐張更新文字＋bar（_phase 仍為
   // importing，完成前不進 done；單張失敗計入 skipped，尾 toast 一併報數）。

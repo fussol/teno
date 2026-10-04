@@ -11,6 +11,7 @@ import { fetchGet, fetchLLM, lookupCambridge, lookupMerriam } from '../lib/api.j
 import { merriamToFields } from '../lib/merriam.js';
 import { isMobile } from '../lib/platform.js';
 import { DISPLAY_LIMIT_KEY, DISPLAY_LIMIT_DEFAULT, normalizeDisplayLimit, capList, limitNote, limitSelectHtml } from '../lib/display-limit.js';
+import { setSetting } from '../lib/db.js';
 
 // 字本瀏覽顯示上限（可調＋記憶：與 browser.js 共享 db settings.browserDisplayLimit）
 let _displayLimit = DISPLAY_LIMIT_DEFAULT;
@@ -268,7 +269,6 @@ export function onMount(s) {
     _displayLimit = normalizeDisplayLimit(e.target.value);
     renderInPlace(s);
     try {
-      const { setSetting } = await import('../lib/db.js');
       await setSetting(DISPLAY_LIMIT_KEY, String(_displayLimit));
     } catch (_) {}
   });

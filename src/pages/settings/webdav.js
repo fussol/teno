@@ -3,6 +3,7 @@
 import { webdavSaveConfig, webdavTest, backupDb, webdavCloudDelete, webdavCloudList, webdavDownload, webdavLogArchivePrune, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogout, webdavMediaDownload, webdavMediaUpload, webdavPatchDownload, webdavPatchUpload, webdavServerDeleteLocal, webdavServerGetConfig, webdavServerListLocal, webdavServerSaveConfig, webdavServerStart, webdavServerStatus, webdavServerStop, webdavStatus, webdavUpload } from '../../lib/api.js';
 import { isAndroid } from '../../lib/platform.js';
 import { toast } from '../../lib/toast.js';
+import { addAudit, checkpoint, closeDB, initDB } from '../../lib/db.js';
 export function bindWebdavSyncPage(s) {
   // ── WebDAV Sync（帳密存一次，之後自動帶；上傳自動對帳）──
   async function updateWebdavUI() {
@@ -47,7 +48,6 @@ export function bindWebdavSyncPage(s) {
         const r = await webdavPatchUpload();
         toast(r, 'toast-success');
         try {
-          const { addAudit } = await import('../../lib/db.js');
           await addAudit('webdav-patch-upload', 'WebDAV 差量上傳').catch(() => {});
         } catch (_) {}
         try { const mr = await webdavMediaUpload(); if (mr) toast(mr, ''); } catch (_) {}
@@ -56,7 +56,6 @@ export function bindWebdavSyncPage(s) {
         // ② 落到整包（下方流程）；失敗原因交由整包路徑的防呆統一呈現
       }
       // D3 同源：WAL checkpoint → 主檔完整後再上傳（webdav_upload 只 fs::read 主檔）
-      const { checkpoint } = await import('../../lib/db.js');
       await checkpoint();
       try {
         const result = await webdavUpload();
@@ -87,13 +86,12 @@ export function bindWebdavSyncPage(s) {
           return;
         }
       }
-      const _d = await import('../../lib/db.js');
-      await _d.addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
+      await addAudit('webdav-upload', 'WebDAV 全庫上傳同步').catch(() => {});
       // MEDIAPEEL1：DB 上傳成功後順帶媒體（只傳缺塊；失敗不擋主流程）
       try {
         const mr = await webdavMediaUpload();
         toast(mr, '');
-        await _d.addAudit('webdav-media-upload', String(mr)).catch(() => {});
+        await addAudit('webdav-media-upload', String(mr)).catch(() => {});
       } catch (me) { toast('媒體順帶上傳失敗（DB 已同步，圖下次再傳）: ' + me, 'toast-warn'); }
       updateWebdavUI();
     } catch (e) {
@@ -120,7 +118,6 @@ export function bindWebdavSyncPage(s) {
       } catch (_patchErr) {
         // ② 落到整包（下方流程，含 CONFLICT/LOCAL_NEWER 防呆）
       }
-      const { checkpoint, closeDB, initDB } = await import('../../lib/db.js');
       const { closeAppLog } = await import('../../lib/app-log.js');
       await checkpoint();
       await backupDb();
@@ -171,7 +168,7 @@ export function bindWebdavSyncPage(s) {
       setTimeout(() => location.reload(), 500);
     } catch (e) {
       toast(String(e), 'toast-error');
-      try { const { initDB } = await import('../../lib/db.js'); await initDB(2); } catch (_) {}
+      try { await initDB(2); } catch (_) {}
     } finally {
       btn.disabled = false;
     }

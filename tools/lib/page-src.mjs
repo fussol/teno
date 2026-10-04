@@ -11,6 +11,7 @@ export const SETTINGS_PATHS = [
   'src/pages/settings/webdav.js',
   'src/pages/settings/backup.js',
   'src/pages/settings/deck-manager.js',
+  'src/pages/settings/_shared.js',
 ];
 
 export function settingsSrc(root = ROOT) {
