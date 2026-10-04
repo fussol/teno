@@ -17,7 +17,6 @@ const MAX_BATCH = 200;
 // scope 出生即定：study 學習測驗／sync 備份同步匯出入／ocr 辨識補齊／
 // system 開機底層除錯／misc 認不出來的。error 級別無視開關強制留。
 export const LOG_SCOPES = ['study', 'sync', 'ocr', 'system', 'misc'];
-export const LOG_SCOPE_LABEL = { study: '學習', sync: '同步', ocr: '辨識', system: '系統', misc: '其他' };
 const SCOPE_BY_PREFIX = {
   study: ['empty', 'exam-flip', 'exam-mc', 'exam-spell', 'fsrs', 'study'],
   sync: ['auto-backup', 'import', 'export', 'backup', 'drive', 'webdav', 'apkg'],
@@ -64,7 +63,7 @@ export function isScopeEnabled(scope) {
   return _scopeEnabled[scope] !== false;
 }
 
-// ─── WEB-DEMO（2026-09-08 使用者裁示：網頁版內建示範資料）───
+// ─── WEB（2026-09-08 使用者裁示：網頁版內建示範資料）───
 // 無 Tauri 後端時：寫入走記憶體、查詢回種子，不碰 plugin-sql。實機零影響。
 // TAURIGATE1: 判定改用 platform.js 的 isTauri（原本查 window.__TAURI__?.core，
 // 但 withGlobalTauri=false → 桌面/Android 上該全域不存在 → noBackend() 恆真
@@ -134,7 +133,6 @@ export function setLogRetention(days) {
   pruneLogs();
 }
 
-export function isLogEnabled() { return ready && enabled; }
 
 /**
  * 寫一條日誌。相容兩種叫法：
@@ -158,7 +156,7 @@ export function logToDb(level, scopeOrMsg, maybeMsg) {
   } else if (!ready) {
     return;
   }
-  if (noBackend()) {   // WEB-DEMO：直接進記憶體，不經 flush/DB
+  if (noBackend()) {   // WEB：直接進記憶體，不經 flush/DB
     demoLogs.unshift({ id: demoLogSeq--, ts: Date.now(), level: lv, scope, message: String(msg || '') });
     if (demoLogs.length > 200) demoLogs.length = 200;
     return;
@@ -170,7 +168,7 @@ export function logToDb(level, scopeOrMsg, maybeMsg) {
 
 async function flush() {
   timer = null;
-  if (noBackend()) {   // WEB-DEMO：佇列直接併入記憶體日誌
+  if (noBackend()) {   // WEB：佇列直接併入記憶體日誌
     const batch = queue.splice(0, queue.length);
     for (const [ts, level, scope, message] of batch) demoLogs.unshift({ id: demoLogSeq--, ts, level, scope: scope || 'misc', message });
     if (demoLogs.length > 200) demoLogs.length = 200;
@@ -234,8 +232,8 @@ async function resetAndReload() {
 
 /** 刪除超過保留天數的記錄。LOG-SCOPE1：error 強制保留 90 天（無視保留天數＋總開關）。
  * 保留天數 0＝不記錄：非 error 全清（開關關了就不留），error 照 90 天。回傳刪除筆數。 */
-export async function pruneLogs() {
-  if (noBackend()) return 0;   // WEB-DEMO：記憶體日誌不清理
+async function pruneLogs() {
+  if (noBackend()) return 0;   // WEB：記憶體日誌不清理
   const ERROR_KEEP_MS = 90 * 86400000;
   try {
     const d = await getDb();
@@ -267,7 +265,7 @@ export async function pruneLogs() {
 // ─── 操作日誌查詢 ───
 
 export async function fetchLogs({ limit = 200, offset = 0, level = null, search = null, scope = null } = {}) {
-  if (noBackend()) {   // WEB-DEMO：記憶體過濾（level/scope/search/limit/offset 語意對齊 SQL 版）
+  if (noBackend()) {   // WEB：記憶體過濾（level/scope/search/limit/offset 語意對齊 SQL 版）
     let rows = demoLogs;
     if (level) rows = rows.filter((r) => r.level === level);
     if (scope) rows = rows.filter((r) => (r.scope || 'misc') === scope);
@@ -301,7 +299,7 @@ export async function fetchLogs({ limit = 200, offset = 0, level = null, search 
 
 export async function countLogs({ scope = null } = {}) {
   if (noBackend()) {
-    if (!scope) return demoLogs.length;   // WEB-DEMO
+    if (!scope) return demoLogs.length;   // WEB
     return demoLogs.filter((r) => (r.scope || 'misc') === scope).length;
   }
   try {
@@ -321,7 +319,7 @@ export async function countLogs({ scope = null } = {}) {
 // ─── 模擬歷史 (CLI 每次模擬結束寫入; 下次模擬不會刪除) ───
 
 export async function addSimRun(entry) {
-  if (noBackend()) {   // WEB-DEMO：只保留最新一筆（對齊 SQL 版先 DELETE 語意）
+  if (noBackend()) {   // WEB：只保留最新一筆（對齊 SQL 版先 DELETE 語意）
     demoSimRuns.length = 0;
     demoSimRuns.push({
       id: 1, ts: Date.now(), kind: entry.kind || 'simulate',
@@ -349,7 +347,7 @@ export async function addSimRun(entry) {
 }
 
 export async function fetchSimRuns({ limit = 100 } = {}) {
-  if (noBackend()) return demoSimRuns.slice(0, limit).map((r) => ({ ...r }));   // WEB-DEMO
+  if (noBackend()) return demoSimRuns.slice(0, limit).map((r) => ({ ...r }));   // WEB
   try {
     const d = await getDb();
     return await d.select('SELECT id, ts, kind, days, target_pct, seed, from_zero, total_reviews, mature_cards, mature_pct, summary FROM sim_runs ORDER BY id DESC LIMIT ?', [limit]);

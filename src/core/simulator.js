@@ -81,7 +81,7 @@ function memoryStateShortTerm(w, s, d, initRating, ratingCosts, stepTransitions,
   return { stability: s, difficulty: d, cost };
 }
 
-export const DEFAULT_SIM_PARAMS = {
+const DEFAULT_SIM_PARAMS = {
   maxReviewsPerDay: 200,
   maxCostPerDay: 1800,
   newCardsIgnoreReviewLimit: true,

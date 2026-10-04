@@ -72,7 +72,7 @@ function _isDesktop() {
 }
 
 /** 引擎選單選項（vision-ai 依桌面限定過濾），純函式供 harness/測試注入判定 */
-export function engineSelectOptions(isDesktop = _isDesktop()) {
+function engineSelectOptions(isDesktop = _isDesktop()) {
   return listEngines()
     .filter(e => e.id !== 'vision-ai' || isDesktop)
     .map(e => ({ id: e.id, label: _ENG_LABELS[e.id] || e.id }));

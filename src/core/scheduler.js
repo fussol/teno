@@ -203,56 +203,6 @@ export function isLeech(lapses, threshold = 8) {
   return lapses >= threshold && (lapses - threshold) % halfThreshold === 0;
 }
 
-/**
- * Count stats for dashboard.
- *
- * "due" = cards in today's review queue = (learned cards with due<=today)
- * plus new cards up to the daily new-card limit. This matches the
- * sidebar badge / review-page queue length.
- *
- * @param {object[]} words
- * @param {Map<string,object>} cards
- * @param {Set<string>} buried
- * @param {Set<string>} suspended
- * @param {number} [newPerDay=Infinity] - daily new-card cap
- * @returns {{ total: number, learned: number, new: number, due: number, mature: number, avgDifficulty: number, young: number }}
- */
-export function computeStats(words, cards, buried, suspended, newPerDay = Infinity, dayCutoff = 0, timezoneOffset, ratedNewToday = 0) {
-  const today = getToday(dayCutoff, timezoneOffset);
-  let learned = 0, due = 0, mature = 0, young = 0;
-  let diffSum = 0, diffCount = 0;
-  let newCount = 0;
-
-  for (const word of words) {
-    if (buried.has(word.id) || suspended.has(word.id)) continue;
-    const card = cards.get(word.id);
-    if (!card) { newCount++; continue; }
-    learned++;
-    if (card.due && toLocalDateStr(new Date(card.due), timezoneOffset, dayCutoff) <= today) due++;
-    // Mature = Review-state card with a scheduled interval >= 21 days
-    // (Anki's definition). Relearning cards are not counted as mature.
-    const ivl = card.scheduledDays ?? card.interval ?? 0;
-    if (card.state === STATE_REVIEW && ivl >= 21) mature++;
-    else if (card.state === STATE_REVIEW || card.state === STATE_LEARNING || card.state === STATE_RELEARNING) young++;
-    if (card.difficulty != null) {
-      diffSum += card.difficulty;
-      diffCount++;
-    }
-  }
-
-  // New cards in today's queue (up to the daily cap) also count as due.
-  due += Math.max(0, Math.min(newCount, newPerDay - ratedNewToday));
-
-  return {
-    total: words.length,
-    learned,
-    new: words.length - learned,
-    due,
-    mature,
-    young,
-    avgDifficulty: diffCount > 0 ? diffSum / diffCount : 0,
-  };
-}
 
 /**
  * Compute the current consecutive-day streak from a list of date strings.
@@ -434,35 +384,3 @@ export function computeRetention(reviewLog, lookbackDays = 30) {
   return { rate: correct / total, total, correct };
 }
 
-/**
- * Compute rating distribution by card state.
- *
- * @param {object[]} reviewLog
- * @returns {object}
- */
-export function computeRatingProfile(reviewLog) {
-  const groups = { new: [], young: [], mature: [] };
-  for (const e of reviewLog) {
-    const ivl = e.ivl ?? e.scheduledDays ?? 0;
-    const g = e.state != null
-      ? (e.state === STATE_REVIEW && ivl >= 21 ? 'mature'
-        : e.state === STATE_REVIEW ? 'young'
-        : 'new')
-      : 'new';
-    if (groups[g]) groups[g].push(e.rating);
-  }
-
-  const result = { total: reviewLog.length, states: {} };
-  for (const [state, ratings] of Object.entries(groups)) {
-    if (ratings.length < 5) continue;
-    const n = ratings.length;
-    result.states[state] = {
-      count: n,
-      again: (ratings.filter(r => r === 0).length / n) * 100,
-      hard: (ratings.filter(r => r === 1).length / n) * 100,
-      good: (ratings.filter(r => r === 2).length / n) * 100,
-      easy: (ratings.filter(r => r === 3).length / n) * 100,
-    };
-  }
-  return result;
-}

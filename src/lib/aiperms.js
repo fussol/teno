@@ -2,7 +2,7 @@
 // 物理保證三層：未開 r → 資料不注入 prompt（buildPrompt 呼叫端 gate）＋工具不暴露（buildToolList）；
 // 未開 w/d → 寫入點 guard() 硬擋（execTool 二道防線）；ai_perms 本身 AI 永遠不可寫（防自我授權）。
 export const AI_CATS = ['bank', 'settings', 'words'];
-export const AI_ACTS = ['r', 'w', 'd'];
+const AI_ACTS = ['r', 'w', 'd'];
 export const AI_PERMS_KEY = 'ai_perms'; // AI 拒寫（core 硬編碼），只有使用者 UI 能改
 
 export const defaultPerms = () =>

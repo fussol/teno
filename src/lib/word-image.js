@@ -44,10 +44,6 @@ export function invalidateWordImages(wordId) {
   else _cache.clear();
 }
 
-/** 同步讀快取（渲染點 onMount 已 hydrate 過後的快速路徑；無鍵回 null＝未載入）。 */
-export function peekWordImages(wordId) {
-  return _cache.has(wordId) ? _cache.get(wordId) : null;
-}
 
 // ── carousel 渲染（純字串生成，可 harness 測）──
 
@@ -98,7 +94,7 @@ export const WORD_IMAGE_CSS = `
 // ── DOM 綁定（薄層，內測門驗）──
 
 /** 綁定一個 carousel 容器的互動（arrows/dots/swipe）。回傳 cleanup fn。 */
-export function bindWordImageCarousel(container) {
+function bindWordImageCarousel(container) {
   if (!container) return () => {};
   const root = container.closest('[data-wimg]') || container;
   const imgs = [...root.querySelectorAll('img.wimg-img')];
@@ -168,7 +164,7 @@ function _onDocKey(e) {
   }
 }
 /** 啟用全域方向鍵（頁面掛了 carousel 時呼叫一次；冪等）。 */
-export function ensureWordImageKeys() {
+function ensureWordImageKeys() {
   if (_docBound) return;
   _docBound = true;
   document.addEventListener('keydown', _onDocKey, true);
@@ -315,7 +311,7 @@ export function bindEditorThumbs(container, thumbsApi) {
   return () => container.removeEventListener('click', onTool);
 }
 
-export const WORD_IMAGE_THUMB_CSS = `
+const WORD_IMAGE_THUMB_CSS = `
 .wimg-thumbs{display:flex;flex-wrap:wrap;gap:8px;max-width:100%}
 .wimg-thumb{position:relative;width:72px;height:72px;flex-shrink:0;border-radius:8px;overflow:hidden;border:1px solid var(--border)}
 .wimg-thumb img{width:100%;height:100%;max-width:100%;object-fit:cover;display:block}

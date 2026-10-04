@@ -45,7 +45,7 @@ export function looksUneven(gray, w, h, thr = 35) {
 }
 
 /** 積分圖（adaptive box-mean 加速用）。@returns {Float64Array} (w+1)*(h+1) */
-export function integralImage(gray, w, h) {
+function integralImage(gray, w, h) {
   const ii = new Float64Array((w + 1) * (h + 1));
   for (let y = 0; y < h; y++) {
     let rowSum = 0;
@@ -147,7 +147,7 @@ export function shouldSecondShot(a) {
 }
 
 /** RGBA → 灰階（0.299/0.587/0.114）＋ min-max 對比拉伸。 */
-export function toStretchedGray(data, w, h) {
+function toStretchedGray(data, w, h) {
   const gray = new Uint8ClampedArray(w * h);
   let mn = 255, mx = 0;
   for (let i = 0; i < w * h; i++) {
@@ -161,7 +161,7 @@ export function toStretchedGray(data, w, h) {
 }
 
 /** 灰階雙線性放大。@returns {{big:Uint8ClampedArray,w:number,h:number}} */
-export function upscaleGray(gray, w, h, scale) {
+function upscaleGray(gray, w, h, scale) {
   if (scale <= 1) return { big: gray, w, h };
   const W = Math.round(w * scale), H = Math.round(h * scale);
   const big = new Uint8ClampedArray(W * H);

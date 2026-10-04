@@ -58,8 +58,8 @@ function versionInt(versionStr) {
   if (!m) return 0;
   return Number(m[1]) * 1000000 + Number(m[2]) * 1000 + Number(m[3]);   // 5.1.18 → 5001018
 }
-export function getAppVersion() { return _pkgVer || '0.0.0'; }
-export function getAppVersionInt() { return versionInt(getAppVersion()); }
+function getAppVersion() { return _pkgVer || '0.0.0'; }
+function getAppVersionInt() { return versionInt(getAppVersion()); }
 
 /** 寫入 DB 版本指紋（已存在更高版本不覆寫 → 只升不降）。 commit hash 同時記錄. */
 export async function stampDbVersion(d) {
@@ -255,8 +255,6 @@ function _write(fn) {
   }));
 }
 let _writeFailStreak = 0;   // DB-RES1: 連續失敗次數（顯性化供診斷）
-/** 測試/診斷用：目前連續寫入失敗次數 */
-export function getWriteFailStreak() { return _writeFailStreak; }
 /** DB-RES1: 僅供 harness 驗證重試策略（純函式，不碰 DB） */
 export const __test = { retryBusy: _retryBusy, isBusy: _isBusy, busyTries: _BUSY_TRIES };
 // ─── DB-TX1: 交易一律交給 Rust 在單一連線上執行 ────────────────
@@ -308,10 +306,6 @@ export async function getAllWords() {
   }));
 }
 
-export async function getWordCount() {
-  const rows = await requireDB().select('SELECT COUNT(*) AS count FROM words');
-  return rows[0]?.count ?? 0;
-}
 
 /** DB-TX1: words 的 upsert SQL 與參數 —— **單一來源**（單筆寫入與 sql_tx 批次共用）。
  *  佔位符維持 `$1..$20`：rusqlite 亦接受此語法
@@ -834,10 +828,6 @@ export async function getNewRatedTodayAll(todayStart, dayCutoff = 0, tzOffset = 
   return out;
 }
 
-export async function clearReviewLogs() {
-  // DB-RES1: 納入 _write（原為裸寫入）
-  return _write(() => requireDB().execute('DELETE FROM review_log'));
-}
 
 export async function getMaxReviewLogId() {
   const rows = await requireDB().select('SELECT MAX(id) AS m FROM review_log');
@@ -854,10 +844,6 @@ export async function deleteReviewLogsAfter(id, mode) {
   );
 }
 
-export async function deleteLastReviewLog() {
-  // DB-RES1: undo 路徑的裸寫入（實測 log 有 'undo deleteReviewLog error'）→ 納入 _write
-  return _write(() => requireDB().execute('DELETE FROM review_log WHERE id = (SELECT MAX(id) FROM review_log)'));
-}
 
 export async function deleteCard(wordId) {
   // DB-RES1: 納入 _write（原為裸寫入）

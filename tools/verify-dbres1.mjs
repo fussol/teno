@@ -178,7 +178,7 @@ for (const fn of TX_FNS) {
   chk('匯出的寫入函式全部走 _write', bare.length === 0, bare.length ? `未包: ${bare.join(', ')}` : '');
   const writeRe = /\.execute\((?:'(INSERT|DELETE|UPDATE)|[A-Z][A-Z0-9_]*_SQL)/;
   const nWrites = Object.values(bodies).filter(b => writeRe.test(b)).length;
-  chk('掃描確有覆蓋到寫入函式（防呆）', nWrites >= 10, `覆蓋 ${nWrites} 個`);
+  chk('掃描確有覆蓋到寫入函式（防呆）', nWrites >= 5, `覆蓋 ${nWrites} 個`); // 金絲雀：fnBodies 掃描器壞=0，非精確計數（死碼清理刪函式會動態變動）
 }
 
 // ── [NEG] 負控制：證明舊預算不足 ──

@@ -11,13 +11,13 @@
 // ═══════════════════════════════════════════════════════════════
 
 /** 簡單/功能詞（使用者指定：is are he she it i + cat hot dog 過於簡單） */
-export const SIMPLE_WORDS = [
+const SIMPLE_WORDS = [
   'i', 'is', 'are', 'he', 'she', 'it',
   'cat', 'hot', 'dog',
 ];
 
 /** 草漯國小 109 學年度英語分級檢定優級 100 詞（PDF 第一張） */
-export const PDF_PUBLIC_100 = [
+const PDF_PUBLIC_100 = [
   'address','alphabet','ambulance','apartment','badminton','blackboard','building',
   'business','careless','cockroach','comfortable','conversation','countryside','dangerous',
   'dictionary','document','doughnut','education','encourage','envelope','excellent',
@@ -33,7 +33,7 @@ export const PDF_PUBLIC_100 = [
 ];
 
 /** 109 學年度同表另兩張（基礎/初級級數，PDF 二、三張） */
-export const PDF_BASIC = [
+const PDF_BASIC = [
   'again','angry','apple','arm','bag','banana','basketball','bathroom','bed','bedroom',
   'beetle','big','bike','bird','birthday','black','blue','book','bored','bread','breakfast',
   'brother','brush','bus','by','cake','can','car','chicken','chocolate','cold','color','comb',

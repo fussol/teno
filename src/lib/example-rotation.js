@@ -41,10 +41,3 @@ export function pickNextExamples(lines, max, prevShown, counts) {
   return picked;
 }
 
-/**
- * 初次渲染的抽樣（也記帳）。
- */
-export function pickFirstExamples(lines, max, counts) {
-  const picked = pickNextExamples(lines, max, [], counts);
-  return picked;
-}

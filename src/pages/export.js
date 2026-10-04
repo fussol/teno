@@ -388,7 +388,7 @@ async function runSharePackShelf(s, shelfName, btn) {
   }
 }
 
-export function renderShareContent(s) {
+function renderShareContent(s) {
   const words = s.state.words || [];
   const counts = new Map();
   for (const w of words) counts.set(w.deck || 'Default', (counts.get(w.deck || 'Default') || 0) + 1);

@@ -119,7 +119,7 @@ function getTts() {
   return _ttsMod;
 }
 
-export function playWord(store) {
+function playWord(store) {
   if (!session?.current) return;
   const word = session.current.word.word;
   getTts().then(({ speak }) => {

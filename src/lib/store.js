@@ -26,7 +26,7 @@ export function clampLearnAhead(v) {
 }
 
 /* ─── UISCALE1：介面縮放五檔（桌機 Ctrl +/- 驅動；目前＝最小 100%）─── */
-export const UI_SCALE_LEVELS = [1, 1.12, 1.25, 1.4, 1.6];
+const UI_SCALE_LEVELS = [1, 1.12, 1.25, 1.4, 1.6];
 export const UI_SCALE_LABELS = ['100%', '112%', '125%', '140%', '160%'];
 export function clampUiScaleIdx(v) {
   const n = Number.isFinite(+v) ? Math.round(+v) : 0;

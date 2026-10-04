@@ -28,12 +28,6 @@ export const ICON_PRESETS = [
   { key: 'ch10', label: 'CH玫瑰棕', bg: '#F6D8BD', main: '#5D3140' },
 ];
 
-/** Android res 檔名（mipmap-xxxhdpi / anydpi-v26）。original 無編號。 */
-export function iconResName(key) {
-  const i = ICON_PRESETS.findIndex(p => p.key === key);
-  if (i <= 0) return 'ic_launcher';            // original
-  return `ic_launcher_${i + 1}`;               // ocean=_2 … ch10=_20
-}
 
 /** 前端 splash 用圖片路徑（public/icons/）。 */
 export function iconImgPath(key) {

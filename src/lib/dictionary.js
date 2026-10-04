@@ -23,14 +23,7 @@ export function loadDictionary() {
   return Promise.resolve(_dict);
 }
 
-export function isKnownWord(word) {
-  if (!_dict) return false;
-  return _dict.has(word.toLowerCase().trim());
-}
 
-export function dictionarySize() {
-  return _dict ? _dict.size : 0;
-}
 
 /** Damerau–Levenshtein：含相鄰換位（OCR 亂碼最常見「字母對調」），字串短＋差異僅 ≤2 */
 function damerau(a, b) {

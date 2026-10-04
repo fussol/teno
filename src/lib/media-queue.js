@@ -30,7 +30,7 @@ export function pendingCount() {
   return load().filter(x => x.status !== 'done').length;
 }
 
-export function clearDone() {
+function clearDone() {
   save(load().filter(x => x.status !== 'done'));
 }
 

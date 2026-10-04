@@ -10,7 +10,7 @@ import { STATE_NEW, STATE_LEARNING, STATE_REVIEW } from './fsrs.js';
  * @param {string} query - 搜尋字串，例如 "deck:TOEFL tag:hard is:due"
  * @returns {object} 解析後的條件物件
  */
-export function parseSearchQuery(query) {
+function parseSearchQuery(query) {
   const conditions = [];
   const tokens = query.trim().split(/\s+/);
   
@@ -208,19 +208,3 @@ function sortResults(results, orderBy, today) {
   return sorted;
 }
 
-/**
- * 取得搜尋條件的提示文字
- */
-export function getSearchHints() {
-  return [
-    { syntax: 'deck:名稱', desc: '指定牌組' },
-    { syntax: 'tag:標籤', desc: '指定標籤' },
-    { syntax: 'is:due', desc: '到期的卡片' },
-    { syntax: 'is:new', desc: '新卡片' },
-    { syntax: 'is:review', desc: '複習卡片' },
-    { syntax: 'is:learning', desc: '學習中卡片' },
-    { syntax: 'lapses:>5', desc: '遺忘次數大於 5' },
-    { syntax: 'props:ivl>30', desc: '間隔天數大於 30' },
-    { syntax: 'props:due<7', desc: '7 天內到期' },
-  ];
-}

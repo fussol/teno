@@ -331,23 +331,11 @@ export const webdavServerListLocal = (path) =>
   invoke('webdav_server_list_local', path ? { path } : {})
 export const webdavServerDeleteLocal = (path) =>
   invoke('webdav_server_delete_local', { path })
-export const driveSaveCreds = (clientId, clientSecret) =>
-  invoke('drive_save_creds', { clientId, clientSecret })
 
-export const driveOAuth = () =>
-  invoke('drive_oauth')
 
-export const driveUpload = () =>
-  invoke('drive_upload')
 
-export const driveDownload = () =>
-  invoke('drive_download')
 
-export const driveStatus = () =>
-  invoke('drive_status')
 
-export const driveLogout = () =>
-  invoke('drive_logout')
 
 export const optimizeFsrs = (reviews) =>
   invoke('optimize_fsrs', { reviews })

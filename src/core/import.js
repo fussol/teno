@@ -38,7 +38,7 @@ export function parseLine(str) {
  * @param {string} text
  * @returns {string[][]}
  */
-export function tokenizeCSV(text) {
+function tokenizeCSV(text) {
   const rows = [];
   let row = [];
   let cur = '';
@@ -196,7 +196,7 @@ export function parseCSVTable(text) {
 }
 
 /** app 詞性 chip 固定 16 項（browser/deck-browser 編輯器寫死中文）。 */
-export const CANONICAL_POS = [
+const CANONICAL_POS = [
   '名詞', '動詞', '形容詞', '副詞', '介係詞', '連接詞', '代名詞', '感嘆詞',
   '限定詞', '冠詞', '片語', '慣用語', '後綴', '前綴', '縮寫', '複數名詞',
 ];
@@ -382,7 +382,7 @@ export function parseAnkiTSV(text) {
  * @param {string} str
  * @returns {string}
  */
-export function decodeHtmlEntities(str) {
+function decodeHtmlEntities(str) {
   return String(str ?? '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&#x2F;/g, '/').replace(/&nbsp;/g, ' ');
 }
 
@@ -425,32 +425,3 @@ export function mapAnkiRows(rows, defaults = {}) {
   return out;
 }
 
-/**
- * Enrich a word with data from a dictionary lookup.
- * @param {object} word
- * @param {object[]} dictEntries - Array of { word, definition, pos, ... }
- * @returns {object}
- */
-export function enrichWord(word, dictEntries) {
-  const match = dictEntries.find(d => d.word === word.word);
-  if (!match) return word;
-  return {
-    ...word,
-    definition: match.definition || word.definition || '',
-    pos: match.pos || word.pos || '',
-    pron: match.pron || word.pron || '',
-    example: match.example || word.example || '',
-    synonym: match.synonym || word.synonym || '',
-    antonym: match.antonym || word.antonym || '',
-    derivative: match.derivative || word.derivative || '',
-    etymology: match.etymology || word.etymology || '',
-    syllables: match.syllables || word.syllables || '',
-    phrases: match.phrases || word.phrases || '',
-    tags: match.tags || word.tags || [],
-    examples: match.examples || word.examples || [],
-    image: match.image || word.image || '',
-    description: match.description || word.description || '',
-    related: match.related || word.related || [],
-    forms: match.forms || word.forms || [],
-  };
-}

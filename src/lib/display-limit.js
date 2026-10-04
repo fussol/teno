@@ -7,7 +7,7 @@ export const DISPLAY_LIMIT_KEY = 'browserDisplayLimit';
 export const DISPLAY_LIMIT_DEFAULT = 500;
 
 /** 選單可選值（0=全部） */
-export const DISPLAY_LIMIT_OPTIONS = [
+const DISPLAY_LIMIT_OPTIONS = [
   { v: 100, label: '100' },
   { v: 200, label: '200' },
   { v: 500, label: '500' },
