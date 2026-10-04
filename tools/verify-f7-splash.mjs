@@ -115,8 +115,11 @@ const cssTextUse = (MAINM.match(/\.style\.cssText/g) || []).length;
 // R3 處方③ seam 本體靜態釘：_splashDeps 四鍵＋真 import 路徑在位（殺「seam 內硬編碼
 // mock 應付動態腿」）；錨點 masked 定位＋raw 同 offset 提取（h4 崩潰修正）
 const seamBlk = extractBlock(MAINC, 'const _splashDeps = {');
+// P5 db 靜態化：seam 改釘「api 動態真 import + initDB/getSetting 直連 + 檔頂真 db import」
 const seamPin = !!seamBlk && /getLauncherIcon/.test(seamBlk) && /initDB/.test(seamBlk) && /getSetting/.test(seamBlk) && /sleep/.test(seamBlk)
-  && seamBlk.includes("import('./lib/api.js')") && (seamBlk.match(/import\('\.\/lib\/db\.js'\)/g) || []).length === 2;
+  && seamBlk.includes("import('./lib/api.js')") && /await initDB\(2\)/.test(seamBlk)
+  && /return getSetting\('launcherIcon'\)/.test(seamBlk)
+  && /import \{[^}]*\binitDB\b[^}]*\bgetSetting\b[^}]*\} from '\.\/lib\/db\.js'/.test(MAIN);
 // 退場點 persist=false 釘（R1#1②：store init 失敗時 default 'original' 不得污染 cache）
 const exitPersistOff = /applySplashIcon\(\s*store\.state\.launcherIcon[^)]*,\s*false\s*\)/.test(MAINC);
 const preloadRe = /const _cachedSplashIcon = readSplashCache\(\);/;
