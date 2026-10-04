@@ -4,6 +4,7 @@ import { backupDb, deleteBackup as apiDeleteBackup, exportBackupData as apiExpor
 import { downloadBlobFromArray, isAndroid, isWeb, pickFile } from '../../lib/platform.js';
 import { icon } from '../../lib/svg.js';
 import { toast } from '../../lib/toast.js';
+import { escapeHtml, escapeAttr } from '../settings.js'; // P4S3 漏接：模板需 HTML 轉義
 
 export async function runExportDb() {
   try {
