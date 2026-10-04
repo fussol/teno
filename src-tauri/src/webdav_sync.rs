@@ -1,6 +1,6 @@
 //! WebDAV 同步（取代 Google Drive：同 LAN／Tailscale 內自建空間，單檔 teno.db）。
 //!
-//! 設計對齊 drive_sync.rs：
+//! 設計對齊同步約定（原 drive_sync 已刪，2026-10-04 孤兒清除）：
 //! - 帳密只輸一次，存 app_config_dir/webdav_config.json（0600），之後上傳下載自動帶
 //! - 版本＝最後更改時間（本地 mtime vs 遠端 Last-Modified，30s 容忍時鐘差）
 //! - WEBDAV-GUARD1：上傳時遠端新→擋（REMOTE_NEWER），下載時本地新→擋（LOCAL_NEWER）；

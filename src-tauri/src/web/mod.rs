@@ -2,7 +2,7 @@
 // WEB-SERVE1：網站版伺服器（唯讀本檔群，桌面/Android 不編譯）。
 // 一份 code 兩個出口：前端 isTauri=false 走這裡的 /api/invoke。
 // 資料隔離：data/users/<user>/ 自成一顆庫，與桌面 ~/.config/com.teno.app 永不相交。
-// 同步語意：只有使用者主動按（匯出/匯入/WebDAV/Drive），無自動同步。
+// 同步語意：只有使用者主動按（匯出/匯入/WebDAV），無自動同步。
 // ══════════════════════════════════════════════════════════════
 use axum::{
     http::StatusCode,

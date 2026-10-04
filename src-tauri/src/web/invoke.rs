@@ -112,21 +112,6 @@ async fn dispatch(cmd: &str, a: Value, app_handle: crate::Ctx) -> Result<Value, 
             let a: A = parse(a)?;
             ok(crate::delete_piper_model(a.name, app_handle))
         }
-        "drive_download" => ok(crate::drive_sync::drive_download(app_handle).await),
-        "drive_logout" => ok(crate::drive_sync::drive_logout(app_handle).await),
-        "drive_oauth" => ok(crate::drive_sync::drive_oauth(app_handle).await),
-        "drive_save_creds" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct A {
-            client_id: String,
-            client_secret: String,
-            }
-            let a: A = parse(a)?;
-            ok(crate::drive_sync::drive_save_creds(app_handle, a.client_id, a.client_secret).await)
-        }
-        "drive_status" => ok(crate::drive_sync::drive_status(app_handle).await),
-        "drive_upload" => ok(crate::drive_sync::drive_upload(app_handle).await),
         "export_app_log_text" => ok(crate::export_app_log_text(app_handle).await),
         "export_backup_data" => {
             #[derive(Deserialize)]
