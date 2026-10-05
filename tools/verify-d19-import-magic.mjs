@@ -4,6 +4,7 @@
 // 全部 tmp DB，嚴禁碰 ~/.config/com.teno.app/teno.db。
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync, mkdirSync, symlinkSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { loadMigrations, sha384, CURRENT_VERSIONS } from './db-compat.mjs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -50,8 +51,15 @@ function mkSqlite(p, marker) {
   const d = new DatabaseSync(p);
   d.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT);
-    CREATE TABLE audit_log (ts INTEGER, action TEXT, detail TEXT);`);
+    CREATE TABLE audit_log (ts INTEGER, action TEXT, detail TEXT);
+    CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY, description TEXT NOT NULL,
+      installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, success BOOLEAN NOT NULL,
+      checksum BLOB NOT NULL, execution_time BIGINT NOT NULL);`);
   d.prepare('INSERT INTO t VALUES (?,?)').run('marker', marker);
+  // import-db 指紋 gate：真 teno 庫必有 _sqlx_migrations；無表＝manual 拒收（合成 fixture 不代表性）
+  const MIGS = loadMigrations();
+  const rec = d.prepare('INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?, ?, 1, ?, -1)');
+  for (const v of CURRENT_VERSIONS) rec.run(v, MIGS[v].desc, sha384(MIGS[v].sql));
   d.close();
   return p;
 }
@@ -180,6 +188,8 @@ try {
     }
     const bugDir = join(dir, 'bugsub'); mkdirSync(bugDir);
     symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+    try { symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(dir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(fileURLToPath(new URL('./db-compat.mjs', import.meta.url)), join(bugDir, 'db-compat.mjs')); } catch {}
     // cli.mjs 有 bare 引入（tesseract.js 等）：tmp 樹上層無 node_modules 會
     // ERR_MODULE_NOT_FOUND 早死、損壞重現不出來。鏈 repo 的 node_modules 進來
     // （唯讀解析用，不寫入）。

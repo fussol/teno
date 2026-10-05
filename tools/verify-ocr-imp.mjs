@@ -72,7 +72,7 @@ class FakeDatabase {
     this.db.exec(`CREATE TABLE words (
       id TEXT PRIMARY KEY, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT,
       example TEXT, deck TEXT, tags TEXT, image TEXT, description TEXT, created_at TEXT,
-      related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT)`);
+      related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT, etymology TEXT, syllables TEXT, phrases TEXT)`);
     this.db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");

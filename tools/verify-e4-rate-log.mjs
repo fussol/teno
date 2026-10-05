@@ -28,7 +28,7 @@ function mkTmpDb(name, { dayCutoff = 0, tz = 0 } = {}) {
       tags TEXT DEFAULT '', image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')),
       description TEXT DEFAULT '', related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]',
       synonym TEXT NOT NULL DEFAULT '', antonym TEXT NOT NULL DEFAULT '',
-      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '', etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '', phrases TEXT NOT NULL DEFAULT '');
     CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT NOT NULL DEFAULT (datetime('now')),
       stability REAL NOT NULL DEFAULT 2.5, difficulty REAL NOT NULL DEFAULT 0.0,
       elapsed_days INTEGER NOT NULL DEFAULT 0, scheduled_days INTEGER NOT NULL DEFAULT 0,

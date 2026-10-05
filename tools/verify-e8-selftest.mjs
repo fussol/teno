@@ -45,7 +45,7 @@ function mkTmpDb(name) {
       tags TEXT DEFAULT '', image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')),
       description TEXT DEFAULT '', related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]',
       synonym TEXT NOT NULL DEFAULT '', antonym TEXT NOT NULL DEFAULT '',
-      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '', etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '', phrases TEXT NOT NULL DEFAULT '');
     CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT NOT NULL DEFAULT (datetime('now')),
       stability REAL NOT NULL DEFAULT 2.5, difficulty REAL NOT NULL DEFAULT 0.0,
       elapsed_days INTEGER NOT NULL DEFAULT 0, scheduled_days INTEGER NOT NULL DEFAULT 0,
@@ -99,6 +99,8 @@ try {
   const bugDir = join(dir, 'bugsub');
   mkdirSync(bugDir);
   symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+    try { symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(dir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(fileURLToPath(new URL('./db-compat.mjs', import.meta.url)), join(bugDir, 'db-compat.mjs')); } catch {}
   // 先剝修法（還原原 block）：以 BUG_MARK 找到退役註解段，換回 ORIGINAL_BLOCK
   const markerIdx = src.indexOf(BUG_MARK);
   let buggySrc;

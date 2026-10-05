@@ -21,6 +21,8 @@ const dir = mkdtempSync(join(tmpdir(), 'e6-verify-'));
 const bugDir = join(dir, 'bugsub');
 mkdirSync(bugDir);
 symlinkSync(fileURLToPath(new URL('../src', import.meta.url)), join(dir, 'src'));
+    try { symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(dir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(fileURLToPath(new URL('./db-compat.mjs', import.meta.url)), join(bugDir, 'db-compat.mjs')); } catch {}
 
 function mkTmpDb(name, extraSettings = {}, settings = {}) {
   const p = join(dir, name + '.db');
@@ -31,7 +33,7 @@ function mkTmpDb(name, extraSettings = {}, settings = {}) {
       tags TEXT DEFAULT '', image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')),
       description TEXT DEFAULT '', related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]',
       synonym TEXT NOT NULL DEFAULT '', antonym TEXT NOT NULL DEFAULT '',
-      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+      derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '', etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '', phrases TEXT NOT NULL DEFAULT '');
     CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT NOT NULL DEFAULT (datetime('now')),
       stability REAL NOT NULL DEFAULT 2.5, difficulty REAL NOT NULL DEFAULT 0.0,
       elapsed_days INTEGER NOT NULL DEFAULT 0, scheduled_days INTEGER NOT NULL DEFAULT 0,

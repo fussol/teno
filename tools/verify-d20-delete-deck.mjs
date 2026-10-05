@@ -60,7 +60,7 @@ function mkDeckDb(p, { fk = true } = {}) {
       pronunciation TEXT, example TEXT, deck TEXT NOT NULL DEFAULT 'Default', tags TEXT DEFAULT '',
       image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), description TEXT DEFAULT '',
       related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]', synonym TEXT NOT NULL DEFAULT '',
-      antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+      antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '', etymology TEXT NOT NULL DEFAULT '', syllables TEXT NOT NULL DEFAULT '', phrases TEXT NOT NULL DEFAULT '');
     CREATE TABLE cards (word_id TEXT PRIMARY KEY${fk ? ' REFERENCES words(id) ON DELETE CASCADE' : ''},
       due TEXT NOT NULL DEFAULT (datetime('now')), stability REAL NOT NULL DEFAULT 2.5,
       difficulty REAL NOT NULL DEFAULT 0.0, elapsed_days INTEGER NOT NULL DEFAULT 0,
@@ -191,6 +191,8 @@ try {
     }
     const bugDir = join(dir, 'bugsub'); mkdirSync(bugDir);
     if (!existsSync(join(dir, 'src'))) symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+    try { symlinkSync(fileURLToPath(new URL('../node_modules', import.meta.url)), join(dir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(fileURLToPath(new URL('./db-compat.mjs', import.meta.url)), join(bugDir, 'db-compat.mjs')); } catch {}
     writeFileSync(join(bugDir, 'cli.mjs'), buggySrc);
     const BCLI = join(bugDir, 'cli.mjs');
     { // 現行 schema：幽靈 decks 列＋exam 孤兒重現
