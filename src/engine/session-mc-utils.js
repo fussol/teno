@@ -39,7 +39,7 @@ export function ensureSession(storeState) {
   if (!storeState.words || !storeState.cardsMc || !storeState.ankiSettingsMc) return;
   session = new Session({
     words: storeState.words, cards: storeState.cardsMc,
-    buried: storeState.buried, suspended: storeState.suspended,
+    buried: storeState.buriedMc, suspended: storeState.suspendedMc,
     fsrs: makeFSRS(storeState.ankiSettingsMc),
     dayCutoff: storeState.dayCutoff,
     newPerDay: storeState.ankiSettingsMc.cardsPerDay,
