@@ -2336,7 +2336,9 @@ function cmdImportDb() {
   let effSrc = src, repaired = false, fpNote = '';
   try {
     const fp = fingerprintFile(src);
-    fpNote = `指紋: 登記[${fp.migs.join(',')}] ${fp.mismatched.length ? `指紋不符[${fp.mismatched}] ` : ''}${fp.pending.length ? `待跑[${fp.pending}] ` : ''}→路由 ${fp.route}`;
+    // fingerprintFile 早退分支（integrity 非 ok／無 _sqlx_migrations）不含 mismatched/pending
+    // → 直接 .length 會 TypeError 蓋掉真原因（顯示無意義的 null.join）
+    fpNote = `指紋: 登記[${fp.migs ? fp.migs.join(',') : '無'}] ${(fp.mismatched || []).length ? `指紋不符[${fp.mismatched}] ` : ''}${(fp.pending || []).length ? `待跑[${fp.pending}] ` : ''}→路由 ${fp.route}`;
     if (fp.route === 'manual') {
       console.log(`❌ 拒絕匯入: ${fp.reason} — 來源 ${src}`);
       log('ERROR', `import-db rejected: ${fp.reason} ${src}`);

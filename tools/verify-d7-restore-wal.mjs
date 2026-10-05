@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { loadMigrations, sha384, CURRENT_VERSIONS } from './db-compat.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(REPO, 'tools', 'cli.mjs');
@@ -45,6 +46,14 @@ function mkDb(p, val) {
     elapsed_days INTEGER, scheduled_days INTEGER, stability REAL, difficulty REAL,
     reviewed_at TEXT, duration INTEGER, mode TEXT, card_state INTEGER, new_state INTEGER);`);
   d.prepare("INSERT INTO words (id, word) VALUES ('w1', ?)").run(val);
+  // import-db 有指紋 gate：無 _sqlx_migrations → route=manual 拒收，到不了 rmWal 覆寫段。
+  // T4 要測的是覆寫路徑，補齊現行登記（1..15 指紋全對）讓 route=ok。
+  d.exec(`CREATE TABLE _sqlx_migrations (version BIGINT PRIMARY KEY, description TEXT NOT NULL,
+    installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, success BOOLEAN NOT NULL,
+    checksum BLOB NOT NULL, execution_time BIGINT NOT NULL)`);
+  const MIGS = loadMigrations();
+  const rec = d.prepare('INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) VALUES (?, ?, 1, ?, -1)');
+  for (const v of CURRENT_VERSIONS) rec.run(v, MIGS[v].desc, sha384(MIGS[v].sql));
   d.close();
   return p;
 }
