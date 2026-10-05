@@ -180,7 +180,7 @@ pub async fn media_list(app_handle: Ctx) -> Result<String, String> {
             }
         }
     }
-    Ok(serde_json::to_string(&out).map_err(|e| e.to_string())?)
+    serde_json::to_string(&out).map_err(|e| e.to_string())
 }
 
 fn download_bytes_sync(url: &str) -> Result<Vec<u8>, String> {
@@ -205,7 +205,7 @@ fn download_bytes_sync(url: &str) -> Result<Vec<u8>, String> {
 /// 最小 base64（跟 webdav_sync 同字母表；自包含不跨模組耦合）。
 fn b64_encode(input: &[u8]) -> String {
     const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = *chunk.get(1).unwrap_or(&0) as u32;

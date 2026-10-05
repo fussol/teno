@@ -190,7 +190,7 @@ fn cookie_value(headers: &axum::http::HeaderMap) -> Option<String> {
 
 // 鉴權中間件：cookie → sessions 查驗 → 通過則把 user 放進 request extensions
 pub async fn require_auth(State(st): State<AppState>, mut req: Request, next: Next) -> Response {
-    let user = cookie_value(&req.headers()).and_then(|t| {
+    let user = cookie_value(req.headers()).and_then(|t| {
         let mut sess = st.sessions.write().unwrap();
         let now_t = now();
         let u = sess.get(&t).filter(|s| s.exp > now_t).map(|s| s.user.clone());

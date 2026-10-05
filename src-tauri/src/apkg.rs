@@ -118,8 +118,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
         .map_err(|_| "不是有效的 .apkg（zip 解不開）".to_string())?;
 
     let anki2 = read_zip_entry(&mut z, "collection.anki2")
-        .ok_or_else(|| "不是有效的 .apkg（缺少 collection.anki2）".to_string())?
-        .map_err(|e| e)?;
+        .ok_or_else(|| "不是有效的 .apkg（缺少 collection.anki2）".to_string())??;
     // media JSON 不存在視為空（無媒體的合法牌組）
     let media_json: HashMap<String, String> = match read_zip_entry(&mut z, "media") {
         Some(Ok(buf)) => serde_json::from_slice(&buf).unwrap_or_default(),
@@ -145,7 +144,7 @@ pub fn inspect_apkg_bytes(data: &[u8]) -> Result<ApkgInspect, String> {
     // 因為實際欄位價值按 note 出現順序體現；同一 mid 的欄位順序按 flds 序）。
     let mut headers: Vec<String> = Vec::new();
     let mut headers_index: HashMap<String, usize> = HashMap::new();
-    let mut register = |name: &str, headers: &mut Vec<String>, idx: &mut HashMap<String, usize>| {
+    let register = |name: &str, headers: &mut Vec<String>, idx: &mut HashMap<String, usize>| {
         let name = name.to_string();
         if let std::collections::hash_map::Entry::Occupied(e) = idx.entry(name.clone()) {
             return *e.get();
@@ -406,7 +405,7 @@ pub fn clean_anki_field(html: &str) -> (String, Vec<String>) {
         let end = match html.get(i..end) {
             Some(_) => end,
             None => {
-                out.push_str(&rest);
+                out.push_str(rest);
                 break;
             }
         };
@@ -682,7 +681,7 @@ pub async fn get_apkg_media(
 /// 無 base64 crate 依賴 → 自寫 RFC4648 standard encode（+ padding）。
 fn base64_encode(data: &[u8]) -> String {
     const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
         let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);

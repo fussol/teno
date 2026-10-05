@@ -68,7 +68,7 @@ async fn open_pool(abs: &str, user_dir: &std::path::Path, db_name: &str) -> Resu
 }
 
 async fn run_migrations(pool: &SqlitePool, migs: Vec<tauri_plugin_sql::Migration>) -> Result<(), String> {
-    use sqlx::migrate::{Migration as SqlxMigration, MigrationType, Migrator};
+    use sqlx::migrate::{Migration as SqlxMigration, Migrator};
     use std::borrow::Cow;
     let list: Vec<SqlxMigration> = migs
         .into_iter()

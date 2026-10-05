@@ -465,7 +465,7 @@ async fn fetch_get(url: String) -> Result<String, String> {
         resp.into_string().map_err(|e| format!("body error: {}", e))
     });
     tokio::time::timeout(std::time::Duration::from_secs(20), handle).await
-        .map_err(|_| format!("fetch_get request timed out"))?
+        .map_err(|_| "fetch_get request timed out".to_string())?
         .map_err(|e| format!("task failed: {}", e))?
 }
 
@@ -910,6 +910,7 @@ mod zhlock_tests {
     }
 }
 
+#[cfg(test)]
 mod dictrebuild_tests {
     use super::*;
     use serde_json::json;
@@ -1101,7 +1102,7 @@ async fn lookup_cambridge(word: String, lang: Option<String>, app_handle: Ctx) -
         })).map_err(|e| e.to_string())
     });
     tokio::time::timeout(std::time::Duration::from_secs(120), handle).await
-        .map_err(|_| format!("lookup_cambridge request timed out"))?
+        .map_err(|_| "lookup_cambridge request timed out".to_string())?
         .map_err(|e| format!("task failed: {}", e))?
 }
 
@@ -1181,8 +1182,8 @@ async fn speak_text(text: String, voice: Option<String>, length_scale: Option<f6
     }
 
     let v = voice.as_deref().unwrap_or("en_US-ryan-high").to_string();
-    let ls = length_scale.unwrap_or(1.0).max(0.3).min(3.0);
-    let ns = noise_scale.unwrap_or(0.667).max(0.0).min(1.0);
+    let ls = length_scale.unwrap_or(1.0).clamp(0.3, 3.0);
+    let ns = noise_scale.unwrap_or(0.667).clamp(0.0, 1.0);
     log::info!("speak_text len={} voice={} length_scale={} noise_scale={}", text.len(), v, ls, ns);
     // B2: 用 guard 保證無論成功/失敗都釋放旗標, 避免 join 失敗後 TTS 永久卡死
     struct TtsGuard;
@@ -1534,7 +1535,7 @@ fn sql_tx_sync(path: &std::path::Path, statements: &[TxStmt]) -> Result<u64, Str
         .map_err(|e| format!("BEGIN IMMEDIATE 失敗: {e}"))?;
 
     let mut n = 0u64;
-    let mut exec = |stmt: &TxStmt| -> Result<u64, String> {
+    let exec = |stmt: &TxStmt| -> Result<u64, String> {
         let mut st = conn.prepare(&stmt.sql).map_err(|e| format!("prepare 失敗: {e}"))?;
         let vals: Vec<Box<dyn rusqlite::ToSql>> = stmt.params.iter().map(json_to_sql).collect();
         let refs: Vec<&dyn rusqlite::ToSql> = vals.iter().map(|b| b.as_ref()).collect();
@@ -1545,7 +1546,7 @@ fn sql_tx_sync(path: &std::path::Path, statements: &[TxStmt]) -> Result<u64, Str
     let mut failed: Option<String> = None;
     for (i, s) in statements.iter().enumerate() {
         match exec(s) {
-            Ok(c) => n += c as u64,
+            Ok(c) => n += c,
             Err(e) => { failed = Some(format!("第 {} 句: {}", i + 1, e)); break; }
         }
     }
@@ -1729,12 +1730,12 @@ fn optimize_fsrs(reviews: Vec<FsrsReviewEntry>) -> Result<Vec<f32>, String> {
     }
         let mut items: Vec<FSRSItem> = Vec::new();
         for (_, mut rs) in by_card {
-            rs.sort_by(|a, b| a.elapsed_days.unwrap_or(0).cmp(&b.elapsed_days.unwrap_or(0)));
+            rs.sort_by_key(|a| a.elapsed_days.unwrap_or(0));
             let mut first = true;
             let f_reviews: Vec<FSRSReview> = rs.into_iter().map(|r| {
                 let d = if first { 0 } else { r.elapsed_days.unwrap_or(0) };
                 first = false;
-                FSRSReview { rating: (r.rating + 1).min(4).max(1), delta_t: d }
+                FSRSReview { rating: (r.rating + 1).clamp(1, 4), delta_t: d }
             }).collect();
             let has_positive = f_reviews.iter().any(|r| r.delta_t > 0);
             if f_reviews.len() >= 2 && has_positive {
@@ -1873,7 +1874,7 @@ fn build_review_priority(order: &str, deck_size: usize) -> Option<fsrs::ReviewPr
         })),
         // Random: 偽隨機 (seed 固定可重現; Anki 用真隨機 rand::rng)
         "random" => Some(ReviewPriorityFn::new(move |c: &fsrs::Card| {
-            (c.id as i64).wrapping_mul(2654435761) as i32 % (deck_size.max(1) as i32)
+            c.id.wrapping_mul(2654435761) as i32 % (deck_size.max(1) as i32)
         })),
         // day (預設): scheduled_due = last_date + interval
         _ => Some(ReviewPriorityFn::new(|c: &fsrs::Card| {
@@ -2126,7 +2127,7 @@ fn simulate_fsrs(req: SimulateFsrsRequest) -> Result<SimulateFsrsResponse, Strin
             id: r.reviewed_at_ms,
             cid: word_id_hash(&r.word_id),
             usn: 0,
-            button_chosen: (r.rating + 1).min(4).max(1) as u8,
+            button_chosen: (r.rating + 1).clamp(1, 4) as u8,
             interval: 0,
             last_interval: 0,
             ease_factor: 0,
@@ -2595,7 +2596,7 @@ fn backup_db(app_handle: Ctx) -> Result<String, String> {
     // IMPORT-NODB: 機上無 teno.db（新裝／清過資料）→無檔可備，直接放行。
     // 舊碼 File::open 先炸 os error 2，連帶卡死匯入／還原／Drive 下載三條路
     // （三者皆先 backupDb 做安全網）；回 Ok("")——四處呼叫皆不讀回傳值。
-    if (!db_path.exists()) {
+    if !db_path.exists() {
         log::info!("backup_db SKIP (no teno.db to back up)");
         return Ok(String::new());
     }
@@ -2805,11 +2806,10 @@ fn delete_backup(app_handle: Ctx, filename: String) -> Result<(), String> {
     // LOG-BACKUP1: 刪主庫快照連帶刪同 ts 增量（成對不留孤兒）；刪增量本身不連帶。
     if let Some((ts, "teno")) = backup_ts_of_filename(&safe_name) {
         let pair = backups_dir.join(format!("applog-{}.patch.txt", ts));
-        if pair.exists() {
-            if std::fs::remove_file(&pair).is_ok() {
+        if pair.exists()
+            && std::fs::remove_file(&pair).is_ok() {
                 log::info!("delete_backup pair {:?}", pair);
             }
-        }
     }
     Ok(())
 }
@@ -2913,7 +2913,7 @@ async fn export_app_log_text(app_handle: Ctx) -> Result<Vec<u8>, String> {
             Ok((ts, level, "misc".to_string(), msg))
         }).map(|rows| rows.filter_map(|r| r.ok()).collect()).unwrap_or_default()
     });
-    for (ts, level, scope, msg) in rows {
+    for (ts, level, _scope, msg) in rows {
         let iso = chrono::DateTime::from_timestamp(ts / 1000, ((ts % 1000) * 1_000_000) as u32)
             .map(|d| d.format("%Y-%m-%d %H:%M:%S%.3f").to_string())
             .unwrap_or_else(|| ts.to_string());
@@ -3710,7 +3710,7 @@ pub fn run() {
                         })
                     })
                     .map(|d| rodio::OutputStream::try_from_device(&d))
-                    .unwrap_or_else(|| rodio::OutputStream::try_default())
+                    .unwrap_or_else(rodio::OutputStream::try_default)
                 };
                 if let Ok((stream, handle)) = stream_result {
                     Box::leak(Box::new(stream));

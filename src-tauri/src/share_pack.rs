@@ -11,7 +11,6 @@
 //! 匯入 Rust 解包放 temp，前端逐張 get_share_media 取 data URL（單張 10MB 守門，吃
 //! 到 word_images，跟 apkg 圖片管線同形）。
 
-use tauri::Manager;
 use crate::Ctx;
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};
@@ -84,7 +83,7 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
         bits += 6;
         if bits >= 8 {
             bits -= 8;
-            out.push((buf >> bits) as u8 & 0xFF);
+            out.push((buf >> bits) as u8);
         }
     }
     Some(out)
@@ -94,7 +93,7 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
 fn base64_encode(data: &[u8]) -> String {
     const TBL: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b = [
             chunk[0],

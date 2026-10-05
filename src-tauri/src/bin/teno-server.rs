@@ -44,7 +44,7 @@ async fn main() {
             }
             let mut pw = String::new();
             eprint!("密碼: ");
-            use std::io::{Read, Write};
+            use std::io::Write;
             let _ = std::io::stdout().flush();
             if std::io::stdin().read_line(&mut pw).is_err() {
                 eprintln!("讀密碼失敗");

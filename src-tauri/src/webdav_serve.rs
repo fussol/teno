@@ -32,21 +32,13 @@ fn default_port() -> u16 {
     8080
 }
 
+#[derive(Default)]
 struct ServerState {
     running: bool,
     port: u16,
     stop_flag: Option<std::sync::Arc<AtomicBool>>,
 }
 
-impl Default for ServerState {
-    fn default() -> Self {
-        Self {
-            running: false,
-            port: 0,
-            stop_flag: None,
-        }
-    }
-}
 
 static STATE: OnceLock<Mutex<ServerState>> = OnceLock::new();
 fn state() -> &'static Mutex<ServerState> {
@@ -263,7 +255,7 @@ fn base64_decode_str(s: &str) -> Option<String> {
         nbits += 6;
         if nbits >= 8 {
             nbits -= 8;
-            out.push((bits >> nbits) as u8 & 0xFF);
+            out.push((bits >> nbits) as u8);
             bits &= (1 << nbits) - 1;
         }
     }
@@ -1266,7 +1258,7 @@ pub async fn webdav_server_list_local(
                 .map(|e| e.file_name())
                 .filter(|n| !n.to_string_lossy().starts_with('.'))
                 .collect();
-            names.sort_by(|a, b| a.to_string_lossy().to_lowercase().cmp(&b.to_string_lossy().to_lowercase()));
+            names.sort_by_key(|a| a.to_string_lossy().to_lowercase());
             // 目錄優先：兩遍（先目錄後檔案）
             let mut dirs = Vec::new();
             let mut files = Vec::new();

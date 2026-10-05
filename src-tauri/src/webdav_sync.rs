@@ -378,7 +378,7 @@ fn read_upload_payload(app_handle: &Ctx) -> Result<Vec<u8>, String> {
 /// 最小 base64（標準字母表＋= 補齊；只吃 UTF-8 bytes，Basic Auth 夠用）
 fn base64_encode(input: &[u8]) -> String {
     const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = *chunk.get(1).unwrap_or(&0) as u32;
@@ -634,7 +634,7 @@ fn remote_user_version(db: &[u8]) -> Result<u32, String> {
 
 /// JS versionInt 同式：5.17.71 → 5_017_071（stampDbVersion 寫的就是這格式）
 fn version_int(v: &str) -> u32 {
-    let parts: Vec<&str> = v.split(|c| c == '.' || c == '-').collect();
+    let parts: Vec<&str> = v.split(['.', '-']).collect();
     let g = |i: usize| parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
     g(0) * 1_000_000 + g(1) * 1_000 + g(2)
 }
@@ -760,20 +760,17 @@ pub async fn webdav_upload(
             if local_changed && remote_changed {
                 // 先把遠端拉下來存 conflict（ validate 過才落檔），本地一字不動
                 let cf = conflict_path(&app_handle);
-                match ureq::get(&file).set("Authorization", &auth).call() {
-                    Ok(resp) => {
-                        let mut buf: Vec<u8> = Vec::new();
-                        if resp.into_reader().read_to_end(&mut buf).is_ok() {
-                            if let Ok(db_bytes) = crate::unpack_db_container(&buf) {
-                                if db_bytes.0.len() >= 100 {
-                                    let _ = std::fs::write(&cf, &buf);
-                                }
-                            } else if buf.len() >= 100 && buf.starts_with(b"SQLite format 3\0") {
+                if let Ok(resp) = ureq::get(&file).set("Authorization", &auth).call() {
+                    let mut buf: Vec<u8> = Vec::new();
+                    if resp.into_reader().read_to_end(&mut buf).is_ok() {
+                        if let Ok(db_bytes) = crate::unpack_db_container(&buf) {
+                            if db_bytes.0.len() >= 100 {
                                 let _ = std::fs::write(&cf, &buf);
                             }
+                        } else if buf.len() >= 100 && buf.starts_with(b"SQLite format 3\0") {
+                            let _ = std::fs::write(&cf, &buf);
                         }
                     }
-                    Err(_) => {}
                 }
                 return Err(format!(
                     "CONFLICT:兩邊自上次同步都各做各的（本地 {}／遠端 {}），直接上傳會吃掉一邊。遠端已先存到 {}，請二選一：看完差異後用 force 上傳蓋過去，或先下載遠端回來。",
@@ -963,7 +960,7 @@ pub async fn webdav_download(
     ))
 }
 
-/// MEDIAPEEL1 媒體同步 pure fns（PROPFIND 解析＋差集；可單測不碰網）
+// MEDIAPEEL1 媒體同步 pure fns（PROPFIND 解析＋差集；可單測不碰網）
 
 /// 從 PROPFIND XML 抽 href 檔名（只取 /media/ 下的 <40hex>.<ext>；目錄項／點檔／非法名全丟）。
 pub(crate) fn parse_media_hrefs(xml: &str) -> Vec<String> {
@@ -1218,7 +1215,7 @@ pub(crate) fn sqlite_page_size(db: &[u8]) -> usize {
         return 4096;
     }
     let v = u16::from_be_bytes([db[16], db[17]]) as usize;
-    if v == 1 { 65536 } else if v >= 512 && v <= 65536 { v } else { 4096 }
+    if v == 1 { 65536 } else if (512..=65536).contains(&v) { v } else { 4096 }
 }
 
 /// PATCHDIFF1 真收發：上傳 patch（只傳變動頁 gzip）。
@@ -1580,7 +1577,7 @@ pub async fn webdav_cloud_list(
     let url_slash = if url.ends_with('/') { url.clone() } else { format!("{}/", url) };
     // 目錄 PROPFIND 要尾 slash（server 以此判定目錄 listing）
     let target = if sub.trim().is_empty() { format!("{}/", base) } else { url_slash.clone() };
-    let mut resp = ureq::request("PROPFIND", &target)
+    let resp = ureq::request("PROPFIND", &target)
         .set("Authorization", &auth)
         .set("Depth", "1")
         .send_string("")
@@ -1595,7 +1592,7 @@ pub async fn webdav_cloud_list(
         .take(4 * 1024 * 1024)
         .read_to_string(&mut xml)
         .map_err(|e| format!("讀雲端清單失敗：{e}"))?;
-    let entries = parse_cloud_entries(&xml, &target.trim_end_matches('/').to_string());
+    let entries = parse_cloud_entries(&xml, target.trim_end_matches('/'));
     Ok(serde_json::json!({"source": "remote", "path": sub, "entries": entries}).to_string())
 }
 
@@ -1635,7 +1632,7 @@ pub async fn webdav_cloud_get(app_handle: Ctx, path: String) -> Result<String, S
     let base = normalize_base(&cfg.url)?;
     let auth = format!("Basic {}", auth_header(&cfg));
     let url = cloud_join(&base, &sub)?;
-    let mut resp = ureq::get(&url)
+    let resp = ureq::get(&url)
         .set("Authorization", &auth)
         .call()
         .map_err(|e| match e {

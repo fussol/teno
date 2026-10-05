@@ -3,13 +3,13 @@ members = ["quizlet_scraper", "cambridge_scraper"]
 
 [package]
 name = "teno"
-version = "5.19.39"
+version = "5.19.40"
 description = "Teno — English vocabulary learning app"
 authors = ["you"]
 license = "MIT"
 repository = ""
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.80.0"
 
 [lib]
 name = "teno_lib"
