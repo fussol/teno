@@ -8,6 +8,7 @@ let ready = false;
 let enabled = false;
 let retentionDays = 14;
 let queue = [];
+const MAX_QUEUE = 5000;   // H-LOGQUEUE1: 重試佇列上限（持續性錯誤防記憶體無限成長）
 let timer = null;
 let db = null;
 let resetCount = 0;   // G25: 損壞重建次數（上限防死循環；非永真布林 → 二次損壞仍能重建）
@@ -192,6 +193,9 @@ async function flush() {
   } catch (e) {
     // 失敗一律回補並重新排程, 避免批次被靜默丟棄或永久擱置
     queue.unshift(...writable);
+    // H-LOGQUEUE1: 佇列無上限——持續性錯誤（磁碟滿/唯讀/缺欄）永遠進不了 resetAndReload → 記憶體無限成長。
+    // 封頂：超過 MAX_QUEUE 丟最舊（日誌非關鍵資料，寧可截斷不可吃爆記憶體）。
+    if (queue.length > MAX_QUEUE) queue.splice(0, queue.length - MAX_QUEUE);
     console.warn('[app-log] 寫入失敗, 將重試:', e);
     // SQLite 檔案損壞（code 11 malformed): 刪檔重建, 避免每 2 秒無限重試。
     // G25: resetCount 上限 3 — 二次損壞仍能再重建（原 resetAttempted 永真→二次損壞卡死），
@@ -287,8 +291,16 @@ export async function fetchLogs({ limit = 200, offset = 0, level = null, search 
     try {
       return await run('id, ts, level, scope, message');
     } catch (_) {
-      // 舊庫尚無 scope 欄：退三欄，scope 補 misc（只影響分類顯示，不丟訊息）
-      const rows = await run('id, ts, level, message');
+      // 舊庫尚無 scope 欄：退三欄「並移除 scope 過濾」——原沿用帶 scope=? 的 suffix → 再拋錯、訊息全丟（H-LOGSCOPE1）。scope 補 misc。
+      const where2 = [];
+      const params2 = [];
+      if (level) { where2.push('level = ?'); params2.push(level); }
+      if (search) { where2.push('message LIKE ?'); params2.push(`%${search}%`); }
+      const suffix2 = where2.length ? ' WHERE ' + where2.join(' AND ') : '';
+      const rows = await d.select(
+        `SELECT id, ts, level, message FROM app_log${suffix2} ORDER BY id DESC LIMIT ? OFFSET ?`,
+        [...params2, limit, offset]
+      );
       return rows.map((r) => ({ ...r, scope: 'misc' }));
     }
   } catch (e) {
