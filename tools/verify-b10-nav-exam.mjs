@@ -100,7 +100,7 @@ function loadPage(file, exportNames, { stripB10 = false } = {}) {
     .replace(/\bexport async function/g, 'async function');
   if (stripB10) {
     const before = src;
-    src = src.replace(/^[ \t]*window\.__pageCleanup[ \t]*=[ \t]*\(\)[ \t]*=>[ \t]*saveOnLeave\(s\);.*$/gm, '');
+    src = src.replace(/^[ \t]*window\.__pageCleanup[ \t]*=.*saveOnLeave\(s\).*$/gm, '');
     if (src === before) throw new Error(`[harness] stripB10: 源碼中找不到 __pageCleanup 註冊行 — ${file}`);
   }
   const getters = exportNames.map(n => `get ${n}() { return typeof ${n} !== 'undefined' ? ${n} : undefined; }`).join(',');

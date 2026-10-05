@@ -8,18 +8,20 @@
 const TAP = 10;
 
 export function dragTrack(el, cb) {
-  if (!el) return;
-  let sx = 0, sy = 0, down = false, moved = false, downT = null;
-  el.addEventListener('pointerdown', ev => {
+  if (!el) return () => {};
+  let sx = 0, sy = 0, down = false, moved = false, downT = null, capId = null;
+  const release = () => { if (capId != null) { try { el.releasePointerCapture(capId); } catch {} capId = null; } };
+  const onDown = (ev) => {
     if (ev.button != null && ev.button > 0) return;
     if (cb.when && !cb.when(ev)) return;   // 區域外（非本頁活頁）→ 不追蹤、不擷 pointer capture
     if (cb.ignore && ev.target && ev.target.closest && ev.target.closest(cb.ignore)) return;
     down = true; moved = false; downT = ev.target;
     sx = ev.clientX; sy = ev.clientY;
     cb.onDown && cb.onDown(ev);
+    capId = ev.pointerId;
     try { el.setPointerCapture(ev.pointerId); } catch {}
-  });
-  el.addEventListener('pointermove', ev => {
+  };
+  const onMove = (ev) => {
     if (!down) return;
     const dx = ev.clientX - sx, dy = ev.clientY - sy;
     if (!moved) {
@@ -27,19 +29,34 @@ export function dragTrack(el, cb) {
       moved = true;
     }
     cb.onMove && cb.onMove(dx, dy, ev);
-  });
-  el.addEventListener('pointerup', ev => {
+  };
+  const onUp = (ev) => {
     if (!down) return;
     down = false;
+    release();   // 顯式釋放（mobile：capture 未釋放會讓後續原生捲動被常駐元素吃住）
     const dx = ev.clientX - sx, dy = ev.clientY - sy;
     if (!moved) { cb.onTap && cb.onTap(downT || ev.target, ev); return; }
     cb.onEnd && cb.onEnd(dx, dy, dirOf(dx, dy));
-  });
-  el.addEventListener('pointercancel', () => {
+  };
+  const onCancel = () => {
     if (!down) return;
     down = false;
+    release();
     cb.onCancel && cb.onCancel();
-  });
+  };
+  el.addEventListener('pointerdown', onDown);
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onCancel);
+  // 回傳清理器：離頁時移除監聽並釋放任何殘留 capture（#contentArea 為常駐節點，不清會累積）
+  return () => {
+    release();
+    down = false;
+    el.removeEventListener('pointerdown', onDown);
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onCancel);
+  };
 }
 
 export function dirOf(dx, dy) {

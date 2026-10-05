@@ -426,6 +426,7 @@ export function onMount(s) {
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）
+    disposeFlipGest();             // 離開 exam phase → 拆手勢
     document.getElementById('efToggleAll')?.addEventListener('click', () => {
       const all = e.decks.length !== s.state.decks.length;
       e.decks = all ? s.state.decks.map(d => d.id) : [];
@@ -462,7 +463,7 @@ export function onMount(s) {
   }
 
   if (e.phase === 'exam') {
-    window.__pageCleanup = () => saveOnLeave(s);   // B10: sidebar 離開時存檔+重置（renderPage 每頁切換消費後清除）
+    window.__pageCleanup = () => { saveOnLeave(s); disposeFlipGest(); };   // B10: sidebar 離開存檔+重置＋拆手勢
     // B1: bottom-nav 離開又回來時，judged+autoNext 但 timer 已被 guard 消費 → 補跳不卡死
     // B2: 補跳後 return（防外層 onMount 對新 DOM 重複綁定 → 單擊雙計）
     if (e.judged && e.settings.autoNext && !e.autoNextTimer) { nextWord(s); return; }
@@ -502,6 +503,7 @@ export function onMount(s) {
 
   if (e.phase === 'result') {
     delete window.__pageCleanup;   // B10
+    disposeFlipGest();             // 結果頁 → 拆手勢
     document.getElementById('efRetryBtn')?.addEventListener('click', () => {
       e.phase = 'config';
       renderInPlace(s);
@@ -514,12 +516,13 @@ export function onMount(s) {
 // ≥70px 鬆手判分（→/↑ 對、←/↓ 錯）→ answer* 渲染＋_throw 飛出。無按鈕、無操作提示。
 // 卺域＝整個 #contentArea（含 .page 外緣留白＝卡片以外的背景）；when 只在 efCard 於 DOM 時啟動
 // （config/result/暫離他頁＝不追蹤）。垂直拖＝捲動（#contentArea pan-y），見 lib/gesture.js。
+let _flipGestDispose = null;   // dragTrack 清理器（離場/結束拆；#contentArea 常駐，不清會累積）
 function bindFlipGest(s) {
   const zone = document.getElementById('contentArea');
   if (!zone || zone._efGestBound) return;
   zone._efGestBound = true;
   const card = () => document.getElementById('efCard');
-  dragTrack(zone, {
+  _flipGestDispose = dragTrack(zone, {
     when: () => !!card(),
     ignore: 'button, .tts-click',
     onMove(dx, dy) {
@@ -571,6 +574,13 @@ function bindFlipGest(s) {
       }
     },
   });
+}
+
+/** 拆翻卡手勢：釋放 pointer capture＋移除 #contentArea 監聽 */
+function disposeFlipGest() {
+  if (_flipGestDispose) { try { _flipGestDispose(); } catch (_) {} _flipGestDispose = null; }
+  const z = document.getElementById('contentArea');
+  if (z) z._efGestBound = false;
 }
 
 function updateStatus(s) {

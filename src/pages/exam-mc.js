@@ -452,6 +452,7 @@ export function onMount(s) {
 
   if (e.phase === 'config') {
     delete window.__pageCleanup;   // B10: config/result 無需 leave-save（exit/reset 後清除 stale 註冊）
+    disposeMcGest();               // 離開 exam phase → 拆手勢（釋放 #contentArea capture）
     document.getElementById('emToggleAll')?.addEventListener('click', () => {
       const all = e.decks.length !== s.state.decks.length;
       e.decks = all ? s.state.decks.map(d => d.id) : [];
@@ -488,7 +489,7 @@ export function onMount(s) {
   }
 
   if (e.phase === 'exam') {
-    window.__pageCleanup = () => saveOnLeave(s);   // B10: sidebar 離開時存檔+重置（renderPage 每頁切換消費後清除）
+    window.__pageCleanup = () => { saveOnLeave(s); disposeMcGest(); };   // B10: sidebar 離開時存檔+重置＋拆手勢（renderPage 每頁切換消費後清除）
     // B2: bottom-nav 離開又回來時，已答+autoNext 但 timer 已被 page guard 消費 → 補跳不卡死（恰跳 1 題）
     const w0 = e.words[e.idx];
     if (w0?._answered && e.settings.autoNext && !e.pendingNext) { nextWord(s); return; }
@@ -532,6 +533,7 @@ export function onMount(s) {
 
   if (e.phase === 'result') {
     delete window.__pageCleanup;   // B10
+    disposeMcGest();               // 結果頁 → 拆手勢
     document.getElementById('emRetryBtn')?.addEventListener('click', () => {
       e.phase = 'config';
       renderInPlace(s);
@@ -545,6 +547,7 @@ export function onMount(s) {
 // 沒手勢過的點空白＝無事（無操作提示，不加 toast）。列表不位移（螢幕放得下，不滑）。
 // 區域＝整個 #contentArea（含卡片以外的背景留白）；when 只在 emCard 於 DOM 時啟動。
 // 綁一次跨 render 存活 → lastW 換題重置 gSel，舊選擇不帶到下一題。
+let _mcGestDispose = null;   // dragTrack 清理器（離場/結束時拆；#contentArea 常駐，不清會累積）
 function bindMcGest(s) {
   const zone = document.getElementById('contentArea');
   if (!zone || zone._emGestBound) return;
@@ -559,7 +562,7 @@ function bindMcGest(s) {
     if (w !== lastW) { lastW = w; gSel = -1; setGlow(-1); }
     return w;
   };
-  dragTrack(zone, {
+  _mcGestDispose = dragTrack(zone, {
     when: () => !!document.getElementById('emCard'),
     ignore: '.study-opt, button',
     onDown() { sync(); base = gSel < 0 ? 0 : gSel; },
@@ -583,6 +586,13 @@ function bindMcGest(s) {
       if (gSel >= 0) pickOption(s, gSel);
     },
   });
+}
+
+/** 拆多選手勢：釋放 pointer capture＋移除 #contentArea 上的監聽（離場/測驗結束觸發） */
+function disposeMcGest() {
+  if (_mcGestDispose) { try { _mcGestDispose(); } catch (_) {} _mcGestDispose = null; }
+  const z = document.getElementById('contentArea');
+  if (z) z._emGestBound = false;
 }
 
 function updateStatus(s) {
