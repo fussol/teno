@@ -62,6 +62,8 @@ function variantCli(s) {
   const d2 = mkdtempSync(join(dir, 'v-')); // mkdtempSync 已建目錄
   if (!existsSync(join(dir, 'src'))) symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
   writeFileSync(join(d2, 'cli.mjs'), s);
+  try { symlinkSync(join(REPO, 'node_modules'), join(dir, 'node_modules'), 'dir'); } catch {}
+  try { symlinkSync(join(REPO, 'tools', 'db-compat.mjs'), join(d2, 'db-compat.mjs')); } catch {}
   return join(d2, 'cli.mjs');
 }
 

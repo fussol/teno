@@ -112,6 +112,8 @@ try {
     const subDir = join(dir, 'sub');
     mkdirSync(join(subDir, 'tools'), { recursive: true });
     if (!existsSync(join(subDir, 'src'))) symlinkSync(join(REPO, 'src'), join(subDir, 'src'), 'dir');
+    try { symlinkSync(join(REPO, 'node_modules'), join(subDir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(join(REPO, 'tools', 'db-compat.mjs'), join(subDir, 'tools', 'db-compat.mjs')); } catch {}
     const clone = join(subDir, 'tools', 'cli-sub.mjs');
     let buggy;
     if (fixed) {

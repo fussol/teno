@@ -120,6 +120,8 @@ try {
     const subDir = join(dir, 'sub');
     mkdirSync(join(subDir, 'tools'), { recursive: true });
     if (!existsSync(join(subDir, 'src'))) symlinkSync(join(REPO, 'src'), join(subDir, 'src'), 'dir');
+    try { symlinkSync(join(REPO, 'node_modules'), join(subDir, 'node_modules'), 'dir'); } catch {}
+    try { symlinkSync(join(REPO, 'tools', 'db-compat.mjs'), join(subDir, 'tools', 'db-compat.mjs')); } catch {}
     const clone = join(subDir, 'tools', 'cli-sub.mjs');
     let swapped;
     if (fixed) {
@@ -155,7 +157,7 @@ try {
     const helperCnt = (src.match(/const readSettingRaw/g) || []).length;
     T('T6b helper 定義恰 1', helperCnt === 1, `cnt=${helperCnt}`);
     const callCnt = (src.match(/readSettingRaw\('/g) || []).length;
-    T('T6c 呼叫點恰 9', callCnt === 9, `cnt=${callCnt}`);
+    T('T6c 呼叫點恰 10（九站 theme/tts/day＋後加 methodSources）', callCnt === 10, `cnt=${callCnt}`);
     T('T6d cmdDay null 分支存在（誠實標＋原格式雙軌）', /cur === null/.test(src) && src.includes('0:00 為日界線'));
     T('T6e 未設定顯示源恰 9 站點＋day 獨立標（?? 未設定 出現 8 次於回顯 + READ）', (src.match(/\?\? '未設定'/g) || []).length === 16, `cnt=${(src.match(/\?\? '未設定'/g) || []).length}（期望 8 站×回顯+READ 兩處=16，day 另走分支）`);
   }
