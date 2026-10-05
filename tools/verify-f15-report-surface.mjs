@@ -41,21 +41,26 @@ function scan(src) {
   };
 }
 
-// 動工後正解清單（43 - open_report = 42，逐一釘死防順手誤刪）
-// F16 演化（S-2 同步釘）：42→41，export_csv_data 死命令已由 F16 殲滅。
+// 現役全量釘（2026-10-05 對齊）：41 − drive 6（孤兒殲滅 v5.19.9）＋後續合法新增 46 = 81，
+// missing/extra 雙向掃（防順手誤刪＋防幽靈）。F16 演化史：43→42→41。
 const EXPECTED_CMDS = [
-  'log_msg','run_cli','get_app_paths','speak_text','fetch_llm','fetch_get',
-  'lookup_cambridge','list_piper_voices','scrape_quizlet','write_db_bytes',
-  'import_db_dialog','export_db_dialog','export_csv_dialog',
-  'export_db_data','export_backup_data','backup_db','prune_backups','get_db_mtime',
-  'list_backups','restore_backup','delete_backup','export_backup_dialog',
-  'import_piper_model_dialog','install_piper_model','delete_piper_model',
-  'tts_android::speak_android','tts_android::finish_app','optimize_fsrs',
-  'simulate_fsrs','tts_android::stop_android','tts_android::list_voices_android',
-  'tts_android::save_export_file','icon_android::set_launcher_icon',
-  'icon_android::get_launcher_icon','icon_android::reset_app_log',
-  'drive_sync::drive_save_creds','drive_sync::drive_oauth','drive_sync::drive_upload',
-  'drive_sync::drive_download','drive_sync::drive_status','drive_sync::drive_logout',
+  'log_msg', 'run_cli', 'get_app_paths', 'speak_text', 'fetch_llm',
+  'fetch_get', 'lookup_cambridge', 'lookup_merriam', 'list_piper_voices', 'scrape_quizlet',
+  'write_db_bytes', 'import_db_dialog', 'export_db_dialog', 'export_csv_dialog', 'export_db_data',
+  'export_db_to_downloads', 'export_db_bundle_data', 'export_bundle_dialog', 'export_app_log_text', 'import_app_log_text',
+  'export_backup_data', 'backup_db', 'prune_backups', 'get_db_mtime', 'get_app_log_mtime',
+  'list_backups', 'restore_backup', 'delete_backup', 'export_backup_dialog', 'import_piper_model_dialog',
+  'install_piper_model', 'delete_piper_model', 'tts_android::speak_android', 'tts_android::finish_app', 'optimize_fsrs',
+  'simulate_fsrs', 'tts_android::stop_android', 'tts_android::list_voices_android', 'tts_android::save_export_file', 'icon_android::set_launcher_icon',
+  'icon_android::get_launcher_icon', 'icon_android::reset_app_log', 'webdav_sync::webdav_save_config', 'webdav_sync::webdav_status', 'webdav_sync::webdav_test',
+  'webdav_sync::webdav_upload', 'webdav_sync::webdav_download', 'webdav_sync::webdav_patch_upload', 'webdav_sync::webdav_patch_download', 'webdav_sync::webdav_log_archive_status',
+  'webdav_sync::webdav_log_archive_upload', 'webdav_sync::webdav_log_archive_prune', 'webdav_sync::webdav_media_upload', 'webdav_sync::webdav_media_download', 'webdav_sync::webdav_cloud_list',
+  'webdav_sync::webdav_cloud_delete', 'webdav_sync::webdav_cloud_get', 'webdav_sync::webdav_logout', 'webdav_serve::webdav_server_get_config', 'webdav_serve::webdav_server_save_config',
+  'webdav_serve::webdav_server_start', 'webdav_serve::webdav_server_stop', 'webdav_serve::webdav_server_status', 'webdav_serve::webdav_server_list_local', 'webdav_serve::webdav_server_delete_local',
+  'apkg::inspect_apkg_dialog', 'apkg::inspect_apkg_data', 'apkg::get_apkg_media', 'share_pack::export_share_pack', 'share_pack::import_share_pack_dialog',
+  'share_pack::import_share_pack_bytes', 'share_pack::get_share_media', 'media_store::media_put', 'media_store::media_get', 'media_store::media_list',
+  'widget_android::widget_get_status', 'widget_android::widget_save_config', 'widget_android::widget_refresh', 'widget_android::widget_request_perms', 'sql_tx',
+  'zh_traditional'
 ];
 
 console.log('== T1: 現行 lib.rs 殲滅釘（動工前=RED 是預期徵狀）==');
@@ -66,10 +71,10 @@ T('T1b WebviewWindowBuilder 零（lib.rs 唯一構造者已殲）', s1.builderHi
 T('T1c WebviewUrl 零', s1.urlHits === 0, `hits=${s1.urlHits}`);
 T('T1d file:// 零', s1.fileProtoHits === 0, `hits=${s1.fileProtoHits}`);
 T('T1e generate_handler 無 open_report', !s1.cmds.includes('open_report'));
-T('T1f 命令計數 41（F15 42-1=F16 export_csv_data 同殲）', s1.cmds.length === 41, `got=${s1.cmds.length}`);
+T('T1f 命令計數 81（2026-10-05 全量現役對齊）', s1.cmds.length === 81, `got=${s1.cmds.length}`);
 const missing = EXPECTED_CMDS.filter(c => !s1.cmds.includes(c));
 const extra = s1.cmds.filter(c => !EXPECTED_CMDS.includes(c));
-T('T1g 其餘 41 命令逐一在位（防順手誤刪）', missing.length === 0, `missing=${missing.join(',')}`);
+T('T1g 其餘 81 命令逐一在位（防順手誤刪）', missing.length === 0, `missing=${missing.join(',')}`);
 T('T1h 幽靈命令零（清單無 Expected 之外的 token）', extra.length === 0, `extra=${extra.join(',')}`);
 
 console.log('== T2: 負控制——舊 blob 餵同一掃描器，徵狀必須全響（腳本有牙）==');
@@ -82,7 +87,7 @@ if (old) {
   T('T2a 舊態 open_report 在位（定義+註冊 ≥2 hits）', s2.openReportHits >= 2, `hits=${s2.openReportHits}`);
   T('T2b 舊態 builder/External 在位', s2.builderHits >= 1 && s2.urlHits >= 1 && s2.fileProtoHits >= 1);
   T('T2c 舊態 handler 含 open_report 且計數 43', s2.cmds.includes('open_report') && s2.cmds.length === 43, `n=${s2.cmds.length}`);
-  T('T2d 判別性：新態歸零＋計數嚴格少於舊態（同掃描器非两套牙）', s1.openReportHits < s2.openReportHits && s1.cmds.length < s2.cmds.length, `new=${s1.openReportHits}/${s1.cmds.length} old=${s2.openReportHits}/${s2.cmds.length}`);
+  T('T2d 判別性：新態歸零＋計數≠舊態（81 vs 43；同掃描器非两套牙，方向不比—合法新增使新態更多）', s1.openReportHits < s2.openReportHits && s1.cmds.length !== s2.cmds.length, `new=${s1.openReportHits}/${s1.cmds.length} old=${s2.openReportHits}/${s2.cmds.length}`);
 }
 
 console.log('== T3: 消費者恆常釘（src/ 對 open_report 的 invoke 必須永遠=0）==');
@@ -154,7 +159,7 @@ for (const f of CLI_FILES) {
 }
 
 // T5 負控制：固定 pin 本顆動工前 HEAD（commit 後 HEAD 前進會使 HEAD: 指向修復版而自毀）
-const F15SR1_OLD_PIN = 'a53a13c';
+const F15SR1_OLD_PIN = 'f4771ae'; // 原 a53a13c 不在本 clone（修檢版 squash 重根）；f4771ae=同病徵態（裸CDN×2、零helper）且 refs 可達
 const oldCli = execFileSync('git', ['show', `${F15SR1_OLD_PIN}:tools/cli.mjs`], { maxBuffer: 32 * 1024 * 1024 }).toString();
 const sOld = scanCli(oldCli);
 T('T5-G 負控制：固定 pin 舊blob 裸 CDN 在位（≥2）+ 零 helper（同牙判別）', sOld.bareCdn >= 2 && !sOld.hasHelper, `bare=${sOld.bareCdn} helper=${sOld.hasHelper}`);

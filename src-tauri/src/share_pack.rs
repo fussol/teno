@@ -11,6 +11,7 @@
 //! 匯入 Rust 解包放 temp，前端逐張 get_share_media 取 data URL（單張 10MB 守門，吃
 //! 到 word_images，跟 apkg 圖片管線同形）。
 
+use tauri::Manager;
 use crate::Ctx;
 use std::collections::HashMap;
 use std::io::{Read as _, Write as _};

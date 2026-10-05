@@ -20,7 +20,7 @@ SKIP tools/verify-f10-piper-import.mjs # [B] git 歷史缺物件（show 舊 comm
 SKIP tools/verify-f13-url-encode.mjs # [C] 外網反爬（cambridge.org 403 Cloudflare）
 SKIP tools/verify-f6-manifest.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
 SKIP tools/verify-o3-api29.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
-FAIL  T1 ./svg 旁支 import 零命中（312 檔掃）  [/home/jupiter/teno 修檢版/src/lib/custom-select.js,/home/jupiter/teno 修檢版/src/lib/sharepack.js,/home/jupiter/teno 修檢版/src/lib/word-image.js]
+FAIL  T1 ./svg 旁支 import 零命中（313 檔掃）  [/home/jupiter/teno 修檢版/src/lib/custom-select.js,/home/jupiter/teno 修檢版/src/lib/sharepack.js,/home/jupiter/teno 修檢版/src/lib/word-image.js]
 FAIL C 登記到頂 v14 — 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 FAIL D 新版開機 no-op — 未知登記 [15] VersionMissing
 FAIL D13 drive upload 加 audit
@@ -89,8 +89,6 @@ FAIL tools/verify-e6-study-log.mjs
 FAIL tools/verify-e7-mode-cards.mjs
 FAIL tools/verify-e8-selftest.mjs
 FAIL tools/verify-e9-rate-date.mjs
-FAIL tools/verify-f15-report-surface.mjs
-FAIL tools/verify-f16-csv-data.mjs
 FAIL tools/verify-f9-piper-url.mjs
 FAIL tools/verify-g-tool1-pos.mjs
 FAIL tools/verify-g10-card-body-click.mjs

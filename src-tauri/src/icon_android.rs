@@ -1,6 +1,8 @@
+#![cfg_attr(not(target_os = "android"), allow(unused_imports, unused_variables, dead_code))]
 use crate::Ctx;
 use tauri::{
-    plugin::{self, PluginApi},
+    Manager,
+    plugin::{self},
 };
 
 #[cfg(target_os = "android")]

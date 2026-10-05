@@ -37,24 +37,28 @@ function scan(src) {
   };
 }
 
-// 動工後正解清單（42 - export_csv_data + 4 合法新增 = 45）
-// 新增（各有自家 commit＋驗證，非幽靈）：
+// 現役全量釘（2026-10-05 對齊）：45 − drive 6（孤兒殲滅 v5.19.9）＋新增 42 = 81。
+// 原 4 合法新增（各有自家 commit＋驗證，非幽靈）：
 //   lookup_merriam（LOG-MW v5.14.0）、export_db_bundle_data＋export_bundle_dialog
 //   （TENOC 捆包 v5.14.0）、export_app_log_text（v5.14.0）
 const EXPECTED_CMDS = [
-  'log_msg','run_cli','get_app_paths','speak_text','fetch_llm','fetch_get',
-  'lookup_cambridge','lookup_merriam','list_piper_voices','scrape_quizlet','write_db_bytes',
-  'import_db_dialog','export_db_dialog','export_csv_dialog',
-  'export_db_data','export_db_bundle_data','export_bundle_dialog','export_app_log_text',
-  'export_backup_data','backup_db','prune_backups','get_db_mtime',
-  'list_backups','restore_backup','delete_backup','export_backup_dialog',
-  'import_piper_model_dialog','install_piper_model','delete_piper_model',
-  'tts_android::speak_android','tts_android::finish_app','optimize_fsrs',
-  'simulate_fsrs','tts_android::stop_android','tts_android::list_voices_android',
-  'tts_android::save_export_file','icon_android::set_launcher_icon',
-  'icon_android::get_launcher_icon','icon_android::reset_app_log',
-  'drive_sync::drive_save_creds','drive_sync::drive_oauth','drive_sync::drive_upload',
-  'drive_sync::drive_download','drive_sync::drive_status','drive_sync::drive_logout',
+  'log_msg', 'run_cli', 'get_app_paths', 'speak_text', 'fetch_llm',
+  'fetch_get', 'lookup_cambridge', 'lookup_merriam', 'list_piper_voices', 'scrape_quizlet',
+  'write_db_bytes', 'import_db_dialog', 'export_db_dialog', 'export_csv_dialog', 'export_db_data',
+  'export_db_to_downloads', 'export_db_bundle_data', 'export_bundle_dialog', 'export_app_log_text', 'import_app_log_text',
+  'export_backup_data', 'backup_db', 'prune_backups', 'get_db_mtime', 'get_app_log_mtime',
+  'list_backups', 'restore_backup', 'delete_backup', 'export_backup_dialog', 'import_piper_model_dialog',
+  'install_piper_model', 'delete_piper_model', 'tts_android::speak_android', 'tts_android::finish_app', 'optimize_fsrs',
+  'simulate_fsrs', 'tts_android::stop_android', 'tts_android::list_voices_android', 'tts_android::save_export_file', 'icon_android::set_launcher_icon',
+  'icon_android::get_launcher_icon', 'icon_android::reset_app_log', 'webdav_sync::webdav_save_config', 'webdav_sync::webdav_status', 'webdav_sync::webdav_test',
+  'webdav_sync::webdav_upload', 'webdav_sync::webdav_download', 'webdav_sync::webdav_patch_upload', 'webdav_sync::webdav_patch_download', 'webdav_sync::webdav_log_archive_status',
+  'webdav_sync::webdav_log_archive_upload', 'webdav_sync::webdav_log_archive_prune', 'webdav_sync::webdav_media_upload', 'webdav_sync::webdav_media_download', 'webdav_sync::webdav_cloud_list',
+  'webdav_sync::webdav_cloud_delete', 'webdav_sync::webdav_cloud_get', 'webdav_sync::webdav_logout', 'webdav_serve::webdav_server_get_config', 'webdav_serve::webdav_server_save_config',
+  'webdav_serve::webdav_server_start', 'webdav_serve::webdav_server_stop', 'webdav_serve::webdav_server_status', 'webdav_serve::webdav_server_list_local', 'webdav_serve::webdav_server_delete_local',
+  'apkg::inspect_apkg_dialog', 'apkg::inspect_apkg_data', 'apkg::get_apkg_media', 'share_pack::export_share_pack', 'share_pack::import_share_pack_dialog',
+  'share_pack::import_share_pack_bytes', 'share_pack::get_share_media', 'media_store::media_put', 'media_store::media_get', 'media_store::media_list',
+  'widget_android::widget_get_status', 'widget_android::widget_save_config', 'widget_android::widget_refresh', 'widget_android::widget_request_perms', 'sql_tx',
+  'zh_traditional'
 ];
 
 console.log('== T1: 現行 lib.rs 殲滅釘（動工前=RED 是預期徵狀）==');
@@ -63,10 +67,10 @@ const s1 = scan(cur);
 T('T1a \\bexport_csv_data\\b 全檔零（含註解；詞邊界天然放行近似名 dialog）', s1.hits === 0, `hits=${s1.hits}`);
 T('T1b 近似名活命令 export_csv_dialog 未誤傷（註冊＋fn ≥2 在位）', s1.dialogHits >= 2, `dialog=${s1.dialogHits}`);
 T('T1c generate_handler 無 export_csv_data', !s1.cmds.includes('export_csv_data'));
-T('T1d 命令計數 45（42-1+4 合法新增）', s1.cmds.length === 45, `got=${s1.cmds.length}`);
+T('T1d 命令計數 81（2026-10-05 全量現役對齊）', s1.cmds.length === 81, `got=${s1.cmds.length}`);
 const missing = EXPECTED_CMDS.filter(c => !s1.cmds.includes(c));
 const extra = s1.cmds.filter(c => !EXPECTED_CMDS.includes(c));
-T('T1e 其餘 45 命令逐一在位', missing.length === 0, `missing=${missing.join(',')}`);
+T('T1e 其餘 81 命令逐一在位', missing.length === 0, `missing=${missing.join(',')}`);
 T('T1f 幽靈命令零', extra.length === 0, `extra=${extra.join(',')}`);
 
 console.log('== T2: 負控制——F15 後舊 blob 同掃描器徵狀全響 ==');

@@ -4,7 +4,8 @@
 // 全部 command 簽名統一寫 `app_handle: Ctx`（預設 Ctx<Wry>），函數體 `app_handle.path().xxx()` 不變。
 use tauri::Manager;
 
-#[derive(Clone)]
+// 無 derive(Clone)：derive 會加 R: Clone 界，android 的 Wry 不滿足 → E0599×4（host 碰巧過、aarch64 掛）。
+// 手工實作無界：AppHandle<R> 恆為 Clone，Web 三欄 PathBuf。
 pub enum Ctx<R: tauri::Runtime = tauri::Wry> {
     Desktop(tauri::AppHandle<R>),
     Web {
@@ -12,6 +13,15 @@ pub enum Ctx<R: tauri::Runtime = tauri::Wry> {
         log: std::path::PathBuf,
         cache: std::path::PathBuf,
     },
+}
+
+impl<R: tauri::Runtime> Clone for Ctx<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Ctx::Desktop(h) => Ctx::Desktop(h.clone()),
+            Ctx::Web { config, log, cache } => Ctx::Web { config: config.clone(), log: log.clone(), cache: cache.clone() },
+        }
+    }
 }
 
 impl Ctx<tauri::Wry> {

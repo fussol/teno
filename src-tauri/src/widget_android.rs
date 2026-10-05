@@ -4,7 +4,7 @@ use crate::Ctx;
 
 use tauri::{
     Manager,
-    plugin::{self, PluginApi},
+    plugin::{self},
 };
 
 #[cfg(target_os = "android")]
