@@ -727,7 +727,8 @@ function futureDue(cards, days = 30, timezoneOffset = null, dayCutoff = 0) {
     const dueDate = new Date(c.due);
     const dueStr = timezoneOffset != null ? toLocalDateStr(dueDate, timezoneOffset, dayCutoff) : localDateStr(dueDate);
     if (dueStr < today) continue;
-    const diff = Math.floor((dueDate - Date.now()) / 86400000);
+    // A-DASH2: 分桶也必須日粒度（與上面 dueStr 過濾同口徑）；原用毫秒 diff 會把「今日已到期」丟成負、明日算成 D0
+    const diff = Math.round((Date.parse(dueStr + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
     if (diff >= 0 && diff < days) result[diff]++;
   }
   return result;
