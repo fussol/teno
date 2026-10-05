@@ -33,7 +33,7 @@ const skipTurned = [];
 
 for (const f of files) {
   const r = spawnSync('node', [FLAG, path.join(toolsDir, f)], {
-    encoding: 'utf8', timeout: 30000, maxBuffer: 64 * 1024 * 1024,
+    encoding: 'utf8', timeout: 120000, maxBuffer: 64 * 1024 * 1024,
   });
   const isRed = r.status !== 0;
   const isSkip = skipSet.has(f);

@@ -1546,7 +1546,25 @@ fn cloud_join(base: &str, sub: &str) -> Result<String, String> {
     if sub.contains("..") || sub.starts_with('.') || sub.contains("/.history") {
         return Err("不合法的路徑".into());
     }
-    Ok(format!("{}/{}", base, sub))
+    // 逐段 percent-encode（保留 '/' 分隔）：非 ASCII/空白/特殊字元才編碼；
+    // server 回傳的檔名走 percent-decode，請求端必須對稱編碼，否則中文路徑 404。
+    Ok(format!("{}/{}", base, percent_encode_path(sub)))
+}
+
+/// RFC3986 unreserved 以外逐 byte `%XX`（UTF-8 byte 級）；`/` 由呼叫端切段保留。
+fn percent_encode_segment(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+fn percent_encode_path(sub: &str) -> String {
+    sub.split('/').map(percent_encode_segment).collect::<Vec<_>>().join("/")
 }
 
 #[tauri::command]
@@ -1896,6 +1914,13 @@ mod tests {
         assert!(cloud_join("http://x:8080", "../etc").is_err());
         assert!(cloud_join("http://x:8080", ".hidden").is_err());
         assert_eq!(cloud_join("http://x:8080", "logs/").unwrap(), "http://x:8080/logs/");
+        // percent-encode：非 ASCII/空白逐 byte 編碼、'/' 保留、unreserved 原樣
+        assert_eq!(
+            cloud_join("http://x:8080", "logs/中文 檔.db").unwrap(),
+            "http://x:8080/logs/%E4%B8%AD%E6%96%87%20%E6%AA%94.db"
+        );
+        assert_eq!(cloud_join("http://x:8080", "a b/c").unwrap(), "http://x:8080/a%20b/c");
+        assert_eq!(percent_encode_segment("a~b-c_d.e"), "a~b-c_d.e");
     }
 
     #[test]
