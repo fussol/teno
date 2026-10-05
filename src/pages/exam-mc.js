@@ -440,7 +440,7 @@ async function applyTags(s) {
 }
 
 export function onMount(s) {
-  document.querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
 
   // IMG1: 多選測驗答題後（_answered）顯示完整卡含圖
