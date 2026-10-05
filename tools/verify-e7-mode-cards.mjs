@@ -115,7 +115,15 @@ try {
   // ── T2: mc 進度接續（mode 卡為起點，非 base）──
   console.log('T2 mc 第二次 study 以 mode 卡為狀態源');
   // T1 Again → learning step0（due=+60s，study :3415 60s 下限）；等過期再續
-  spawnSync('sleep', ['61']);
+  // 取代真等 61s（run-all 每顆 30s 上限）：把 mode 卡 mc_data.due 撥到過去＝等價時間流過
+  {
+    const u = new DatabaseSync(db1);
+    const row = u.prepare("SELECT mc_data FROM cards WHERE word_id='wm'").get();
+    const mc = row?.mc_data ? JSON.parse(row.mc_data) : {};
+    mc.due = new Date(Date.now() - 60000).toISOString();
+    u.prepare("UPDATE cards SET mc_data=? WHERE word_id='wm'").run(JSON.stringify(mc));
+    u.close();
+  }
   const out2 = study(db1, 'mc', 5, ['g', 'q']);
   T('T2 第二次 mc study 完成 1 張（mode 卡 due=learning 分鐘級→稍後已到期）', /完成 1 張/.test(out2), out2.split('\n').filter(l => /完成|沒有/.test(l)).join(' '));
   const m2raw = q1(db1, 'SELECT mc_data d FROM cards WHERE word_id=?', 'wm').d;
