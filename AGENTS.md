@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## 回歸測試協定（P2 起唯一定義，勿用人肉記憶）
-- 全量：`node tools/run-all.mjs`（repo 根目錄）＝ 215 顆 verify-*.mjs 帶 `--experimental-test-module-mocks` 跑，與 `tools/harness-baseline.txt` diff；**出線（基線外新紅）→ exit 1 = 回歸**。
+- 全量：`node tools/run-all.mjs`（repo 根目錄）＝ 214 顆 verify-*.mjs 帶 `--experimental-test-module-mocks` 跑，與 `tools/harness-baseline.txt` diff；**出線（基線外新紅）→ exit 1 = 回歸**。每顆逾時 120s（f15/f16 內跑 cargo，冷編會超過 30s）。
 - 既有紅 0 顆（A–G 類全清，2026-10-05 F 類最後 28 顆收斂後）；基線現只剩 `SKIP tools/<檔>` 5 顆＝環境隔離（B git 缺物件: f6/f10/o3-api29/e16；C 外網: f13），照跑報 ↷ 不算紅——修掉就刪該 SKIP 行。新紅出線＝回歸，修掉紅顆就 `--update` 收斂並審 diff。
 - 單顆：`node --experimental-test-module-mocks tools/verify-<名>.mjs`（不帶旗標會誤報，30 顆用 mock.module）。
 - 例行 gates：`node tools/bank.mjs validate` → `npm run build` → `node tools/verify-plugin-seam.mjs`；動 Rust 加 `cargo test`（125+4；2026-10-04 刪 drive_sync 孤兒 -9 顆）。

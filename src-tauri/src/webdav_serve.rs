@@ -6,6 +6,8 @@
 //! - 設定存 app_config_dir/webdav_server.json（0600；port/user/pass/autostart），預設關（autostart=false）
 //! - Android：命令直接回「桌機限定」，不跑 listener
 
+#![cfg_attr(target_os = "android", allow(dead_code, unused_variables, unused_imports))]
+
 use crate::Ctx;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
