@@ -1,7 +1,7 @@
 // settings/sections.js — renderSettingsContent 模板主體（P4 Step1 自 settings.js 純搬移）
 // 相依：原源 13 件 + settings.js 私有 7 件（循環 import：本檔只讀不寫，函式體執行期才取值）
 import { icon } from '../../lib/svg.js';
-import pkg from '../../../package.json';
+import pkg from '../../../package.json' with { type: 'json' };
 import { ACCENTS, ACCENT_GROUPS } from '../../lib/theme.js';
 import { isAndroid, isWeb } from '../../lib/platform.js';
 import { renderContent as renderImportContent } from '../import.js';
