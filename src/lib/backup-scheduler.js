@@ -114,6 +114,7 @@ async function syncTick(mtime) {
       try { msg = await webdavPatchUpload(); }
       catch (_) { msg = await webdavUpload(); }
       await setSetting('webdavLastSyncMtime', String(mtime));   // 成功才推進
+      _lastSyncMtime = mtime;   // H-SYNCMTIME1: 同步回記憶體，否則 due 恆真、每 tick 重上傳
       await setSetting('webdavLastSyncAt', String(Date.now()));
       await setSetting('webdavLastSyncErr', '');
     }
