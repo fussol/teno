@@ -24,7 +24,7 @@ ok('無全域 .section.collapsed 裸規則（他頁免疫）',
 
 console.log('== T2 JS：綁定邏輯 ==');
 ok('bindCollapsibleSections 定義', js.includes('function bindCollapsibleSections()'));
-ok('onMount 首行呼叫', /export function onMount\(s\) \{\n  bindCollapsibleSections\(\);/.test(js));
+ok('_mount 首行呼叫 bindCollapsibleSections', /function _mount\(s\) \{\n  bindCollapsibleSections\(\);/.test(js));
 ok('localStorage 記憶（key＋讀寫）', js.includes("const COLLAPSE_KEY = 'teno-settings-collapsed'")
   && js.includes('_loadCollapsedSet') && js.includes('_saveCollapsedSet'));
 ok('首次預設全收（只留標題）', js.includes('firstRun') && /firstRun \? true/.test(js));

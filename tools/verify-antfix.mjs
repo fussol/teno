@@ -43,7 +43,7 @@ ok('詞性膠囊維持 nowrap（短標籤不散）',
   /\.split-badge-pos\{[^}]*\} walks/.test(css + ' walks') || !/\.split-badge-pos\{[^}]*white-space:normal/.test(css));
 
 console.log('== T4 前端相容（加欄位零破壞） ==');
-for (const p of ['src/pages/deck-browser.js', 'src/pages/browser.js', 'src/lib/autofill-engine.js', 'src/pages/tools.js']) {
+for (const p of ['src/lib/autofill-engine.js', 'src/pages/tools.js', 'src/lib/store.js']) {
   const src = readFileSync(`${R}/${p}`, 'utf8');
   ok(`${p} 走訪 senses 泛型（不依賴欄位數）`, src.includes('.senses'));
 }
