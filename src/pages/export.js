@@ -63,7 +63,7 @@ export function render(s) {
     <div class="section">
       <div class="section-title">${icon('filter')} 範圍</div>
       <div class="config-section">
-        ${renderContent(s)}
+        ${content}
       </div>
     </div>
     <div class="section">
