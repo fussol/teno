@@ -880,6 +880,83 @@ function _mount(s) {
     });
   }
 
+  // G-SPELLBTN1 / G-APPLYONE1: COMBO1(e4b7d05) 誤刪實作卻留下按鈕 onclick 與結果渲染 → 補回。
+  window.__spellCheckLLM = async () => {
+    const llm = await detectModel('spellResult');
+    if (!llm) return;
+    const { baseUrl, model } = llm;
+
+    const words = s.state.words;
+    const unique = [...new Set(words.map(w => w.word.toLowerCase().trim()).filter(Boolean))];
+
+    const sc = document.getElementById('spellResult');
+    if (sc) { sc.style.display = 'block'; sc.innerHTML = `<div>載入字典...</div>`; }
+
+    let dict;
+    try {
+      const mod = await import('../lib/dictionary.js');
+      dict = await mod.loadDictionary();
+      if (sc) sc.innerHTML = `<div>字典已載入 (${dict.size} 詞)，過濾中...</div>`;
+    } catch (e) {
+      if (sc) sc.innerHTML = `<div style="color:var(--orange)">${icon('info')} 字典載入失敗: ${e.message}</div>`;
+      toast('字典載入失敗，跳過字典檢查', 'toast-error');
+    }
+    const unknown = [];
+    for (const w of unique) {
+      if (w.length <= 1) continue;
+      if (!dict || !dict.has(w)) unknown.push(w);
+    }
+    const skipped = unique.length - unknown.length;
+    const taskId = 'spellcheck-' + Date.now();
+    s.actions.startBackgroundTask(taskId, `LLM 拼字檢查 (字典過濾 ${skipped} 詞)`, unknown.length);
+    const corrections = {};
+    let checked = 0;
+    const CON = 3;
+    const batchSize = 50;
+    const batches = [];
+    for (let i = 0; i < unknown.length; i += batchSize) batches.push(unknown.slice(i, i + batchSize));
+    await Promise.all(Array.from({ length: Math.min(CON, batches.length) }, async () => {
+      while (batches.length > 0) {
+        const batch = batches.shift();
+        try {
+          const prompt = `You are a spell checker. Only flag words that are ACTUALLY MISSPELLED (typos, wrong letters, missing letters). Rules: (1) DO NOT flag British/American spelling variants (e.g. favour/favor, fulfil/fulfill, anaesthetic/anesthetic, offence/offense, honour/honor, paralyse/paralyze, practise/practice). (2) DO NOT suggest different tenses or plural forms (e.g. choke→choking, stare→stares, theory→theories, trauma→traumas). (3) DO NOT suggest synonyms or rephrase expressions, only fix actual typos. (4) Multiple-word expressions (phrases, collocations) should only be flagged if they contain a real typo. (5) Return ONLY a JSON object where keys are misspelled words and values are corrections. Skip everything that is correctly spelled. List: ${JSON.stringify(batch)}`;
+          const text = await fetchLLM(`${baseUrl}/api/generate`, model, prompt);
+          const cleaned = text.replace(/```json|```/g, '').trim();
+          const result = JSON.parse(cleaned);
+          if (typeof result === 'object' && !Array.isArray(result)) Object.assign(corrections, result);
+        } catch (e) {}
+        checked += batch.length;
+        s.actions.updateBackgroundTask(taskId, checked, unknown.length);
+      }
+    }));
+
+    const entries = Object.entries(corrections).filter(([k, v]) => k.toLowerCase() !== v.toLowerCase());
+    const spellResultData = { type: 'spellcheck', entries: entries.map(([w, r]) => ({ wrong: w, right: r, count: words.filter(x => x.word.toLowerCase().trim() === w).length })) };
+    s.actions.completeBackgroundTask(taskId, spellResultData);
+    const container = document.getElementById('spellResult');
+    if (!container) return;
+    container.style.display = 'block';
+
+    if (!entries.length) {
+      container.innerHTML = `<div style="color:var(--green)">${icon('check')} 所有單字拼字正確！</div>`;
+      return;
+    }
+    container.innerHTML = renderSpellResult(spellResultData);
+    container.querySelectorAll('.spell-apply').forEach(btn => btn.addEventListener('click', () => __applyOne(btn.dataset.wrong, btn.dataset.right, btn)));
+    document.getElementById('spellApplyAll')?.addEventListener('click', () => container.querySelectorAll('.spell-apply').forEach(b => b.click()));
+  };
+
+  function __applyOne(wrong, right, btn) {
+    const matches = s.state.words.filter(w => w.word.toLowerCase().trim() === wrong.toLowerCase().trim());
+    if (!matches.length) { toast(`找不到 ${wrong}`, ''); return; }
+    Promise.all(matches.map(w => s.actions.editWord(w.id, { word: right })))
+      .then(() => {
+        btn.closest('div')?.remove();
+        toast(`已修正 ${matches.length} 筆: ${wrong} → ${right}`, 'toast-success');
+      })
+      .catch(() => toast('套用失敗', ''));
+  }
+
   // ─── Duplicate Finder ─────────────────────────
   window.__findIssues = () => {
     const words = s.state.words;
