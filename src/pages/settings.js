@@ -13,7 +13,7 @@ import { initCustomSelects } from '../lib/custom-select.js';   // G14: renderInP
 import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
-import { isAndroid, isWeb, downloadBlob, downloadBlobFromArray, pickFile } from '../lib/platform.js';
+import { isAndroid, isWeb, isTauri, downloadBlob, downloadBlobFromArray, pickFile } from '../lib/platform.js';
 import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, writeDbBytes, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavStatus, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal, widgetGetStatus, widgetSaveConfig, widgetRefresh, widgetRequestPerms } from '../lib/api.js';
 import { renderContent as renderImportContent, onMount as onMountImport } from './import.js';
 import { renderContent as renderExportContent, onMount as onMountExport } from './export.js';
@@ -130,9 +130,9 @@ function _mount(s) {
       group.innerHTML = `<span style="color:var(--text-secondary);font-size:13px">${isAndroid || isWeb ? '無可用語音' : '無可用語音，請匯入模型'}</span>`;
       return;
     }
-    // Android voices are objects { name, language }, Piper voices are strings
+    // Android voices are objects { name, language }, Piper/Web voices are strings
     let voiceNames;
-    if (isAndroid) {
+    if (isAndroid && isTauri) {
       const en = voices.filter(v => /^en[-_]us|^en[-_]gb/i.test(v.language));
       voiceNames = (en.length ? en : voices).map(v => v.name);
     } else {
@@ -141,7 +141,7 @@ function _mount(s) {
     let current = s.state.ttsVoice;
     if (!voiceNames.includes(current)) { current = voiceNames[0]; s.actions.setTtsVoice(current); }
     group.innerHTML = voiceNames.map(v => {
-      const label = isAndroid
+      const label = (isAndroid && isTauri)
         ? v.replace(/^[a-z]{2}-[a-z]{2}-x-/, '').replace(/-/g, ' ')  // prettify Google voice names
         : v.replace(/_/g, ' ');
       return `<span class="voice-chip${v === current ? ' active' : ''}" data-voice="${v}" style="cursor:pointer;padding:2px 10px;border-radius:var(--r-md);font-size:13px;background:var(--bg-elevated);border:1px solid var(--border);transition:background-color .15s,border-color .15s,color .15s">${label}</span>`;
@@ -177,16 +177,17 @@ function _mount(s) {
     }
   });
 
-  if (isAndroid) {
-    listAndroidVoices().then(voices => { if (voices && voices.length) updateVoices(voices); }).catch(() => {});
-  } else if (isWeb) {
-    // 網站版語音清單 = 瀏覽器 speechSynthesis（voices 常需等載入事件）
+  if (isWeb) {
+    // 網站版語音清單 = 瀏覽器 speechSynthesis（voices 常需等載入事件）。
+    // 必須放在 Android 之前：手機瀏覽器 UA 亦含 Android，否則誤走 Android 原生清單。
     const fillWebVoices = () => {
       const vs = (typeof speechSynthesis !== 'undefined' ? speechSynthesis.getVoices() : []) || [];
       updateVoices(vs.map(v => v.name));
     };
     fillWebVoices();
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.addEventListener?.('voiceschanged', fillWebVoices);
+  } else if (isAndroid && isTauri) {
+    listAndroidVoices().then(voices => { if (voices && voices.length) updateVoices(voices); }).catch(() => {});
   } else {
     listPiperVoices().then(voices => { if (voices && voices.length) updateVoices(voices); }).catch(() => {});
   }
@@ -508,7 +509,7 @@ function _mount(s) {
 
   // ─── WIDGET1：桌面 Widget／提醒通知（Android；設定即存→Kotlin 重武裝鬧鐘）───
   (function bindWidget() {
-    if (!isAndroid) return;
+    if (!(isAndroid && isTauri)) return;   // Widget/通知＝Android App 專屬（瀏覽器版/桌機不顯示）
     const rot = document.getElementById('widgetRotate');
     if (!rot) return;
     const nOn = document.getElementById('widgetNotifyOn');

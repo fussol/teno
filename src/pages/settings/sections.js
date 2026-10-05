@@ -3,7 +3,7 @@
 import { icon } from '../../lib/svg.js';
 import pkg from '../../../package.json' with { type: 'json' };
 import { ACCENTS, ACCENT_GROUPS } from '../../lib/theme.js';
-import { isAndroid, isWeb } from '../../lib/platform.js';
+import { isAndroid, isWeb, isTauri } from '../../lib/platform.js';
 import { renderContent as renderImportContent } from '../import.js';
 import { renderContent as renderExportContent } from '../export.js';
 import { renderContent as renderTagContent } from '../tag-manager.js';
@@ -77,7 +77,7 @@ export function renderSettingsContent(s) {
             <span class="tnum" id="accentIntensityLabel" style="font-size:12px;min-width:4ch;flex-shrink:0;color:var(--text-tertiary)">${Math.round(s.state.themeAccentIntensity * 100)}%</span>
           </div>
         </div>
-        ${isWeb ? '' : `
+        ${isAndroid && isTauri ? `
         <div class="config-field config-field-stack">
           <div class="config-field-info">
             <div class="config-field-label">${icon('appWindow')} App 圖示</div>
@@ -92,7 +92,7 @@ export function renderSettingsContent(s) {
             `).join('')}
           </div>
         </div>
-        `}
+        ` : ''}
       </div>
     </div>
 
@@ -484,8 +484,8 @@ export function renderSettingsContent(s) {
       </div>
     </div>
 
-    <!-- 桌面 Widget（Android 原生 AppWidget；桌面不顯示） -->
-    ${isAndroid ? `
+    <!-- 桌面 Widget／提醒通知（Android 原生 AppWidget；僅 Android App，瀏覽器版與桌機不顯示） -->
+    ${isAndroid && isTauri ? `
     <div class="section">
       <div class="section-title">${icon('home')} 桌面 Widget</div>
       <div class="config-section">

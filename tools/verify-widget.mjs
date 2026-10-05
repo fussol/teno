@@ -205,7 +205,7 @@ for (const id of ['widgetRotate', 'widgetNotifyOn', 'widgetNotifyInterval',
   ok(st.includes(`id="${id}"`), `settings #${id}`);
 ok(!st.includes('id="widgetNotifyTime"') && !st.includes('id="widgetMode"'), '固定時刻／模式切換 UI 已移除');
 ok(st.includes('widgetSaveConfig(collect())'), 'settings 變更即存');
-ok(st.includes('isAndroid') && /isAndroid \? `[\s\S]*?桌面 Widget/.test(st), '區塊僅 isAndroid 顯示');
+ok(st.includes('isAndroid && isTauri') && /isAndroid && isTauri \? `[\s\S]*?桌面 Widget/.test(st), '區塊僅 Android App 顯示（瀏覽器版/桌機隱藏）');
 ok(st.includes('widgetRequestPerms()'), 'settings 授權鈕');
 const main = read('src/main.js');
 ok((main.match(/invoke\('widget_refresh'\)/g) || []).length >= 2, 'main.js 開 App＋可見性推播');
