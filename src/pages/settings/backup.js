@@ -86,15 +86,12 @@ export async function runImportDb() {
 }
 
 // ─── 備份管理 ──────────────────────────────────
-let _backupsData = null;
-
 export async function showBackups() {
   const el = document.getElementById('backupList');
   if (!el) return;
   if (el.style.display !== 'none') { el.style.display = 'none'; return; }
   try {
     const list = await listBackups();
-    _backupsData = list;
     if (!list || list.length === 0) {
       el.innerHTML = '<div style="padding:8px 0">尚無自動備份</div>';
       el.style.display = 'block';
@@ -237,6 +234,9 @@ async function deleteBackup(filename) {
   try {
     await apiDeleteBackup(filename);
     toast('已刪除', 'toast-success');
+    // D-BACKUPDEL1: showBackups 是 toggle（列表可見時呼叫會收合）→ 先歸零再呼叫，才會重新渲染刷新
+    const _bl = document.getElementById('backupList');
+    if (_bl) _bl.style.display = 'none';
     showBackups(); // refresh list
   } catch (e) {
     toast('刪除失敗: ' + e, 'toast-error');
