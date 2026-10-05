@@ -12,7 +12,6 @@ import { initCustomSelects } from '../lib/custom-select.js';   // G14: renderInP
 
 import { toast } from '../lib/toast.js';
 import { speak } from '../lib/tts.js';
-import pkg from '../../package.json';
 import { ACCENTS, ACCENT_GROUPS } from '../lib/theme.js';
 import { isAndroid, isWeb, downloadBlob, downloadBlobFromArray, pickFile } from '../lib/platform.js';
 import { setLauncherIcon, exportDbDialog, exportDbData, exportDbToDownloads, importDbDialog, writeDbBytes, listBackups, backupDb, restoreBackup as apiRestoreBackup, exportBackupDialog as apiExportBackup, exportBackupData as apiExportBackupData, deleteBackup as apiDeleteBackup, importAppLogText as apiImportAppLogText, resetAppLogDb as apiResetAppLogDb, listPiperVoices, importPiperModelDialog, installPiperModel, deletePiperModel, listAndroidVoices, webdavStatus, webdavUpload, webdavDownload, webdavMediaUpload, webdavMediaDownload, webdavPatchUpload, webdavPatchDownload, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogArchivePrune, webdavLogout, webdavServerGetConfig, webdavServerSaveConfig, webdavServerStart, webdavServerStop, webdavServerStatus, webdavCloudList, webdavCloudDelete, webdavServerListLocal, webdavServerDeleteLocal, widgetGetStatus, widgetSaveConfig, widgetRefresh, widgetRequestPerms } from '../lib/api.js';

@@ -5,7 +5,7 @@
 // 同步語意：只有使用者主動按（匯出/匯入/WebDAV），無自動同步。
 // ══════════════════════════════════════════════════════════════
 use axum::{
-    http::StatusCode,
+    http::{header, HeaderValue, StatusCode},
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -37,6 +37,23 @@ pub struct WebCfg {
     pub allow_register: bool,
 }
 
+/// 靜態資產快取策略：雜湊命名的 /assets/* 永久快取；其餘（index.html、icons…）每次
+/// revalidate。避免重建換 hash 後瀏覽器仍持舊 index → 動態 import 404。
+async fn cache_headers(req: axum::extract::Request, next: middleware::Next) -> Response {
+    let path = req.uri().path().to_string();
+    let mut res = next.run(req).await;
+    if path.starts_with("/assets/") {
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else if !path.starts_with("/api/") {
+        res.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    }
+    res
+}
+
 pub async fn run(cfg: WebCfg) -> Result<(), String> {
     std::fs::create_dir_all(&cfg.data_dir)
         .map_err(|e| format!("建立資料目錄失敗 {}: {}", cfg.data_dir.display(), e))?;
@@ -66,10 +83,17 @@ pub async fn run(cfg: WebCfg) -> Result<(), String> {
         .route("/api/whoami", get(auth::whoami))
         .merge(guarded)
         .with_state(state)
+        // /assets 獨立 nest：雜湊資產缺檔必須 404（不可落 SPA fallback 回 index.html 冒充 JS，
+        // 否則瀏覽器載到舊 index 時，所有動態 chunk 匯入都會拿到 HTML → "Failed to fetch
+        // dynamically imported module"）。
+        .nest_service("/assets", ServeDir::new(cfg.dist_dir.join("assets")))
         .fallback_service(
             ServeDir::new(&cfg.dist_dir)
                 .fallback(ServeFile::new(cfg.dist_dir.join("index.html"))),
-        );
+        )
+        // 快取策略：/assets/* 雜湊檔 immutable；index.html 與其他 no-cache（瀏覽器每次
+        // revalidate → 重建後必定抓到新 index，不再卡舊 hash）。
+        .layer(middleware::from_fn(cache_headers));
 
     let addr = format!("0.0.0.0:{}", cfg.port);
     let listener = tokio::net::TcpListener::bind(&addr)
