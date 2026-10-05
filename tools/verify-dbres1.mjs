@@ -134,7 +134,7 @@ chk('交易函式清單數 = 8', TX_FNS.length === 8);
 for (const fn of TX_FNS) {
   const body = fnBody(`export async function ${fn}(`);
   chk(`${fn} 存在`, body.length > 0);
-  chk(`${fn} 納入 _write`, /return _write\(/.test(body));
+  chk(`${fn} 納入 _write`, /_write\(/.test(body)); // H-DEADLOCK1: 允許 await _write(...)（addAudit 需在回呼外）
   chk(`${fn} 走 Rust 單連線交易（_tx）`, /_tx\(/.test(body));
   chk(`${fn} 不再自己組交易`, body.length > 0 && !/BEGIN|COMMIT|ROLLBACK/.test(body));
   const bad = /[^\w_](saveWord|saveCard)\(/.test(body);

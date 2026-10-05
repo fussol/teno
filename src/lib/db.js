@@ -502,15 +502,15 @@ export async function deleteWord(id) {
 
 export async function bulkSaveWords(words) {
   // DB-TX1: 整表覆寫走 Rust 單連線交易
-  return _write(async () => {
+  const n = await _write(async () => {
     const stmts = [{ sql: 'DELETE FROM words' }];
     if (await _tableExists('word_images')) stmts.push({ sql: 'DELETE FROM word_images' });
     for (const w of words) stmts.push({ sql: WORD_UPSERT_SQL, params: wordUpsertParams(w) });
-    const n = await _tx(stmts);
-    // addAudit 在交易外：原版放在 try 內、COMMIT 之後，失敗時會對已 COMMIT 的交易再 ROLLBACK
-    try { await addAudit('import-words', `匯入 ${words.length} 詞 (整表覆寫)`); } catch (_) {}
-    return n;
+    return _tx(stmts);
   });
+  // H-DEADLOCK1: addAudit 亦走 _write（佇列）→ 不可在 _write 回呼內呼叫（p1 等 addAudit、addAudit 等 p1 死鎖）
+  try { await addAudit('import-words', `匯入 ${words.length} 詞 (整表覆寫)`); } catch (_) {}
+  return n;
 }
 
 // ─── Cards ─────────────────────────────────────
@@ -935,8 +935,8 @@ export async function executeSQL(sql, params = []) {
 }
 
 export async function clearAll() {
-  // DB-TX1: 破壞性操作，整批走 Rust 單連線交易；addAudit 留在交易外
-  return _write(async () => {
+  // DB-TX1: 破壞性操作，整批走 Rust 單連線交易
+  const n = await _write(async () => {
     const stmts = [{ sql: 'DELETE FROM words' }];
     // IMG1: 重設清單補 word_images（R2 席抓的第 12 表——漏了會孤兒常駐）
     if (await _tableExists('word_images')) stmts.push({ sql: 'DELETE FROM word_images' });
@@ -947,11 +947,12 @@ export async function clearAll() {
     );
     if (await _tableExists('edits')) stmts.push({ sql: 'DELETE FROM edits' });
     stmts.push({ sql: 'DELETE FROM settings' });
-    const n = await _tx(stmts);
-    // 審計記錄保留 (不隨 clearAll 刪除), 讓「重設」這件事留痕（在交易外，避免 COMMIT 後被 ROLLBACK）
-    try { await addAudit('reset-all', '所有資料已清除'); } catch (_) {}
-    return n;
+    return _tx(stmts);
   });
+  // H-DEADLOCK1: addAudit 亦走 _write（佇列）→ 絕不可在 _write 回呼內呼叫（p1 等 addAudit、addAudit 等 p1 死鎖）。
+  // 審計記錄保留（不隨 clearAll 刪），讓「重設」留痕。
+  try { await addAudit('reset-all', '所有資料已清除'); } catch (_) {}
+  return n;
 }
 
 // ─── Helpers ────────────────────────────────────
