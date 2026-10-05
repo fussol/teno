@@ -33,7 +33,14 @@ function makeFSRS(as) {
 }
 
 export function ensureSession(storeState) {
-  if (session) return;
+  // A-SESS1: 同 flip — 同步 live 引用（mode 專屬 Set），否則已刪字留佇列
+  if (session) {
+    if (storeState.words) session.words = storeState.words;
+    if (storeState.cardsSpell) session.cards = storeState.cardsSpell;
+    if (storeState.buriedSpell) session.buried = storeState.buriedSpell;
+    if (storeState.suspendedSpell) session.suspended = storeState.suspendedSpell;
+    return;
+  }
   if (!storeState.words || !storeState.cardsSpell || !storeState.ankiSettingsSpell) return;
   session = new Session({
     words: storeState.words, cards: storeState.cardsSpell,

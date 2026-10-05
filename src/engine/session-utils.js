@@ -33,7 +33,15 @@ function makeFSRS(as) {
 
 export function ensureSession(storeState) {
   // ponytail: wait for store data before building session
-  if (session) return;
+  // A-SESS1: store 每次變更重賦值 state.words/cards/buried/suspended → session 若持舊引用，
+  // 已刪的字仍留佇列（作答找不到 word 靜默 return、incrementGoal 灌水）。存續時同步 live 引用。
+  if (session) {
+    if (storeState.words) session.words = storeState.words;
+    if (storeState.cards) session.cards = storeState.cards;
+    if (storeState.buried) session.buried = storeState.buried;
+    if (storeState.suspended) session.suspended = storeState.suspended;
+    return;
+  }
   if (!storeState.words || !storeState.cards || !storeState.ankiSettings) return;
   session = new Session({
     words: storeState.words, cards: storeState.cards,
