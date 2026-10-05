@@ -491,13 +491,14 @@ export function onMount(s) {
         renderInPlace(s);
       }
     });
-    document.getElementById('efExitBtn')?.addEventListener('click', async () => {
+    document.getElementById('efExitBtn')?.addEventListener('click', () => {
       if (e.autoNextTimer) { clearTimeout(e.autoNextTimer); e.autoNextTimer = null; }   // B1
       flushPendingScore();   // B2: exit 前 flush（v3 ⚠️ 建議採納 — 延遲窗退出計分不遺失；resume 靠 results 續答不雙計）
       const session = buildSession(e, 'flip');
-      await s.actions.saveExamSession(session);
+      // 立即離場（不等 DB 寫入）→ 一按即退、連按不重入；存檔背景跑（原 await 存檔期間 UI 無反應＝要按好幾下）
       e.phase = 'config';
       renderInPlace(s);
+      s.actions.saveExamSession(session).catch(err => console.warn('[exam-flip] saveExamSession error:', err));
     });
   }
 

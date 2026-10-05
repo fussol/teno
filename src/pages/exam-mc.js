@@ -515,7 +515,7 @@ export function onMount(s) {
         renderInPlace(s);
       }
     });
-    document.getElementById('emExitBtn')?.addEventListener('click', async () => {
+    document.getElementById('emExitBtn')?.addEventListener('click', () => {
       if (e.pendingNext) { clearTimeout(e.pendingNext); e.pendingNext = null; }   // B2: 殘留 timer 防護
       flushPendingScore();   // B2: exit 前 flush（延遲窗退出計分不遺失；resume 由 B3 續答）
       const mcData = {};
@@ -525,9 +525,10 @@ export function onMount(s) {
         }
       }
       const session = { ...buildSession(e, 'mc'), mcData };
-      await s.actions.saveExamSession(session);
+      // 立即離場（不等 DB 寫入）→ 一按即退、連按不重入；存檔背景跑（原 await 存檔期間 UI 無反應＝要按好幾下）
       e.phase = 'config';
       renderInPlace(s);
+      s.actions.saveExamSession(session).catch(err => console.warn('[exam-mc] saveExamSession error:', err));
     });
   }
 
