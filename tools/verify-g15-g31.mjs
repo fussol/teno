@@ -25,15 +25,16 @@ ok(br.includes('_sortRandom && !_sortSeed'), 'G17 無 seed 隨機不 memo 分支
 ok(br.indexOf('_fwSig') < br.indexOf('_fwCache'), 'G17 declare 次序合理');
 
 // ── G22: synonym/antonym/derivative 欄位 ──
-for (const id of ['fSynonyms', 'fAntonyms', 'fDerivatives']) {
+const G22_CHIPS = { fSynonyms: 'fSynonymChips', fAntonyms: 'fAntonymChips', fDerivatives: 'fDerivativeChips' };
+for (const [id, chip] of Object.entries(G22_CHIPS)) {
   ok(br.includes(`id="${id}"`), `G22 input ${id} 存在`);
-  ok(br.includes(`document.getElementById('${id}')?.value.trim()`), `G22 save 讀取 ${id}`);
+  ok(br.includes(`${id}: '${chip}'`), `G22 ${id} 綁 chip ${chip}（save 走 getVal）`);
 }
-ok(br.includes('synonym: document.getElementById'), 'G22 data.synonym 帶入');
+ok(br.includes('synonym: synChips.getVal()'), 'G22 data.synonym 帶入');
 
 // ── D13: audit ──
 ok(store.includes("addAudit('import-words'"), 'D13 importWords 加 audit');
-ok(settings.includes("addAudit('drive-upload'"), 'D13 drive upload 加 audit');
+ok(settings.includes("addAudit('webdav-upload'"), 'D13 webdav 上傳加 audit（drive 已退役）');
 
 // ── G31: splash img integrity ──
 ok(main.includes('img.onerror'), 'G31 splash img onerror 存在');
