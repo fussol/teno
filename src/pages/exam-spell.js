@@ -21,6 +21,7 @@ let e = {
   examRecorded: false,    // B4: 本場已完成並寫入 exam_history（防重：同場只記一次；startExam/resumeSession 重置）
   settings: { count: 0, autoNext: true, delay: 1.5, tagCorrect: 'correct', tagWrong: 'wrong' },
 };
+let _esVvHandler = null;   // B-SPELLVV1: visualViewport resize 具名＋冪等（防每題重掛累積）
 
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -478,17 +479,23 @@ export function onMount(s) {
     document.addEventListener('keydown', esKeyHandler);
     window.__esKeyHandler = esKeyHandler;
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', () => {
+      if (_esVvHandler) window.visualViewport.removeEventListener('resize', _esVvHandler);   // B-SPELLVV1: 冪等
+      _esVvHandler = () => {
         const el = document.getElementById('esInput');
         if (el && document.activeElement === el) {
           el.scrollIntoView({ block: 'center' });
         }
-      });
+      };
+      window.visualViewport.addEventListener('resize', _esVvHandler);
     }
   } else {
     if (window.__esKeyHandler) {
       document.removeEventListener('keydown', window.__esKeyHandler);
       delete window.__esKeyHandler;
+    }
+    if (window.visualViewport && _esVvHandler) {   // B-SPELLVV1: 離場必移除
+      window.visualViewport.removeEventListener('resize', _esVvHandler);
+      _esVvHandler = null;
     }
   }
 
@@ -503,6 +510,9 @@ export function onMount(s) {
 }
 
 function esKeyHandler(ev) {
+  // B-SPELLAUD1: 在輸入框打字時不得觸發發音（否則按到 p 就唸出答案，等於提示）
+  const t = ev.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
   if (ev.key === 'p' || ev.key === 'P') {
     const store = window.__examStore;
     const w = e.words?.[e.idx];
