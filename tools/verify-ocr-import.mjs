@@ -38,6 +38,7 @@ globalThis.localStorage = {
   setItem: () => {}, removeItem: () => {},
 };
 globalThis.window = { addEventListener() {}, removeEventListener() {} };
+globalThis.document = { body: { classList: { toggle() {} }, style: {} }, documentElement: { dataset: {} } };
 
 class FakeDatabase {
   constructor() {
@@ -66,7 +67,7 @@ class FakeDatabase {
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
     this.db.exec('CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT)');
-    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT)');
+    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT, decks TEXT)');
     this.db.exec('CREATE TABLE additions (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, examples TEXT, deck TEXT, added_at TEXT)');
     this.db.exec('CREATE TABLE exam_history (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, correct INTEGER, question_type TEXT, examined_at TEXT)');
     this.db.exec('CREATE TABLE filtered_decks (id TEXT PRIMARY KEY, name TEXT, search_query TEXT, max_cards INTEGER, order_by TEXT, color TEXT, created_at TEXT, last_used TEXT)');
@@ -83,7 +84,22 @@ class FakeDatabase {
 }
 
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
-mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+// DB-TX1: words 寫入走 saveWordsInTx → invoke('sql_tx')；no-op 會吞交易 → 對齊 d14 模擬
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._s || FakeDatabase._singleton;
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
 mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 let fakeDb = null;

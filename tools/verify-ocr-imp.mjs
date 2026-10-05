@@ -48,6 +48,7 @@ globalThis.localStorage = {
   setItem: () => {}, removeItem: () => {},
 };
 globalThis.window = { addEventListener() {}, removeEventListener() {} };
+globalThis.document = { body: { classList: { toggle() {} }, style: {} }, documentElement: { dataset: {} } };
 
 class FakeDatabase {
   constructor() {
@@ -77,7 +78,7 @@ class FakeDatabase {
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
     this.db.exec('CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT)');
-    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT)');
+    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT, decks TEXT)');
     this.db.exec('CREATE TABLE additions (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, examples TEXT, deck TEXT, added_at TEXT)');
     this.db.exec('CREATE TABLE exam_history (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, correct INTEGER, question_type TEXT, examined_at TEXT)');
     this.db.exec('CREATE TABLE filtered_decks (id TEXT PRIMARY KEY, name TEXT, search_query TEXT, max_cards INTEGER, order_by TEXT, color TEXT, created_at TEXT, last_used TEXT)');
@@ -99,7 +100,22 @@ class FakeDatabase {
 }
 
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
-mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+// DB-TX1: words 寫入走 saveWordsInTx → invoke('sql_tx')；no-op 會吞交易 → 對齊 d14 模擬
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._s || FakeDatabase._singleton;
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
 mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 let store = null;
@@ -151,7 +167,7 @@ async function main() {
     check('T0a txFailed 宣告存在', /let txFailed = false;/.test(block), true);
     check('T0b ROLLBACK 分支設 txFailed', /txFailed = true;/.test(block), true);
     check('T0c txFailed→added=0 存在', /if \(txFailed\) \{\s*[^}]*added = 0;?[^}]*\}/.test(block), true);
-    check('T0d D15 rollback：tx 失敗回滾 state.words 新字', /if \(txFailed\) \{[\s\S]*state\.words = state\.words\.filter\(w => !newIds\.has\(w\.id\)\)[\s\S]*\}/.test(block), true);
+    check('T0d D15 rollback：tx 失敗 added 歸零、成功才 append state.words', /if \(txFailed\) \{\s*added = 0;\s*\} else \{\s*state\.words = \[\.\.\.state\.words, \.\.\.newWords\];\s*\}/.test(block), true);
   }
 
   // ── T1 DB 失敗路徑：added=0、skipped 不受波及、DB 零新行 ──
@@ -187,7 +203,7 @@ async function main() {
   // ── T3 負控制：剝除 txFailed→added=0 → 幽靈必再現 ──
   {
     const src = fs.readFileSync(STORE_SRC, 'utf8');
-    const stripped = src.replace(/if \(txFailed\) \{[\s\S]*?state\.words = state\.words\.filter\(w => !newIds\.has\(w\.id\)\)[\s\S]*?added = 0;[\s\S]*?\n\s*\}/, '/* NEG: D15 rollback stripped */');
+    const stripped = src.replace(/if \(txFailed\) \{\s*added = 0;\s*\} else \{\s*state\.words = \[\.\.\.state\.words, \.\.\.newWords\];\s*\}/, '/* NEG: D15 rollback stripped */');
     if (stripped === src) throw new Error('[harness] 找不到 D15 rollback 錨（修法已漂移？更新 NC）');
     fs.writeFileSync(NEG_TMP, stripped);
     try {
