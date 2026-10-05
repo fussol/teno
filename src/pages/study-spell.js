@@ -150,7 +150,11 @@ export function onMount(s) {
     };
     window.visualViewport.addEventListener('resize', _ssVvHandler);
   }
+  // A-SPELLCLEAN1: mount() 已把引擎 keydown 清理設進 __pageCleanup（session-spell-utils:292）；
+  // 這裡不能再覆蓋，否則離頁後 document keydown handler 永活 → 別頁按鍵仍評分灌水。鏈接之。
+  const _prevCleanup = window.__pageCleanup;
   window.__pageCleanup = () => {
+    if (typeof _prevCleanup === 'function') _prevCleanup();
     if (window.visualViewport && _ssVvHandler) {
       window.visualViewport.removeEventListener('resize', _ssVvHandler);
       _ssVvHandler = null;
