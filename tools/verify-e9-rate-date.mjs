@@ -3,7 +3,7 @@
 // 2026-02-30 V8 靜默 rollover 資料污染＋缺值靜默無沙箱）。修法＝regex+finite+round-trip 三重閘。
 // 全部 tmp DB，嚴禁碰 ~/.config/com.teno.app/teno.db。
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, symlinkSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -32,7 +32,8 @@ function mkDb(p) {
       pronunciation TEXT, example TEXT, deck TEXT NOT NULL DEFAULT 'Default', tags TEXT DEFAULT '',
       image TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')), description TEXT DEFAULT '',
       related TEXT DEFAULT '[]', forms TEXT DEFAULT '[]', synonym TEXT NOT NULL DEFAULT '',
-      antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '');
+      antonym TEXT NOT NULL DEFAULT '', derivative TEXT NOT NULL DEFAULT '', examples TEXT NOT NULL DEFAULT '',
+      etymology TEXT DEFAULT '', syllables TEXT DEFAULT '', phrases TEXT DEFAULT '');
     CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT NOT NULL, stability REAL NOT NULL DEFAULT 2.5,
       difficulty REAL NOT NULL DEFAULT 0.0, elapsed_days INTEGER NOT NULL DEFAULT 0,
       scheduled_days INTEGER NOT NULL DEFAULT 0, reps INTEGER NOT NULL DEFAULT 0,
@@ -127,6 +128,15 @@ try {
     }
     const bugDir = join(dir, 'bugsub'); mkdirSync(bugDir);
     if (!existsSync(join(dir, 'src'))) symlinkSync(join(REPO, 'src'), join(dir, 'src'), 'dir');
+    // cli.mjs 有 sibling import（./db-compat.mjs 等）：把 tools 內所有條目影子連結進 bugsub，
+    // 否則反剝版 copy 會 ERR_MODULE_NOT_FOUND；cli 日後新增 import 這條自動跟上。
+    for (const ent of readdirSync(join(REPO, 'tools'))) {
+      if (ent === 'cli.mjs') continue;
+      const sr = join(REPO, 'tools', ent);
+      try { symlinkSync(sr, join(bugDir, ent), statSync(sr).isDirectory() ? 'dir' : 'file'); } catch {}
+    }
+    const nm = join(REPO, 'node_modules');
+    if (existsSync(nm)) { try { symlinkSync(nm, join(bugDir, 'node_modules'), 'dir'); } catch {} }
     writeFileSync(join(bugDir, 'cli.mjs'), buggySrc);
     const BCLI = join(bugDir, 'cli.mjs');
     {
@@ -140,7 +150,7 @@ try {
       const r = run(BCLI, ['rate', 'w1', '3', '--date', '2026-02-30'], tgt);
       const at = lastLogAt(tgt);
       T('T5c 負控制 2/30 靜默 rollover 污染重現（宣稱成功＋reviewed_at=2026-03-02）',
-        r.stdout.includes('rating=3') && String(at).startsWith('2026-03-02'), `reviewed_at=${at}`);
+        r.stdout.includes('rating=3') && String(at).startsWith('2026-03-02'));
     }
     if (fixed) {
       const markIdx = src.indexOf(E9_MARK);
