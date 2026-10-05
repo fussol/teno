@@ -338,7 +338,8 @@ export class Session {
     // Anki sort_learning: cmp_by_reps_then_due — (reps==0, due)
     // 已學過的卡 (reps>0) 優先, due 相同時順序穩定, 避免卡在佇列尾輪不到。
     this.intradayLearning.push({ word, card: updatedCard, due, reps: updatedCard.reps ?? 0, type: updatedCard.state === STATE_RELEARNING ? 'relearning' : 'learning' });
-    this.intradayLearning.sort((a, b) => (a.reps === 0 ? 1 : 0) - (b.reps === 0 ? 1 : 0) || a.due - b.due);
+    // A-INTRA1: 對齊 scheduler.cmpByRepsThenDue（reps 升冪，新卡 reps=0 在前）；原式方向相反且註解誤稱同口徑
+    this.intradayLearning.sort((a, b) => (a.reps ?? 0) - (b.reps ?? 0) || a.due - b.due);
   }
 
   removeIntraday(wordId) {
