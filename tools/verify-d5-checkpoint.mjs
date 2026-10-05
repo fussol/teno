@@ -50,8 +50,8 @@ mock.module('../src/lib/db.js', { exports: {
 try {
   const api = await import('../src/lib/api.js');
   await api.backupDb();
-  ok('T2a 呼叫順序 = checkpoint → invoke(backup_db)',
-    JSON.stringify(order) === JSON.stringify(['checkpoint', 'backup_db']),
+  ok('T2a checkpoint 先、invoke(backup_db) 最後（中間 checkpointAppLog 的 plugin-sql 合法）',
+    order[0] === 'checkpoint' && order[order.length - 1] === 'backup_db',
     JSON.stringify(order));
   ok('T2b invoke 參數為 backup_db', order[order.length - 1] === 'backup_db');
 } catch (e) {
