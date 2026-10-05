@@ -51,7 +51,23 @@ class FakeDatabase {
   async close() { this.db.close(); }
 }
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
-mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+// DB-TX1: words 寫入走 db.saveWordsInTx → api.sqlTx → invoke('sql_tx')。
+// no-op invoke 會吞掉整批交易（入庫 got=[]）→ 模擬 Rust 單連線 BEGIN…COMMIT/ROLLBACK。
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._s || FakeDatabase._singleton; // 部分 harness 用 _singleton
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
 mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 mock.module('../src/lib/svg.js', { exports: { icon: (n) => `<i data-icon="${n}"/>` } });
 mock.module('../src/lib/ocr/preprocess.js', { exports: { filterHighlighter: async () => ({ file: null, count: 0, boxes: [] }), resolveColor: () => null, HIGHLIGHTER_COLORS: { yellow: { name: '黃', h: [20, 35] }, green: { name: '綠', h: [70, 95] }, pink: { name: '粉', h: [300, 340] } }, HIGHLIGHTER_KEYS: ['yellow', 'green', 'pink'] } });

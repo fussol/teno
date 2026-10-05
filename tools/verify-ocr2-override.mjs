@@ -61,7 +61,7 @@ class FakeDatabase {
     this.db.exec(`CREATE TABLE words (
       id TEXT PRIMARY KEY, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT,
       example TEXT, deck TEXT, tags TEXT, image TEXT, description TEXT, created_at TEXT,
-      related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT)`);
+      related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT, etymology TEXT, syllables TEXT, phrases TEXT)`);
     this.db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
@@ -85,7 +85,23 @@ class FakeDatabase {
 // enrich 不打真網路（fire-and-forget 會查 Cambridge）→ 透過 mock @tauri-apps/api/core
 // invoke 全空（lookupCambridge 走 invoke→undefined→data 非 array→continue 不炸）
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
-mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+// DB-TX1: words 寫入走 db.saveWordsInTx → api.sqlTx → invoke('sql_tx')。
+// no-op invoke 會吞掉整批交易（入庫 got=[]）→ 模擬 Rust 單連線 BEGIN…COMMIT/ROLLBACK。
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._s || FakeDatabase._singleton; // 部分 harness 用 _singleton
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
 mock.module('../src/lib/toast.js', { exports: { toast() {} } });
 
 let fakeDb = null;
