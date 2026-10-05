@@ -181,8 +181,14 @@ function _mount(s) {
     // 網站版語音清單 = 瀏覽器 speechSynthesis（voices 常需等載入事件）。
     // 必須放在 Android 之前：手機瀏覽器 UA 亦含 Android，否則誤走 Android 原生清單。
     const fillWebVoices = () => {
-      const vs = (typeof speechSynthesis !== 'undefined' ? speechSynthesis.getVoices() : []) || [];
-      updateVoices(vs.map(v => v.name));
+      const all = (typeof speechSynthesis !== 'undefined' ? speechSynthesis.getVoices() : []) || [];
+      // 只留英文（本 app 學英文）——瀏覽器會回一大堆語言，全列太多。無英文才退回全部。
+      const en = all.filter(v => /^en([-_]|$)/i.test(v.lang || ''));
+      const use = (en.length ? en : all).slice();
+      // Google/自然語音優先（音質較好；Chrome 的 Google TTS 名字含 Google）
+      const score = v => (/google/i.test(v.name) ? 2 : 0) + (/natural|online|premium|enhanced/i.test(v.name) ? 1 : 0);
+      use.sort((a, b) => score(b) - score(a));
+      updateVoices(use.map(v => v.name));
     };
     fillWebVoices();
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.addEventListener?.('voiceschanged', fillWebVoices);
