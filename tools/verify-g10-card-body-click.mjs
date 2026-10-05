@@ -15,7 +15,7 @@ function ok(name, cond, detail='') {
 
 // ── 真實 selector（bindSpeakClick :193）──
 const ttsSrc = readFileSync(new URL('../src/lib/tts.js', import.meta.url), 'utf8');
-const m = ttsSrc.match(/closest\('([^']+)'\)/);
+const m = ttsSrc.match(/closest\('([^']*\.card-panel-word[^']*)'\)/); // 發音 selector（非 guard clause）
 let realSel = m ? m[1] : '';
 ok('H0 找到 bindSpeakClick selector', !!realSel);
 
@@ -43,7 +43,7 @@ ok('T1 修後 點.card-panel-body → 不觸發', !hitNew('card-panel-body'));
 // T2 點 word → 觸發
 ok('T2 修後 點.card-panel-word → 觸發', hitNew('card-panel-word'));
 // T3 點 def → 觸發
-ok('T3 修後 點.card-panel-def → 觸發', hitNew('card-panel-def'));
+ok('T3 修後 點.card-panel-def → 不觸發（中文釋義已刻意移出可點清單）', !hitNew('card-panel-def'));
 // T4 點 example → 觸發
 ok('T4 修後 點.card-panel-example → 觸發', hitNew('card-panel-example'));
 // T5 負控制（資訊性，不計入 fail）：修前(含 body) selector 對 body 命中 → bug
