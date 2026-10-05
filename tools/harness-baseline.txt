@@ -4,6 +4,7 @@
 # 原因分類（2026-10-04 triage，詳見 Phase2 commit）：
 #   [A] harness 載入器/環境過期（mock stub 缺 export、import outside module、缺 DOM）:
 #       b5-b9, d14, d15, g5, g13, g24, g9, f18, tts-contract, w1-windows-tts, ocr2-vision, d8
+#       → 16 顆全數修復（2026-10-05，只動 harness 不動 src；SKIP 行已刪、b5-b9 無 SKIP 行）
 #   [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）: f6, f10, o3-api29, e16
 #   [C] 外網/反爬環境性: f13（cambridge.org 403 Cloudflare）
 #   [D] DB/cli schema 漂移（fixture 缺欄 etymology/decks、v15 登記、指紋 join）:
@@ -12,24 +13,13 @@
 #   [F] source/行為斷言過期或真失敗（量大，逐顆修=專案）:
 #       antfix, d19, d20, d20-dual, d5, dictrebuild, e8, e10-e13, e14, g10, g15, g18,
 #       g28, g-tool1, logfix1, ocr-ui, settings-collapse, toast1
-#   SKIP tools/<檔> # 原因 = 環境隔離（run-all 照跑 ↷ 不算紅）：A/B/C 共 21 顆（2026-10-04 P5）；修掉→刪該 SKIP 行
+#   SKIP tools/<檔> # 原因 = 環境隔離（run-all 照跑 ↷ 不算紅）：A 類已修畢（2026-10-05）→剩 B/C 5 顆（B: f6,f10,o3-api29,e16；C: f13）；修掉→刪該 SKIP 行
 #   [G] 已修（%20→fileURLToPath，2026-10-04）但暴露更深問題仍紅: e4, e5, e6, e7, f9
-SKIP tools/verify-d14-delete-orphans.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-d15-import-rollback.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-d8-csv-roundtrip.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-e16-orphan-deletion.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
 SKIP tools/verify-f10-piper-import.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
 SKIP tools/verify-f13-url-encode.mjs # [C] 外網反爬（cambridge.org 403 Cloudflare）
-SKIP tools/verify-f18-timeout.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-f6-manifest.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
-SKIP tools/verify-g13-custom-select-kbd.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-g24-export-render.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-g5-doclistener.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-g9-tts-fallback.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 SKIP tools/verify-o3-api29.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
-SKIP tools/verify-ocr2-vision.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-tts-contract.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
-SKIP tools/verify-w1-windows-tts.mjs # [A] mock stub 缺 export/缺 DOM（harness 過期）
 FAIL  T1 ./svg 旁支 import 零命中（312 檔掃）  [/home/jupiter/teno 修檢版/src/lib/custom-select.js,/home/jupiter/teno 修檢版/src/lib/sharepack.js,/home/jupiter/teno 修檢版/src/lib/word-image.js]
 FAIL C 登記到頂 v14 — 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
 FAIL D 新版開機 no-op — 未知登記 [15] VersionMissing

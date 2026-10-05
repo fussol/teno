@@ -250,6 +250,8 @@ try {
   // cli.mjs 有 bare 引入（tesseract.js）：tmp 樹無 node_modules 會早死、
   // bug.csv 生不出來（同 D19 T8 教訓）。鏈 repo 的進來（唯讀解析用）。
   try { symlinkSync(join(REPO, 'node_modules'), join(dir, 'node_modules'), 'dir'); } catch {}
+  // cli.mjs 另有同資料夾相對引入（./db-compat.mjs）→ 沒鏈進 tmp 樹 = ERR_MODULE_NOT_FOUND、bug.csv 生不出來
+  symlinkSync(join(REPO, 'tools', 'db-compat.mjs'), join(bugDir, 'db-compat.mjs'));
   writeFileSync(join(bugDir, 'cli.mjs'), buggySrc);
   const dbB = mkDb(join(dir, 'bug.db'));
   {

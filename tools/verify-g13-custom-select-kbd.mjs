@@ -29,11 +29,12 @@ global.KeyboardEvent = KeyboardEvent;
 global.Event = Event;
 global.getComputedStyle = window.getComputedStyle.bind(window);
 
-// 載入真實 custom-select.js（剝離 export，注入 global）
+// 載入真實 custom-select.js（剝離 import/export，注入 global；icon 來自 svg.js → 注入 stub）
 const src = readFileSync(new URL('../src/lib/custom-select.js', import.meta.url), 'utf8');
-const runnable = src.replace(/^export function/gm, 'function');
-const fn = new Function('document', 'window', 'CSS', 'MouseEvent', 'KeyboardEvent', 'Event', runnable + '\n;return { initCustomSelects };');
-const { initCustomSelects } = fn(document, window, window.CSS, MouseEvent, KeyboardEvent, Event);
+const runnable = src.replace(/^import .*;$/gm, '').replace(/^export function/gm, 'function');
+const fn = new Function('document', 'window', 'CSS', 'MouseEvent', 'KeyboardEvent', 'Event', 'icon',
+  runnable + '\n;return { initCustomSelects };');
+const { initCustomSelects } = fn(document, window, window.CSS, MouseEvent, KeyboardEvent, Event, () => '');
 
 const root = document.getElementById('root');
 const nativeSelect = document.getElementById('fruits');

@@ -21,7 +21,9 @@ const LOADER_SRC = `
 export function resolve(specifier, context, next) {
   let src = null;
   if (specifier === './platform.js') {
-    src = 'export const isAndroid = false; export const isWindows = globalThis.__w1IsWindows === true;';
+    // isTauri=true＝桌面（speak() 的 WEB 分支（!isTauri）不觸發，Windows Web Speech 與 Linux piper 分支照測）
+    // ※ 本段在 LOADER_SRC 模板字串內，嚴禁反引號
+    src = 'export const isAndroid = false; export const isWindows = globalThis.__w1IsWindows === true; export const isTauri = true;';
   } else if (specifier === './api.js') {
     src = 'globalThis.__w1NativeCalls = 0; export const speakText = async (t, o) => { globalThis.__w1NativeCalls++; }; export const speakAndroid = async () => {}; export const stopAndroid = async () => {};';
   }
@@ -31,6 +33,17 @@ export function resolve(specifier, context, next) {
 `;
 const loaderUrl = 'data:text/javascript,' + encodeURIComponent(LOADER_SRC);
 register(loaderUrl, pathToFileURL(resolve(REPO, 'src/lib/tts.js')).href);
+
+// tts.js speakWebSpeech() 呼叫後會掛 30s 保底 setTimeout（onend 已同步觸發，保底用不到
+// 也永不清）→ event loop 被吊 30s，run-all 每顆 spawnSync timeout=30000 會把本檔砍成
+// 紅（假紅：測試本體全綠，只是行程不退出）。harness 側對該筆計時器 unref——只 unref
+// delay=30000（tts 保底常數），不動其他計時器，斷言語意零改變。
+const _realSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn, ms, ...args) => {
+  const t = _realSetTimeout(fn, ms, ...args);
+  if (ms === 30000 && t && typeof t.unref === 'function') t.unref();
+  return t;
+};
 
 // speechSynthesis stub：speak() 記錄 utterance 並觸發 onend（同步完成）
 let utterances = [];

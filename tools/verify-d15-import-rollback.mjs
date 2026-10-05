@@ -18,12 +18,16 @@ class FakeDatabase {
   _initSchema() {
     this.db.exec(`CREATE TABLE cards (word_id TEXT PRIMARY KEY, due TEXT, stability REAL, difficulty REAL, elapsed_days REAL, scheduled_days REAL, reps INTEGER, lapses INTEGER, state INTEGER, step INTEGER, last_review TEXT, buried INTEGER, suspended INTEGER, mc_data TEXT, spell_data TEXT)`);
     this.db.exec(`CREATE TABLE review_log (id INTEGER PRIMARY KEY AUTOINCREMENT, word_id TEXT, rating INTEGER, duration INTEGER, elapsed_days REAL, scheduled_days REAL, stability REAL, difficulty REAL, mode TEXT NOT NULL DEFAULT 'flip', card_state INTEGER, new_state INTEGER, reviewed_at TEXT)`);
-    this.db.exec(`CREATE TABLE words (id TEXT PRIMARY KEY, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, example TEXT, deck TEXT, tags TEXT, image TEXT, description TEXT, created_at TEXT, related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT)`);
+    this.db.exec(`CREATE TABLE words (id TEXT PRIMARY KEY, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, example TEXT, deck TEXT, tags TEXT, image TEXT, description TEXT, created_at TEXT, related TEXT, forms TEXT, synonym TEXT, antonym TEXT, derivative TEXT, examples TEXT, etymology TEXT, syllables TEXT, phrases TEXT)`);
     this.db.exec('CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)');
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
     this.db.exec('CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT)');
-    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT)');
+    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, decks TEXT)');
+    // loadAll 未 catch 的四張：additions / exam_history / filtered_decks（缺表 → init 中斷，state 不完整）
+    this.db.exec(`CREATE TABLE additions (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, examples TEXT, deck TEXT, added_at TEXT)`);
+    this.db.exec(`CREATE TABLE exam_history (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, correct INTEGER, question_type TEXT, examined_at TEXT)`);
+    this.db.exec(`CREATE TABLE filtered_decks (id TEXT PRIMARY KEY, name TEXT, search_query TEXT, max_cards INTEGER, order_by TEXT, color TEXT, created_at TEXT, last_used TEXT)`);
   }
   _bind(sql, params = []) { if (!params || params.length === 0) return {}; const o = {}; params.forEach((v,i)=>o['$'+(i+1)]=v); return o; }
   async execute(sql, params = []) {
@@ -34,7 +38,34 @@ class FakeDatabase {
   async close() { this.db.close(); }
 }
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
-mock.module('@tauri-apps/api/core', { exports: { invoke: async () => {} } });
+// db.js._tx → api.js sqlTx → invoke('sql_tx')（Rust 單連線交易）。invoke 若為 no-op，
+// 所有交易寫入都被吃掉（T1「DB 落盤」假紅、T2 回滾假綠）→ 這裡模擬 sql_tx：
+// 同一 FakeDatabase 連線 BEGIN…COMMIT，任何一句拋錯 → 整批 ROLLBACK（Rust 行為對齊）。
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._singleton;
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
+// 自動備份＝24h setInterval（背景排程，與 D15 回滾無關）→ mock 掉，否則 interval 掛著 process 不 exit
+mock.module('../src/lib/backup-scheduler.js', { exports: { startAutoBackup: async () => {}, stopAutoBackup: () => {} } });
+
+// loadAll 收尾寫 window.__maxExampleLines/__fieldVis、document.body.classList（node 無 DOM）
+// → 走 jsdom（repo 既有 devDependency，與 c10/c7/gsat-restore 同法）。
+const { JSDOM } = await import('jsdom');
+const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' });
+globalThis.window = dom.window;
+globalThis.document = dom.window.document;
+globalThis.localStorage = dom.window.localStorage;
 
 let store = null, fakeDb = null;
 before(async () => {
@@ -46,7 +77,7 @@ before(async () => {
   await store.actions.init();
 });
 
-const mkWords = (n, prefix)=Array.from({length:n},(_,i)=>({word: prefix+i, definition:'d'+i, deck:'Default'}));
+const mkWords = (n, prefix) => Array.from({length:n},(_,i)=>({word: prefix+i, definition:'d'+i, deck:'Default'}));
 const inState = (w)=>store.state.words.some(x=>x.word===w);
 const inDb = async (w)=>fakeDb.db.prepare('SELECT COUNT(*) AS c FROM words WHERE word=?').get(w).c>0;
 

@@ -13,11 +13,20 @@ function ok(name, cond, detail='') {
   if (!cond) failures++;
 }
 
+// mock stub 必須補齊 export.js 的**全部**匯入名（漏一個 → SyntaxError: does not provide an export named，
+// 模組根本載不進來＝假紅）。名單以 src/pages/export.js:5-15 為準；未特別指定者放行真品。
+const realImport = await import('../src/core/import.js');     // buildCSV/buildShareCSV 真品（P3 後 buildShareCSV 仍在）
+const realPlatform = await import('../src/lib/platform.js');  // isAndroid/isWeb/downloadBlob/downloadBlobFromArray
 mock.module('../src/lib/svg.js', { exports: { icon: () => '' } });
 mock.module('../src/lib/toast.js', { exports: { toast() {} } });
-mock.module('../src/core/import.js', { exports: { buildCSV: (arr) => 'CSV' } });
-mock.module('../src/lib/api.js', { exports: { exportCsvDialog: async () => '/tmp/x.csv' } });
-mock.module('../src/lib/platform.js', { exports: { isAndroid: false, downloadBlob: () => {} } });
+mock.module('../src/core/import.js', { exports: { ...realImport } });
+mock.module('../src/lib/api.js', { exports: {
+  exportCsvDialog: async () => '/tmp/x.csv',
+  exportSharePack: async () => '/tmp/x.zip',
+  webdavCloudList: async () => '[]',
+  webdavCloudGet: async () => '{}',
+} });
+mock.module('../src/lib/platform.js', { exports: { ...realPlatform, isAndroid: false } });
 
 const { render, renderContent } = await import('../src/pages/export.js');
 

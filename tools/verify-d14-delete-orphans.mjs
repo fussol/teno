@@ -34,6 +34,24 @@ class FakeDatabase {
   async close() {}
 }
 mock.module('@tauri-apps/plugin-sql', { exports: { default: FakeDatabase } });
+// db.deleteWord 走 db._tx → api.sqlTx → invoke('sql_tx')（Rust 單連線交易）。
+// invoke 未 mock 時會撞真 Tauri：node 無 window.__TAURI_INTERNALS__ → ReferenceError: window is not defined。
+// 這裡模擬 sql_tx：同一 FakeDatabase 連線 BEGIN…COMMIT，任一句失敗整批 ROLLBACK（對齊 Rust 行為）。
+const fakeInvoke = async (cmd, args) => {
+  if (cmd !== 'sql_tx') return {};
+  const stmts = args?.statements || [];
+  const d = FakeDatabase._s;
+  d.db.exec('BEGIN');
+  try {
+    for (const st of stmts) await d.execute(st.sql, st.params || []);
+    d.db.exec('COMMIT');
+    return stmts.length;
+  } catch (e) {
+    try { d.db.exec('ROLLBACK'); } catch (_) {}
+    throw e;
+  }
+};
+mock.module('@tauri-apps/api/core', { exports: { invoke: fakeInvoke } });
 
 const db = await import('../src/lib/db.js');
 await db.initDB();

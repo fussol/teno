@@ -48,7 +48,34 @@ function setUA(ua) {
 function cleanupGlobals() {
   if ('navigator' in globalThis) delete globalThis.navigator;
   if ('window' in globalThis) delete globalThis.window;
+  if ('document' in globalThis) delete globalThis.document;
 }
+
+// ══ 環境前置（必須在任何 import 之前）══
+// ① isTauri／isAndroid 是 src/lib/platform.js 的**載入期**常數（import 即求值一次）。
+//    沒先鋪好「桌面 Tauri window」→ 模組載入時 isTauri=false，之後 available() 恆 false，
+//    V4 桌面/V6 負控制全假紅（V1-V2 不看環境所以先前會先綠後紅）。
+// ② V3 起走 recognize() → createImageBitmap／canvas 縮圖／FileReader 三件套（瀏覽器 API，
+//    node 與 jsdom 皆無）→ 供最小假件；影像內容不被斷言（只斷送出去的 data URL 形態）。
+setUA('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36');
+
+const FAKE_JPEG = 'data:image/jpeg;base64,SU1H'; // 縮圖 toBlob 請求 'image/jpeg' → 對應假 Blob
+globalThis.createImageBitmap = async () => ({ width: 64, height: 64, close() {} });
+globalThis.FileReader = class {
+  readAsDataURL() { this.result = FAKE_JPEG; queueMicrotask(() => this.onload && this.onload()); }
+};
+globalThis.document = {
+  createElement(tag) {
+    if (tag !== 'canvas') throw new Error(`harness 僅 stub canvas（got ${tag}）`);
+    const cv = { width: 0, height: 0 };
+    cv.getContext = () => ({
+      drawImage() {}, putImageData() {},
+      getImageData: (x, y, w, h) => ({ data: new Uint8ClampedArray(Math.max(4, w * h * 4)) }),
+    });
+    cv.toBlob = (cb) => cb({ type: 'image/jpeg' });
+    return cv;
+  },
+};
 
 /** 把 vision-adapter 硬拷到 /tmp，剝除 isDesktopEnv 的 Android 段後 dynamic import（PRE 負控制） */
 async function importStripped(uAOverride) {
@@ -121,9 +148,11 @@ async function main() {
     const file = { arrayBuffer: async () => new Uint8Array([9, 9, 9]).buffer, type: 'image/png' };
     const r = await adapter.recognize(file);
     check('V3 送出 /api/chat + model', sentBody?.model, VISION_MODEL);
-    check('V3 messages[0].images 為 data URL（含 base64）',
+    // 2026-09-01 V2 送圖前縮圖（shrinkToDataUrl）→ toBlob('image/jpeg')，故 data URL 是 jpeg；
+    // 舊斷言寫 png（縮圖前原圖直送時代）已過期，改釘當前契約。
+    check('V3 messages[0].images 為 jpeg data URL（V2 縮圖直送，含 base64）',
       typeof sentBody?.messages?.[0]?.images?.[0] === 'string'
-        && sentBody.messages[0].images[0].startsWith('data:image/png;base64,'), true);
+        && sentBody.messages[0].images[0].startsWith('data:image/jpeg;base64,'), true);
     check('V3 回 OcrResult text', r.text, 'cat cafe neon');
     mod._setVisionFetch(null); mod._setVisionConfig(null);
   }

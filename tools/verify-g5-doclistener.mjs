@@ -25,9 +25,9 @@ global.window = window; global.document = document; global.CSS = window.CSS;
 global.MouseEvent = window.MouseEvent; global.KeyboardEvent = window.KeyboardEvent; global.Event = window.Event;
 
 const src = readFileSync(new URL('../src/lib/custom-select.js', import.meta.url), 'utf8');
-const fn = new Function('document','window','CSS','MouseEvent','KeyboardEvent','Event',
-  src.replace(/^export function/gm,'function') + '\n;return { initCustomSelects };');
-const { initCustomSelects } = fn(document, window, window.CSS, window.MouseEvent, window.KeyboardEvent, window.Event);
+const fn = new Function('document','window','CSS','MouseEvent','KeyboardEvent','Event','icon',
+  src.replace(/^import .*;$/gm, '').replace(/^export function/gm,'function') + '\n;return { initCustomSelects };');
+const { initCustomSelects } = fn(document, window, window.CSS, window.MouseEvent, window.KeyboardEvent, window.Event, () => '');
 
 console.log('── G5 document click listener 累積 ──');
 
