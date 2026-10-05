@@ -308,7 +308,6 @@ function answerCorrect(s) {
   e.answeredCorrect = true;
   e.pendingScore = 'correct';   // B2: 延遲窗內不直接計分（timer fire / 手動下一題 / exit 時 flush）
   e.results[e.idx] = true;      // B1: results 即時寫（applyTags/resume 依賴，不延遲）
-  e.totalTime += (Date.now() - e.cardStart) / 1000;
   if (e.settings.autoNext) {
     // B2: timer 先設後 render（防 :381 onMount guard 同步級聯）；callback 先 nextWord 後清（防 timer fire 內 render 再觸發 guard）
     if (e.autoNextTimer) clearTimeout(e.autoNextTimer);
@@ -323,7 +322,6 @@ function answerWrong(s) {
   e.answeredCorrect = false;
   e.pendingScore = 'wrong';     // B2
   e.results[e.idx] = false;     // B1
-  e.totalTime += (Date.now() - e.cardStart) / 1000;
   if (e.settings.autoNext) {
     if (e.autoNextTimer) clearTimeout(e.autoNextTimer);
     e.autoNextTimer = setTimeout(() => { nextWord(s); e.autoNextTimer = null; }, e.settings.delay * 1000);
@@ -416,7 +414,7 @@ async function applyTags(s) {
 }
 
 export function onMount(s) {
-  document.querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
 
   // IMG1: 測驗答題後（answered 態）顯示完整卡含圖；答前不帶圖
