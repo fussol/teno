@@ -1021,7 +1021,7 @@ async function handleFile(s, file) {
         return i === 0 ? 'word' : i === 1 ? 'definition' : i === 2 ? 'description' : null;
       });
     } else {
-      const table = parseCSVTable(text);
+      let table = parseCSVTable(text);
       if (table.headers.length === 0 || table.rows.length === 0) {
         toast('CSV 為空或格式錯誤', 'toast-error');
         _fileName = '';
