@@ -1,6 +1,6 @@
 // settings/backup.js — 危險匯出/匯入、備份清單/還原/匯出/刪除/日誌回放（P4 Step3 純搬移）
 // 原 settings.js 頂層 131–361 區塊；內部 helper（restoreBackup 等）維持模組私有
-import { backupDb, deleteBackup as apiDeleteBackup, exportBackupData as apiExportBackupData, exportBackupDialog as apiExportBackup, exportDbData, exportDbDialog, exportDbToDownloads, importAppLogText as apiImportAppLogText, importDbDialog, listBackups, resetAppLogDb as apiResetAppLogDb, restoreBackup as apiRestoreBackup, writeDbBytes } from '../../lib/api.js';
+import { backupDb, deleteBackup as apiDeleteBackup, exportBackupData as apiExportBackupData, exportBackupDialog as apiExportBackup, exportDbData, exportDbDialog, exportDbToDownloads, exportAppLogText as apiExportAppLogText, importAppLogText as apiImportAppLogText, importDbDialog, listBackups, resetAppLogDb as apiResetAppLogDb, restoreBackup as apiRestoreBackup, writeDbBytes } from '../../lib/api.js';
 import { downloadBlobFromArray, isAndroid, isWeb, pickFile } from '../../lib/platform.js';
 import { icon } from '../../lib/svg.js';
 import { toast } from '../../lib/toast.js';
@@ -196,6 +196,9 @@ async function replayAppLogTo(filename, btn) {
     try { await checkpointAppLog(); } catch (_) {}
     await backupDb(); // 安全網：先備份當下（主庫＋未備增量一起落檔）
     await closeAppLog();
+    // D-LOGREPLAY1: 先快照現行日誌文字，reset 後若鏈中段失敗可整段回滾（原無原子性，斷線/缺 patch 即殘鏈）
+    let snapshot = '';
+    try { snapshot = await apiExportAppLogText(); } catch (_) {}
     await apiResetAppLogDb();
     const list = await listBackups();
     const targetTs = backupTsOf(filename);
@@ -204,14 +207,20 @@ async function replayAppLogTo(filename, btn) {
       .map(b => b.filename)
       .sort((a, b) => backupTsOf(a) - backupTsOf(b));
     let added = 0, skipped = 0, bad = 0, files = 0;
-    for (const f of chain) {
-      const data = await apiExportBackupData(f); // Vec<u8>→數字陣列（patch KB 級）
-      const text = new TextDecoder('utf-8').decode(new Uint8Array(data));
-      const r = await apiImportAppLogText(text);
-      added += r.log_added + r.sim_added;
-      skipped += r.log_skipped + r.sim_skipped;
-      bad += r.bad_lines;
-      files += 1;
+    try {
+      for (const f of chain) {
+        const data = await apiExportBackupData(f); // Vec<u8>→數字陣列（patch KB 級）
+        const text = new TextDecoder('utf-8').decode(new Uint8Array(data));
+        const r = await apiImportAppLogText(text);
+        added += r.log_added + r.sim_added;
+        skipped += r.log_skipped + r.sim_skipped;
+        bad += r.bad_lines;
+        files += 1;
+      }
+    } catch (chainErr) {
+      // 回滾到回放前狀態，避免留下半鏈
+      try { await apiResetAppLogDb(); if (snapshot) await apiImportAppLogText(snapshot); } catch (_) {}
+      throw chainErr;
     }
     toast(`日誌已回放 ${files} 個增量：新增 ${added} 筆（重複 ${skipped}、壞行 ${bad}），重新載入中…`, 'toast-success');
     setTimeout(() => window.location.reload(), 800);
