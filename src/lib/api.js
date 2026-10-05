@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { checkpoint } from './db.js'
+import { checkpoint, getSetting } from './db.js'
 
 // ─── CLI ─────────────────────────────────────────────────────
 export const runCli = (args) =>
@@ -37,7 +37,6 @@ export const buildLlmEndpoint = (base, format) => {
 export const fetchLLM = async (url, model, prompt, apiFormat, messages) => {
   let cfg = null;
   try {
-    const { getSetting } = await import('./db.js');
     const [u, m, f, k] = await Promise.all([
       getSetting('llmApiUrl'), getSetting('llmModel'),
       getSetting('llmApiFormat'), getSetting('llmApiKey'),

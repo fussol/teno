@@ -14,6 +14,7 @@
 // lookup/LLM 全經 fetchers 注入，harness 用 stub 零網路可測。
 // ═══════════════════════════════════════════════════════════════
 import { normalizePos } from '../core/import.js';
+import { getSetting } from './db.js';
 
 // ── 欄位表（12 欄；組合包用其中 11，不含 derivative）──
 // fixed: true＝來源寫死不給選（only Merriam provides these）
@@ -122,7 +123,6 @@ export function comboConfig(mem) {
 export async function readComboConfig() {
   let mem = null;
   try {
-    const { getSetting } = await import('./db.js');
     mem = await getSetting('methodSources');
   } catch (_) {}
   return comboConfig(mem);

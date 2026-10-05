@@ -1,5 +1,6 @@
 import { getDbMtime, getAppLogMtime, backupDb, pruneBackups, webdavUpload, webdavPatchUpload, webdavMediaUpload } from './api.js'
 import { pendingCount, flushMediaQueue } from './media-queue.js'
+import { getSetting, setSetting, checkpoint } from './db.js'
 
 let timer = null;
 let lastBackupMtime = 0;
@@ -12,7 +13,6 @@ async function readCfg() {
   let intervalMs = DEFAULT_INTERVAL_MS;
   let keepMax = DEFAULT_KEEP_MAX;
   try {
-    const { getSetting } = await import('./db.js');
     const h = await getSetting('backupIntervalH');
     const n = await getSetting('backupKeepMax');
     if (Number.isFinite(h) && h >= 1) intervalMs = h * 60 * 60 * 1000;
@@ -42,7 +42,6 @@ async function currentMaxMtime() {
 // 不再每次啟動都做冗余備份覆蓋有差異的舊備份。無法讀取時維持 0（退回首 tick 即備份的舊行為）。
 async function seedLastBackupMtime() {
   try {
-    const { checkpoint } = await import('./db.js');
     await checkpoint();
     try {
       const { checkpointAppLog } = await import('./app-log.js');
@@ -69,7 +68,6 @@ async function tick() {
   try {
     // ponytail: checkpoint flushes WAL so mtime reflects real changes
     // LOG-BACKUP1: 雙 checkpoint（主庫＋日誌庫），mtime 取兩庫 max
-    const { checkpoint } = await import('./db.js');
     await checkpoint();
     try {
       const { checkpointAppLog } = await import('./app-log.js');
@@ -100,7 +98,6 @@ let _lastSyncMtime = 0;
 
 async function syncTick(mtime) {
   try {
-    const { getSetting, setSetting } = await import('./db.js');
     const flag = await getSetting('webdavAutoUpload');
     if (!(flag === 1 || flag === true || flag === '1')) return;
     if (!_syncSeeded) {
@@ -130,7 +127,6 @@ async function syncTick(mtime) {
   } catch (e) {
     const err = String(e?.message || e).slice(0, 300);
     try {
-      const { setSetting } = await import('./db.js');
       await setSetting('webdavLastSyncErr', err);
     } catch (_) {}
     console.warn('[auto-sync] 失敗（下個 tick 重試）:', err);

@@ -3,7 +3,7 @@
 import { getDbMtime, getAppLogMtime, webdavSaveConfig, webdavTest, backupDb, webdavCloudDelete, webdavCloudList, webdavDownload, webdavLogArchivePrune, webdavLogArchiveStatus, webdavLogArchiveUpload, webdavLogout, webdavMediaDownload, webdavMediaUpload, webdavPatchDownload, webdavPatchUpload, webdavServerDeleteLocal, webdavServerGetConfig, webdavServerListLocal, webdavServerSaveConfig, webdavServerStart, webdavServerStatus, webdavServerStop, webdavStatus, webdavUpload } from '../../lib/api.js';
 import { isAndroid } from '../../lib/platform.js';
 import { toast } from '../../lib/toast.js';
-import { addAudit, checkpoint, closeDB, initDB } from '../../lib/db.js';
+import { addAudit, checkpoint, closeDB, initDB, getSetting, setSetting } from '../../lib/db.js';
 export function bindWebdavSyncPage(s) {
   // ── WebDAV Sync（帳密存一次，之後自動帶；上傳自動對帳）──
   async function updateWebdavUI() {
@@ -12,7 +12,6 @@ export function bindWebdavSyncPage(s) {
       const status = await webdavStatus();
       let extra = '';
       try {
-        const { getSetting } = await import('../../lib/db.js');
         const at = Number(await getSetting('webdavLastSyncAt')) || 0;
         const err = String((await getSetting('webdavLastSyncErr')) || '');
         if (err) extra = ` · 自動同步待重試: ${err.slice(0, 80)}`;
@@ -28,7 +27,6 @@ export function bindWebdavSyncPage(s) {
   // 手動上傳成功＝同步狀態的另一個合法推進點（清待重試、對齊基準，避免下 tick 冗餘重傳）
   async function noteManualSyncOk() {
     try {
-      const { setSetting } = await import('../../lib/db.js');
       const m = Math.max(await getDbMtime(), await getAppLogMtime().catch(() => 0));
       await setSetting('webdavLastSyncMtime', String(m));
       await setSetting('webdavLastSyncAt', String(Date.now()));
@@ -37,7 +35,7 @@ export function bindWebdavSyncPage(s) {
   }
 
   // WebDAV 自動上傳開關（存 db settings，預設關；開了才跟本地自動備份同一 tick 上傳）
-  import('../../lib/db.js').then(async ({ getSetting, setSetting }) => {
+  (async () => {
     const box = document.getElementById('webdavAutoUpload');
     if (!box) return;
     try {
@@ -52,7 +50,7 @@ export function bindWebdavSyncPage(s) {
         toast('設定儲存失敗: ' + e, 'toast-error');
       }
     });
-  }).catch(() => {});
+  })().catch(() => {});
 
   // SIMPLIFY1：設定欄位失焦即存＋自動測連線（取代原本「儲存」「測試連線」兩顆按鈕）
   // SIMPLIFY1：上傳＝**先差量（幾 KB），不可用自動走整包** —— 不必自己選。

@@ -12,7 +12,7 @@ const pageRoot = () => document.getElementById('page-browser') || document.getEl
 
 import { cardFaceHtml } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, invalidateWordImages, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, addImageUrlFlow, ensureThumbCSS } from '../lib/word-image.js';
-import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
+import { deleteWordImagesForWord, addWordImage, getSetting, setSetting } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { speak, stopSpeech } from '../lib/tts.js';
@@ -424,12 +424,12 @@ let cardSettings = {
 // 顯示類設定（正反面欄位／例句句數）統一由設定頁 master 控制，此處只留播放相關
 const CARD_SETTINGS_KEY = 'browserCardSettings';
 function saveCardSettings() {
-  import('../lib/db.js').then(m => m.setSetting(CARD_SETTINGS_KEY, JSON.stringify({
+  setSetting(CARD_SETTINGS_KEY, JSON.stringify({
     pronAuto: cardSettings.pronAuto,
     pronManual: cardSettings.pronManual,
     pauseAfterPron: cardSettings.pauseAfterPron,
     pauseBetweenCards: cardSettings.pauseBetweenCards,
-  }))).catch(() => {});
+  })).catch(() => {});
 }
 
 function openCardPreview(s, wordId) {
@@ -792,12 +792,12 @@ export function onMount(s) {
 function _mount(s) {
   initScrollTop();
   // 例句限數：db 還原（與工具頁同一設定鍵）— 沒這段 window 變數永遠 undefined＝無限
-  import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
+  getSetting('exampleDisplayMax').then(v => {
     const n = Math.max(0, parseInt(v, 10) || 0);
     if (n > 0) window.__maxExampleLines = n;
   }).catch(() => {});
   // 字卡顯示設定：db 還原（換頁/重整不再重置回預設）
-  import('../lib/db.js').then(m => m.getSetting(CARD_SETTINGS_KEY)).then(v => {
+  getSetting(CARD_SETTINGS_KEY).then(v => {
     try {
       const o = JSON.parse(v);
       if (o && typeof o === 'object') {

@@ -2256,10 +2256,9 @@ export function createStore() {
 
     /** Clear ALL data and reset to factory state */
     async resetAll() {
-      const d = await import('./db.js');
-      await d.clearAll();
-      try { await d.executeSQL("VACUUM"); } catch (_) {}
-      await d.closeDB();
+      await db.clearAll();
+      try { await db.executeSQL("VACUUM"); } catch (_) {}
+      await db.closeDB();
       try { localStorage.clear(); } catch (e) {}
       location.reload();
     },

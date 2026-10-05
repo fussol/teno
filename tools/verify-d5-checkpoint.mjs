@@ -44,6 +44,7 @@ mock.module('@tauri-apps/api/core', { exports: {
 // mock './db.js'（api.js 的相對依賴）→ checkpoint spy
 mock.module('../src/lib/db.js', { exports: {
   checkpoint: async () => { order.push('checkpoint'); return true; },
+  getSetting: async () => null, // B 靜態化：api.js 檔頂 import { checkpoint, getSetting }，mock 缺 named 即模組化錯誤
 } });
 
 try {

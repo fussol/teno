@@ -1,7 +1,7 @@
 import { icon, splitFieldsHtml, fmtExample, mergeExamplePhrases, wordExample, examplePoolFor, rotateExamples } from '../lib/svg.js';
 import { cardFaceHtml } from '../lib/word-extra.js';
 import { wordImageSlotHTML, mountWordImages, WORD_IMAGE_CSS, disableWordImageKeys, renderEditorThumbs, bindEditorThumbs, getWordImages, invalidateWordImages, addImageUrlFlow, ensureThumbCSS } from '../lib/word-image.js';
-import { deleteWordImagesForWord, addWordImage } from '../lib/db.js';
+import { deleteWordImagesForWord, addWordImage, getSetting } from '../lib/db.js';
 import { store } from '../lib/app-store.js';
 import { toast } from '../lib/toast.js';
 import { hashCode, mulberry32 } from '../lib/rng.js';
@@ -245,17 +245,17 @@ function wordRowHtml(w, tagColors, sysTags, deckNames) {
 export function onMount(s) {
   initScrollTop();
   // 顯示上限：db 還原（與 browser.js 共享同一設定鍵＝兩頁一致記憶）＋ selector 變更寫回
-  import('../lib/db.js').then(m => m.getSetting(DISPLAY_LIMIT_KEY)).then(v => {
+  getSetting(DISPLAY_LIMIT_KEY).then(v => {
     const n = normalizeDisplayLimit(v);
     if (n !== _displayLimit) { _displayLimit = n; renderInPlace(s); }
   }).catch(() => {});
   // 例句限數：db 還原（與工具頁同一設定鍵）— 沒這段 window 變數永遠 undefined＝無限
-  import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
+  getSetting('exampleDisplayMax').then(v => {
     const n = Math.max(0, parseInt(v, 10) || 0);
     if (n > 0) window.__maxExampleLines = n;
   }).catch(() => {});
   // 卡片播放設定：db 還原（換頁/重整不再重置回預設）
-  import('../lib/db.js').then(m => m.getSetting(CARD_SETTINGS_KEY)).then(v => {
+  getSetting(CARD_SETTINGS_KEY).then(v => {
     try {
       const o = JSON.parse(v);
       if (o && typeof o === 'object') {
@@ -1480,12 +1480,12 @@ let cardSettings = {
 // 顯示類設定（正反面欄位／例句句數）統一由設定頁 master 控制，此處只留播放相關
 const CARD_SETTINGS_KEY = 'deckCardSettings';
 function saveCardSettings() {
-  import('../lib/db.js').then(m => m.setSetting(CARD_SETTINGS_KEY, JSON.stringify({
+  setSetting(CARD_SETTINGS_KEY, JSON.stringify({
     pronAuto: cardSettings.pronAuto,
     pronManual: cardSettings.pronManual,
     pauseAfterPron: cardSettings.pauseAfterPron,
     pauseBetweenCards: cardSettings.pauseBetweenCards,
-  }))).catch(() => {});
+  })).catch(() => {});
 }
 
 function openDeckCardPreview(s, wordId) {

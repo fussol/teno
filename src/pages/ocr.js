@@ -10,6 +10,7 @@
 import { icon } from '../lib/svg.js';
 import { isTauri } from '../lib/platform.js';
 import { toast } from '../lib/toast.js';
+import { getSetting } from '../lib/db.js';
 import { listEngines } from '../lib/ocr/engine.js';
 import { HIGHLIGHTER_COLORS, HIGHLIGHTER_KEYS } from '../lib/ocr/preprocess.js';
 import { cornersToRect, defaultCorners, moveCorner, untangleCorners } from '../lib/ocr/crop.js';
@@ -305,11 +306,11 @@ export function onMount(s) {
   let _file = null;                // 目前載入的原始 File（不圈選時直接饋引擎，繞開 canvas 污染）
 
   // 引擎選單還原＋持久化（原生 select.value，禁讀 cs trigger 文案）
-  import('../lib/db.js').then(m => m.getSetting('ocr_engine')).then(v => {
+  getSetting('ocr_engine').then(v => {
     if (typeof v === 'string' && Array.from(engSel.options).some(o => o.value === v)) engSel.value = v;
   }).catch(() => {});
   engSel.addEventListener('change', () => {
-    import('../lib/db.js').then(m => m.setSetting('ocr_engine', engSel.value)).catch(() => {});
+    setSetting('ocr_engine', engSel.value).catch(() => {});
   });
 
   const allBtn = (ids) => ids.map(id => document.getElementById(id));
@@ -526,7 +527,7 @@ export function onMount(s) {
     });
   };
   // A2 修復：ocrHighlightColor 不只寫，onMount 還原（比照引擎選單模式）
-  import('../lib/db.js').then(m => m.getSetting('ocrHighlightColor')).then(v => {
+  getSetting('ocrHighlightColor').then(v => {
     if (typeof v === 'string' && HIGHLIGHTER_KEYS.includes(v)) { _hlColor = v; _applyHlColor(v); }
   }).catch(() => {});
   hlColorBtns.forEach(btn => btn.addEventListener('click', async () => {

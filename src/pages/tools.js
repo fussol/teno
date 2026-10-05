@@ -729,7 +729,7 @@ let _srcMem = null; // { selectors: {id: value}, comboCollapsed: bool, comboOn: 
 const _SRC_BLOB_KEY = 'methodSources';
 function _saveSrcMem() {
   const snap = JSON.stringify(_srcMem || {});
-  import('../lib/db.js').then(m => m.setSetting(_SRC_BLOB_KEY, snap)).catch(() => {});
+  setSetting(_SRC_BLOB_KEY, snap).catch(() => {});
 }
 function _applySrcMem() {
   if (!_srcMem) return;
@@ -914,7 +914,7 @@ function _mount(s) {
   };
 
   // ─── 來源記憶載入＋組合包收合開關（每導航一次跑一次；存檔走 module 級 _srcMem）───
-  import('../lib/db.js').then(m => m.getSetting(_SRC_BLOB_KEY)).then(v => {
+  getSetting(_SRC_BLOB_KEY).then(v => {
     try {
       // AUTOFILL0：getSetting 對 JSON 字串已先 parse（db.js:649），所以 v 回來就是物件。
       // 舊碼對物件再 JSON.parse → String(物件)="[object Object]" → 必 throw → 永遠走 catch
@@ -1237,14 +1237,14 @@ function _mount(s) {
   if (exampleDisplayMax) {
     // EXRACE1：不再從 input 預設值回寫全域——input 掛載時從全域渲染，
     // 寫回只在使用者 input 事件發生（下方 listener）。歸零窗口＝例句限數失效根因。
-    import('../lib/db.js').then(m => m.getSetting('exampleDisplayMax')).then(v => {
+    getSetting('exampleDisplayMax').then(v => {
       const n = parseInt(v, 10);
       if (n > 0) { window.__maxExampleLines = n; exampleDisplayMax.value = n; }
     }).catch(() => {});
     exampleDisplayMax.addEventListener('input', () => {
       const n = parseInt(exampleDisplayMax.value, 10) || 0;
       window.__maxExampleLines = n;
-      import('../lib/db.js').then(m => m.setSetting('exampleDisplayMax', String(n))).catch(() => {});
+      setSetting('exampleDisplayMax', String(n)).catch(() => {});
     });
   }
 

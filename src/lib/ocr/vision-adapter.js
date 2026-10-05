@@ -33,6 +33,7 @@ let _cfgOverride = null;
 // TAURIGATE1: 桌面判定原本查 window.__TAURI__?.core，但 withGlobalTauri=false
 // → 該全域不存在 → 桌面被誤判成「非 Tauri」→ vision-ai 引擎永遠不列出。改用 isTauri。
 import { isTauri } from '../platform.js';
+import { getSetting } from '../db.js';
 
 export function _setVisionConfig(cfg) { _cfgOverride = cfg; }
 
@@ -44,11 +45,6 @@ async function resolveConfig() {
       model: _cfgOverride.model || 'qwen2.5vl:7b',
     };
   }
-  let getSetting = async () => null;
-  try {
-    const m = await import('../db.js');
-    if (typeof m.getSetting === 'function') getSetting = m.getSetting;
-  } catch (_) { /* 非 db 環境（node harness）→ 走 fallback */ }
   const url = (await getSetting('ollamaUrl')) || 'http://localhost:11434';
   // V2：預設 qwen2.5vl:7b（實測 12.8GB VRAM 可跑、46s/頁）。
   // 舊預設 qwen3-ocr64k（18.6GB）在常見消費卡上必然 OOM→CPU 卸載掛死；
