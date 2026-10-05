@@ -838,10 +838,11 @@ export async function deleteReviewLogsAfter(id, mode) {
   // C1: mode 過濾 — COALESCE(mode, 'flip') 內固定字面量（NULL 舊資料視為 flip，僅 flip undo 會刪）；
   //     右側 $2 為目標 mode（比較參數化）
   const m = mode || 'flip';   // 防 undefined 參數（呼叫端已窮舉，純保險）
-  await requireDB().execute(
+  // H-RAWWRITE1: 納入 _write（原為全檔漏網裸寫入，無排隊/無 busy 退避 → undo 靜默失效）
+  return _write(() => requireDB().execute(
     "DELETE FROM review_log WHERE id > $1 AND COALESCE(mode, 'flip') = $2",
     [id, m]
-  );
+  ));
 }
 
 
@@ -853,10 +854,11 @@ export async function deleteCard(wordId) {
 // ─── Exam History ───────────────────────────────
 
 export async function addExamEntry(entry) {
-  await requireDB().execute(
+  // H-RAWWRITE1: 納入 _write（原為裸寫入）
+  return _write(() => requireDB().execute(
     'INSERT INTO exam_history (word, correct, question_type, examined_at) VALUES ($1, $2, $3, $4)',
     [entry.word, entry.correct ? 1 : 0, entry.questionType || null, entry.examinedAt ?? new Date().toISOString()]   // E2: examined_at ISO 帶 Z（不再靠 DEFAULT naive）
-  );
+  ));
 }
 
 export async function getAllExamHistory() {
