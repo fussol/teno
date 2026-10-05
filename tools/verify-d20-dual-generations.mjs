@@ -103,9 +103,9 @@ try {
     const examIdx2 = dwbd.indexOf('DELETE FROM exam_history WHERE word IN (SELECT word');
     T('T5c 兩條 exam DELETE 在 DELETE words 之前',
       examIdx1 > 0 && examIdx2 > examIdx1 && wordsIdx > examIdx2, `examId=${examIdx1} examWord=${examIdx2} words=${wordsIdx}`);
-    const dw = dbSrc.match(/export async function deleteWord[\s\S]*?\n}/)?.[0] || '';
-    const hasIdDel = /DELETE FROM exam_history WHERE word = \$1'\s*,\s*\[String\(id\)\]/.test(dw);
-    const hasTextDel = /DELETE FROM exam_history WHERE word = \$1'\s*,\s*\[wordText\]/.test(dw);
+    const dw = dbSrc.match(/export async function deleteWord\([\s\S]*?\n}/)?.[0] || ''; // 錨 '(' 免命中 deleteWordImage
+    const hasIdDel = /DELETE FROM exam_history WHERE word = \$1'\s*,\s*(?:params:\s*)?\[String\(id\)\]/.test(dw);
+    const hasTextDel = /DELETE FROM exam_history WHERE word = \$1'\s*,\s*(?:params:\s*)?\[wordText\]/.test(dw);
     T('T6 deleteWord 含 word_id 世代 DELETE（String(id)）', hasIdDel);
     T('T6b deleteWord 含 legacy 文字世代 DELETE（wordText）', hasTextDel);
   }

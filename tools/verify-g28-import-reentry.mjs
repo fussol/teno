@@ -27,9 +27,11 @@ else fail.push('quizletImportRunBtn 未在 importing 時 disabled');
 
 // T3 靜態負控制：_phase 只在 run* 內設為 'importing'，guard 在其之前
 const g1 = c.indexOf(`async function runCsvImport`);
-const setIdx = c.indexOf(`_phase = 'importing'`);
-// guard 必須在設定值之前（第一處 _phase='importing' 在 runCsv 內且在其 guard 之後）
-if (setIdx > g1) pass.push('guard 位於 _phase 翻轉之前（防護次序正確）');
+const runCsvBody = c.slice(g1); // 限定在 runCsvImport 內（runPackImport 等更早函式不再干擾）
+const setIdx = runCsvBody.indexOf(`_phase = 'importing'`);
+const guardIdx = runCsvBody.indexOf(`_phase === 'importing'`);
+// guard 必須在 runCsvImport 內、其 _phase 翻轉之前
+if (guardIdx > -1 && setIdx > guardIdx) pass.push('guard 位於 _phase 翻轉之前（防護次序正確）');
 else fail.push('guard 次序可疑');
 
 // T4 動態模擬：用 ESM import 真源碼跑一個 min 假物件驗 guard 邏輯

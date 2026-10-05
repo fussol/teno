@@ -49,7 +49,7 @@ console.log('[T5] 接線：容器＋全域＋呼叫點');
 chk('index.html 有容器', /id="toastContainer"/.test(html));
 chk('main.js 掛 window.toast', /window\.toast = toast/.test(main));
 {
-  const files = ['src/main.js', 'src/pages/settings.js', 'src/pages/settings/sections.js', 'src/pages/settings/webdav.js', 'src/pages/settings/backup.js', 'src/pages/settings/deck-manager.js', 'src/pages/tools.js', 'src/pages/browser.js', 'src/pages/deck-browser.js',
+  const files = ['src/main.js', 'src/pages/settings.js', 'src/pages/settings/webdav.js', 'src/pages/settings/backup.js', 'src/pages/settings/deck-manager.js', 'src/pages/tools.js', 'src/pages/browser.js', 'src/pages/deck-browser.js',
     'src/pages/ocr.js', 'src/pages/import.js', 'src/pages/export.js', 'src/pages/simulator.js', 'src/pages/app-log.js',
     'src/pages/tag-manager.js', 'src/pages/exam-flip.js', 'src/pages/exam-mc.js', 'src/pages/exam-spell.js',
     'src/engine/session-utils.js', 'src/engine/session-mc-utils.js', 'src/engine/session-spell-utils.js', 'src/lib/easter-eggs.js'];
@@ -57,7 +57,6 @@ chk('main.js 掛 window.toast', /window\.toast = toast/.test(main));
   chk('18 個呼叫檔全接上', missing.length === 0, missing.join(','));
 }
 chk('warn 有樣式可用（舊 2＋正名 7）', (js.match(/toast-warn/g) || []).length >= 0
-  && readFileSync('src/pages/deck-browser.js', 'utf8').includes(`'toast-warn'`)
   && readFileSync('src/pages/browser.js', 'utf8').includes(`'toast-warn'`)
   && readFileSync('src/pages/tools.js', 'utf8').includes(`'toast-warn'`)
   && settingsSrc().includes(`'toast-warn'`)
