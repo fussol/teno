@@ -25,7 +25,7 @@ import { pageRoot, escapeHtml, _ankiMode, setAnkiMode } from './settings/_shared
 import { renderSettingsContent } from './settings/sections.js';
 import { bindWebdavSyncPage } from './settings/webdav.js';
 import { runExportDb, runImportDb, showBackups } from './settings/backup.js';
-import { bindDeckManager, renderDeckManager, renderFilteredDecks } from './settings/deck-manager.js';
+import { bindDeckManager, renderDeckManager, renderFilteredDecks, openDeckModal, showFilteredDeckModal } from './settings/deck-manager.js';
 import { setSetting } from '../lib/db.js';
 
 // 欄位顯示三組（設定頁 master）：瀏覽器字卡正面／背面＋學習測驗共用

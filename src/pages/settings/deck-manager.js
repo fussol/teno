@@ -110,7 +110,7 @@ export function bindDeckManager(s) {
 
 }
 
-function openDeckModal(s, deck) {
+export function openDeckModal(s, deck) {
   const isEdit = !!deck;
   const container = pageRoot();
   if (!container) return;
@@ -267,7 +267,7 @@ function openMergeModal(s, srcDeck) {
 }
 
 // ─── 過濾牌組 Modal ─────────────────────────────
-function showFilteredDeckModal(s, fd = null) {
+export function showFilteredDeckModal(s, fd = null) {
   const isEdit = !!fd;
   const container = pageRoot();
   if (!container) return;
