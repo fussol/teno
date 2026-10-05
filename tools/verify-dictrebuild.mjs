@@ -40,7 +40,7 @@ console.log('\n== [B] 唯一解析點：改設定即可切換本地／公開 =='
 chk('fetchLLM 在 api.js 解析設定', /getSetting\('llmApiUrl'\)/.test(api) && /getSetting\('llmApiFormat'\)/.test(api));
 chk('傳遞 apiKey 給 Rust', /apiKey: cfg\.key/.test(api));
 chk('設定留空 → 完全沿用呼叫端值（不改舊行為）',
-  /if \(!override\) return invoke\('fetch_llm', \{ url, model, prompt, apiFormat \}\)/.test(api));
+  /if \(!override\) return invoke\('fetch_llm', \{ url, model, prompt, apiFormat, messages \}\)/.test(api));
 
 console.log('\n== [C] Rust：來源換掉、形狀不變 ==');
 const rs = src('src-tauri/src/lib.rs');

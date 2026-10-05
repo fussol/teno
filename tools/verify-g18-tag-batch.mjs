@@ -19,7 +19,7 @@ const dbSrc = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8')
 console.log('── G18 tag 批次事務 ──');
 
 // T1 db.js 有 saveWordsInTx（FIX MARKER）
-ok('T1 db.js 有 saveWordsInTx 批次 API', /export async function saveWordsInTx/.test(dbSrc) && /BEGIN TRANSACTION/.test(dbSrc));
+ok('T1 db.js 有 saveWordsInTx 批次 API', /export async function saveWordsInTx[\s\S]*?_tx\(/.test(dbSrc)); // DB-TX1: 交易移交 Rust sql_tx
 
 // 用「精確函式 body 切片」檢查（awk 同款）—— 避免全文 greedy regex 誤逮
 function fnBody(src, name) {

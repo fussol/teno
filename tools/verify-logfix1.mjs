@@ -26,7 +26,7 @@ ok('api.js 提供 sqlTx', src('src/lib/api.js').includes('export const sqlTx = (
 ok('busy 正則含 code 5/517', db.includes('code:') && db.includes('517'));
 for (const fn of ['saveWord', 'saveCard', 'setSetting', 'addAudit', 'addReviewLog', 'deleteWord'])
   ok(`db:${fn} 走 _write`, new RegExp(`(export async function ${fn}[\\s\\S]{0,400})_write\\(`).test(db));
-ok('重試回退遞增', db.includes('30 * (i + 1)'));
+ok('重試指數退避＋封頂', db.includes('30 * 2 ** i') && db.includes('800')); // DB-RES1: 30,60,120…封頂 800ms
 
 console.log('== BUG3 txn 守門 ==');
 // DB-TX1: 舊的 inTxn 旗標與 _safeRollback 已隨「JS 不再自組交易」移除。
