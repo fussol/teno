@@ -32,6 +32,8 @@ import { getToday } from '../src/core/scheduler.js';
 // 之前會寫 window.__maxExampleLines、startAutoBackup 註冊 beforeunload — 補最小 stub
 globalThis.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 globalThis.window = { addEventListener() {}, removeEventListener() {} };
+// store.loadAll 尾端 document.body.classList/UI scale 需要最小 DOM 樁
+globalThis.document = { body: { classList: { toggle() {} }, style: {} }, documentElement: { dataset: {} } };
 
 let failures = 0;
 function check(label, got, expect) {
@@ -68,7 +70,7 @@ class FakeDatabase {
     this.db.exec('CREATE TABLE goal_streak (id INTEGER PRIMARY KEY, daily_goal INTEGER, current INTEGER, best INTEGER, dates TEXT)');
     this.db.exec("CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, action TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')");
     this.db.exec('CREATE TABLE decks (id TEXT PRIMARY KEY, name TEXT, color TEXT)');
-    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT)');
+    this.db.exec('CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT, color TEXT, deck_ids TEXT, decks TEXT)');
     // loadAll 完整路徑所需（c3 schema 缺這幾張 → init 提前 bail，loadAll 尾端的
     // migrateBuriedAt/autoUnburyIfNewDay 沒跑到；補齊讓整條 init 路徑可測）
     this.db.exec('CREATE TABLE additions (id INTEGER PRIMARY KEY AUTOINCREMENT, word TEXT, definition TEXT, part_of_speech TEXT, pronunciation TEXT, examples TEXT, deck TEXT, added_at TEXT)');

@@ -176,7 +176,7 @@ async function main() {
     check('T1 definition 含兩 sense 併（apple fruit + apple verb）', typeof w.definition, 'string');
     check('T1 definition 含 sense0' , w.definition.includes('round fruit'), true);
     check('T1 definition 含 sense1', w.definition.includes('to make an apple'), true);
-    check('T1 pron 填 uk/us 併', w.pron, 'ˈæp.əl / ˈæp.əl');
+    check('T1 pron 填 uk/us 併（normPron 統一 /.../ 包覆）', w.pron, '/ˈæp.əl/ / /ˈæp.əl/');
     check('T1 examples 合併兩 sense', Array.isArray(w.examples) && w.examples.includes('She ate an apple') && w.examples.includes('They apple the harvest'), true);
     // charlie 無 sense → not enriched（filled 未含它）
     await resetState(store, [mkEmptyWord('w1c', 'charlie')]);

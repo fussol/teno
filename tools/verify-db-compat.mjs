@@ -2,10 +2,10 @@
 // verify-db-compat.mjs — db-compat 工具＋新舊雙視角開機模擬 harness
 //
 // 測什麼（全部真實出貨碼，不手抄 SQL）：
-//  A. loadMigrations 从 lib.rs 抽取 v1..v14（結構一變就喊，不靜默）
+//  A. loadMigrations 从 lib.rs 抽取 v1..v15（結構一變就喊，不靜默）
 //  B. 合成 v10 時代舊庫（migrations 1..10；v1 指紋故意寫舊＝模擬 5.2.9 血統；
 //     words 帶 synonym/antonym 缺 etymology 系；decks 無 new_weight；無 word_images）
-//  C. repair 合成庫 → v1..v14 全登記＋指紋全對＋筆數不變（＝新版 migrator no-op）
+//  C. repair 合成庫 → v1..v15 全登記＋指紋全對＋筆數不變（＝新版 migrator no-op）
 //  D. 新版視角模擬 == sqlx Migrator::run gate（checksum 比＋pending 查＋未知版查）
 //  E. downgrade 10/12/13 → 登記恰為 v1..target、schema 剝離如預期、筆數不變
 //  F. 舊版視角：降級檔 v1..v10 指紋 == 現行（已證 == 5.9.45 文字：v1 tag 比對
@@ -31,8 +31,8 @@ const REAL = '/home/jupiter/下載/teno-backup (15).db';
 let MIGS;
 try {
   MIGS = loadMigrations();
-  ok('A 抽取 v1..v14', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].every(v => MIGS[v]?.sql?.length > 0));
-} catch (e) { ok('A 抽取 v1..v14', false, e.message); process.exit(1); }
+  ok('A 抽取 v1..v15', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].every(v => MIGS[v]?.sql?.length > 0));
+} catch (e) { ok('A 抽取 v1..v15', false, e.message); process.exit(1); }
 ok('A V13 釘選五欄', ['etymology', 'syllables', 'phrases', 'synonym', 'antonym'].every(c => MIGS[13].sql.includes('ADD COLUMN ' + c)));
 
 // sqlx gate 模擬（唯讀）
@@ -126,7 +126,7 @@ const repP = tmp('rep') + '.db';
   const r = run(`node tools/db-compat.mjs repair ${oldP} --out ${repP}`);
   ok('C repair exit 0', !r.startsWith('CMDFAIL'), r.slice(0, 120));
   const { m, n, it } = migsOf(repP);
-  ok('C 登記到頂 v14', JSON.stringify(m) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]), m.join(','));
+  ok('C 登記到頂 v15', JSON.stringify(m) === JSON.stringify([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]), m.join(','));
   ok('C 筆數不變＋integrity', n === 2 && it === 'ok', `n=${n} it=${it}`);
   const wc = colsOf(repP, 'words');
   ok('C v13 五欄齊', ['etymology', 'syllables', 'phrases', 'synonym', 'antonym'].every(c => wc.includes(c)));
@@ -136,9 +136,9 @@ const repP = tmp('rep') + '.db';
   const p = tmp('g'); writeFileSync(p, tenoOf(repP));
   const db = new DatabaseSync(p); // gate() 內部另開，這裡只借 rows 數
   db.close(); unlinkSync(p);
-  const g = gate(tenoOf(repP), 14, 'repaired@new');
+  const g = gate(tenoOf(repP), 15, 'repaired@new');
   ok('D 新版開機 no-op', g.res, g.why);
-  const g2 = gate(tenoOf(oldP), 14, 'synthetic-old@new');
+  const g2 = gate(tenoOf(oldP), 15, 'synthetic-old@new');
   ok('D 舊庫新版必死（v1 指紋）', !g2.res && /v1/.test(g2.why), g2.why);
 }
 // E. downgrade 矩陣
@@ -147,7 +147,7 @@ for (const t of [13, 12, 10]) {
   const r = run(`node tools/db-compat.mjs downgrade ${repP} --target ${t} --out ${o}`);
   ok(`E downgrade→${t} exit 0`, !r.startsWith('CMDFAIL'), r.slice(0, 120));
   const { m, n, it } = migsOf(o);
-  const want = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].filter(v => v <= t);
+  const want = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].filter(v => v <= t);
   ok(`E${t} 登記恰為 v1..${t}`, JSON.stringify(m) === JSON.stringify(want), m.join(','));
   ok(`E${t} 筆數＋integrity`, n === 2 && it === 'ok');
   const wc = colsOf(o, 'words');
@@ -182,13 +182,13 @@ for (const t of [13, 12, 10]) {
 }
 // G. 真庫（有檔才跑）
 if (existsSync(REAL)) {
-  const g = gate(tenoOf(REAL), 14, 'real-raw@new');
+  const g = gate(tenoOf(REAL), 15, 'real-raw@new');
   ok('G 真庫 raw 新版必死 v1', !g.res && /v1/.test(g.why), g.why);
   const o = tmp('real') + '.db';
   const r = run(`node tools/db-compat.mjs repair "${REAL}" --out ${o}`);
   ok('G 真庫 repair exit 0', !r.startsWith('CMDFAIL'), r.slice(0, 120));
   if (!r.startsWith('CMDFAIL')) {
-    const g2 = gate(tenoOf(o), 14, 'real-repaired@new');
+    const g2 = gate(tenoOf(o), 15, 'real-repaired@new');
     ok('G 真庫修後新版 no-op', g2.res, g2.why);
     const { n } = migsOf(o);
     ok('G 真庫 4934 詞不變', n === 4934, `n=${n}`);
@@ -207,7 +207,7 @@ if (existsSync(REAL)) {
   const o = tmp('prep') + '.db';
   const r = prepareImportFile(oldP, o);
   ok('H prepare-import 有修復', r.repaired === true);
-  const g = gate(tenoOf(o), 14, 'prepared@new');
+  const g = gate(tenoOf(o), 15, 'prepared@new');
   ok('H 產物新版開機 no-op', g.res, g.why);
   const { n } = migsOf(o);
   ok('H 產物筆數不變', n === 2, `n=${n}`);
