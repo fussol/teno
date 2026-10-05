@@ -43,8 +43,8 @@ function armTimeout(slot) {
 // G9：Web Speech 從不用於發音（唯一桌面路徑 = nativeSpeak），舊 pick/_enVoice
 // voices 掃描死碼已除（getVoices 每事件週期白跑）。stopSpeech 的 cancel 保留（no-op 防呆）。
 
-// Set up Android TTS event listeners once
-if (isAndroid) {
+// Set up Android TTS event listeners once（僅 Tauri Android；瀏覽器版 UA 亦含 Android，須排除）
+if (isAndroid && isTauri) {
   import('@tauri-apps/api/event').then(({ listen }) => {
     // start：id 傳遞通道（JS 無法自產 utteranceId，Kotlin 端 UUID 綁定 KEY_PARAM_UTTERANCE_ID）
     listen('tts://speech:start', (e) => {
@@ -88,13 +88,13 @@ if (isAndroid) {
 
 export function speak(text, speed, voice, pitch) {
   if (!text) return Promise.resolve();
-  if (isAndroid) return speakAndroidTts(text, speed ?? 0.9, voice || '', pitch ?? 50);
-  // WEB（2026-09-08）：無 Tauri 後端 → 瀏覽器 speechSynthesis；實機路徑不動
-  // TAURIGATE1: 原本查 window.__TAURI__?.core（withGlobalTauri=false → 恆不存在）
-  // → 桌面被誤判成「無原生 TTS」而退回瀏覽器 speechSynthesis。改用 isTauri。
-  if (!isTauri && typeof speechSynthesis !== 'undefined') {
-    return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice);
+  // WEB 優先：純瀏覽器（!isTauri）無原生 TTS 後端 → 一律走瀏覽器 speechSynthesis。
+  // 舊碼先判 isAndroid，但手機瀏覽器 UA 同樣含 Android → 誤走 Tauri 原生分支（無後端＝完全沒聲）。
+  if (!isTauri) {
+    if (typeof speechSynthesis !== 'undefined') return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice);
+    return Promise.resolve();
   }
+  if (isAndroid) return speakAndroidTts(text, speed ?? 0.9, voice || '', pitch ?? 50);
   // 2026-09-05 方案 C（使用者裁示）：Windows 走 WebView2 speechSynthesis（Edge/Microsoft
   // 自然語音，免 piper 免安裝）；Linux 維持 piper。speechSynthesis 不可用或零語音時
   // fallback piper（speakAsync，Windows 無 piper 會失敗並反映在 ttsAvailable）。
@@ -121,18 +121,29 @@ function speakWebSpeech(text, speed, pitch, voice) {
   return new Promise((resolve, reject) => {
     try {
       const u = new SpeechSynthesisUtterance(text);
-      // 選定語音優先（web 語音選擇器）；找不到才退回 Windows 英語挑選
+      // 選定語音優先（web 語音選擇器）；找不到才退回英語挑選（getVoices 首次可能為空 → 用預設）
       const v = (voice && speechSynthesis.getVoices().find(x => x.name === voice)) || pickWindowsEnVoice();
       if (v) u.voice = v;
       u.lang = v?.lang || 'en-US';
       u.rate = Math.max(0.5, Math.min(2.0, speed));
       u.pitch = Math.max(0, Math.min(2.0, pitch / 50));
-      u.onend = () => { clearTimeout(wsTimer); resolve(); };
-      u.onerror = (ev) => { clearTimeout(wsTimer); reject(new Error('speech error: ' + (ev?.error || 'unknown'))); };
-      speechSynthesis.cancel();
-      // 保底 timeout：onend 不觸發時不永久 pending——先建再 speak，同步 onend 也清得到
-      const wsTimer = setTimeout(() => { speechSynthesis.cancel(); resolve({ cancelled: true }); }, TTS_TIMEOUT_MS);
-      speechSynthesis.speak(u);
+      let wsTimer = null;
+      u.onend = () => { if (wsTimer) clearTimeout(wsTimer); wsTimer = null; resolve(); };
+      u.onerror = (ev) => { if (wsTimer) clearTimeout(wsTimer); wsTimer = null; reject(new Error('speech error: ' + (ev?.error || 'unknown'))); };
+      const go = () => {
+        try {
+          // 保底 timeout：onend 不觸發時不永久 pending
+          wsTimer = setTimeout(() => { speechSynthesis.cancel(); resolve({ cancelled: true }); }, TTS_TIMEOUT_MS);
+          speechSynthesis.speak(u);
+        } catch (e) { reject(e); }
+      };
+      if (speechSynthesis.speaking || speechSynthesis.pending) {
+        // Chrome/Android：cancel 後「同步」speak 會被吞（聲音消失）→ 隔一拍再送
+        speechSynthesis.cancel();
+        setTimeout(go, 80);
+      } else {
+        go();   // 首次於手勢 stack 內同步發聲（iOS Safari 要求）
+      }
     } catch (e) {
       reject(e);
     }
@@ -185,7 +196,7 @@ async function speakAsync(text, speed, voice, pitch) {
 }
 
 export async function stopSpeech() {
-  if (isAndroid) {
+  if (isAndroid && isTauri) {
     // 不再預先清槽：Kotlin stop() 會 emit stopped(user) 帶 id → 由事件自然 resolve（cancelled）；
     // 無進行中 speech 時 Kotlin 不 emit、無副作用
     try { await stopAndroid(); } catch {}
@@ -199,6 +210,7 @@ export function ttsAvailable() {
   // 假設了已不存在的 Web Speech fallback（誤報源）。未知時樂觀 true（首次呼叫揭曉），
   // 連續失敗後 false（重試仍進行，僅可用性匯報翻臉）。
   // 2026-09-05：Windows 走 speechSynthesis（方案 C）——樂觀 true，WebView2 必帶語音。
+  if (!isTauri) return true;   // WEB：瀏覽器 speechSynthesis（首次呼叫揭曉，失敗會反映在 speak reject）
   if (isAndroid) return true;
   if (isWindows) return true;
   return _hasNative !== false;

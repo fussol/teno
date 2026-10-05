@@ -66,7 +66,7 @@ chk('platform.js 定義 isTauri（含 __TAURI_INTERNALS__）',
 const appLog = readFileSync('src/lib/app-log.js', 'utf8');
 chk('app-log.js: noBackend() 以 isTauri 為單一來源（web build 加 __TENO_WEB__ 例外）', /const noBackend = \(\) => !isTauri &&/.test(appLog));
 chk('app-log.js: 已 import isTauri', /import \{ isTauri \} from '\.\/platform\.js'/.test(appLog));
-chk('tts.js: 用 !isTauri 判無原生 TTS', /if \(!isTauri && typeof speechSynthesis !== 'undefined'\)/.test(readFileSync('src/lib/tts.js', 'utf8')));
+chk('tts.js: 用 !isTauri 判無原生 TTS（web 分支先行）', /if \(!isTauri\)[\s\S]{0,140}speechSynthesis/.test(readFileSync('src/lib/tts.js', 'utf8')));
 chk('ocr.js: _isDesktop 用 isTauri', /return isTauri;/.test(readFileSync('src/pages/ocr.js', 'utf8')));
 chk('vision-adapter.js: isDesktopEnv 用 isTauri', /return isTauri;/.test(readFileSync('src/lib/ocr/vision-adapter.js', 'utf8')));
 chk('initAppLog 顯性化後端判定（window.__logBackend）', /window\.__logBackend = !noBackend\(\)/.test(appLog));
