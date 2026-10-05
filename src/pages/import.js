@@ -929,8 +929,9 @@ async function importPackImages(s, res) {
   if (jobs.length === 0) return;
   if (jobs.length > 500 && !confirm(`圖片共 ${jobs.length} 張，確定一次全部匯入？`)) return;
   const paint = (done) => {
-    const el = document.getElementById('importProgressSub');
-    if (el) el.textContent = `圖片 ${done} / ${jobs.length}`;
+    // D-PROGSUB1: #importProgressSub 全 repo 不存在（renderProgress 只產 #importProgressText）→ 改寫入真元素
+    const el = document.getElementById('importProgressText');
+    if (el) el.textContent = `匯入圖片 ${done} / ${jobs.length}`;
   };
   const CON = 5;
   let ok = 0, bad = 0;
@@ -947,8 +948,8 @@ async function importPackImages(s, res) {
       }
     }));
     rs.forEach(r => { if (r) ok++; else bad++; });
-    paint(ok + bad);
-    _renderInPlace(s);
+    _renderInPlace(s);          // 重繪（完成值整版重繪）
+    paint(ok + bad);            // D-PROGSUB1: 重繪後再寫回圖片進度，否則被文字完成值蓋掉
   }
   toast(`圖片完成：${ok} 張${bad ? `（跳過 ${bad}）` : ''}`, bad ? 'toast-warn' : 'toast-success');
 }
