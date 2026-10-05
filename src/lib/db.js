@@ -246,7 +246,11 @@ async function _retryBusy(fn, tries = _BUSY_TRIES) {
   throw last;
 }
 function _write(fn) {
-  return _queued(() => _retryBusy(fn).catch((e) => {
+  return _queued(() => _retryBusy(fn).then((r) => {
+    // H-STREAK1: 成功即歸零（原只 ++ 不歸零，「連續失敗次數」診斷值單調遞增誤導）
+    if (_writeFailStreak) _writeFailStreak = 0;
+    return r;
+  }).catch((e) => {
     // DB-RES1: 重試耗盡＝這次真的沒寫進去。一定留下痕跡（error 級在 LOG-SCOPE1 下無視開關強制寫庫）
     _writeFailStreak++;
     console.error('[db] 寫入失敗（重試耗盡）', { streak: _writeFailStreak, err: String(e?.message || e) });
