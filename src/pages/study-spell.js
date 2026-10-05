@@ -72,6 +72,7 @@ function renderFront(w, cnt) {
         <span class="study-count-learn">${cnt.learnCount??0}學</span>
         <span class="study-count-review">${cnt.reviewCount??0}複</span>
       </span>
+      <button id="undoBtn" class="study-undo-btn" title="Ctrl+Z 復原上一張">↩ 復原</button>
     </div>
     <div class="study-card">
       <div style="font-size:13px;color:var(--text-tertiary);margin-bottom:4px;font-weight:500">請拼出單字</div>
