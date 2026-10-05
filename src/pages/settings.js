@@ -199,6 +199,11 @@ function _mount(s) {
     speak('Hello, this is a test of the text to speech system.', speed, voice);
   });
 
+  // WEB：語音來源（瀏覽器 / 電腦 Piper）
+  document.getElementById('ttsSourceSel')?.addEventListener('change', (e) => {
+    s.actions.setTtsSource(e.target.value);
+  });
+
   document.getElementById('importPiperModelBtn')?.addEventListener('click', async () => {
     try {
       const voices = await importPiperModelDialog();

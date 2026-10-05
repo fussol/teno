@@ -168,6 +168,17 @@ export const speakText = (text, opts = {}) => {
   })
 }
 
+/** WEB：請伺服器（電腦）用 Piper 合成，回 base64 WAV 給瀏覽器播放。speed→lengthScale 同 speakText。 */
+export const synthesizeTts = (text, opts = {}) => {
+  const { speed = 1, voice = 'en_US-ryan-high' } = opts
+  return invoke('tts_synthesize', {
+    text,
+    voice,
+    lengthScale: Math.max(0.3, Math.min(3, 1.0 / Math.max(0.3, speed) * 0.9)),
+    noiseScale: 0.667,
+  })
+}
+
 export const speakAndroid = (text, opts = {}) => {
   const { speed = 1, voice = '' } = opts
   return invoke('speak_android', { text, voice, speed })

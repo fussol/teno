@@ -27,8 +27,19 @@ struct PiperAudio {
 static TTS_PLAYING: AtomicBool = AtomicBool::new(false);
 
 fn piper_models_dir(app_handle: &Ctx) -> Result<std::path::PathBuf, String> {
+    // 環境變數覆寫（web server 可指向共用模型目錄）
+    if let Ok(env) = std::env::var("TENO_PIPER_MODELS") {
+        if !env.is_empty() { return Ok(std::path::PathBuf::from(env)); }
+    }
     let mut dir = app_handle.path().app_config_dir().map_err(|e| e.to_string())?;
     dir.push("piper-models");
+    // WEB：per-user 目錄通常沒有模型 → 回退桌面全域模型目錄（web server 跑在同一台電腦）
+    if app_handle.is_web() && collect_piper_voices(&dir).is_empty() {
+        if let Some(home) = std::env::var_os("HOME") {
+            let g = std::path::PathBuf::from(home).join(".config").join("com.teno.app").join("piper-models");
+            if g.is_dir() { return Ok(g); }
+        }
+    }
     Ok(dir)
 }
 
@@ -156,7 +167,8 @@ async fn run_cli(app_handle: Ctx, args: Vec<String>) -> Result<String, String> {
     Ok(out)
 }
 
-fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app_handle: &Ctx) -> Result<(), String> {
+/// Piper 合成到 tmp WAV（只合成、不播放）；回傳 wav 路徑，呼叫端負責刪除。
+fn piper_synth(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app_handle: &Ctx) -> Result<std::path::PathBuf, String> {
     let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
     let tmp_wav = std::env::temp_dir().join(format!("teno_piper_out_{}.wav", ts));
 
@@ -218,7 +230,11 @@ fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app
         let _ = std::fs::remove_file(&tmp_wav);
         return Err(format!("piper 回傳錯誤: {:?} stderr={}", status.code(), stderr));
     }
+    Ok(tmp_wav)
+}
 
+fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app_handle: &Ctx) -> Result<(), String> {
+    let tmp_wav = piper_synth(text, voice, length_scale, noise_scale, app_handle)?;
     // ponytail: try paplay → pw-play → aplay for audio output
     for player in &["paplay", "pw-play", "aplay"] {
         let result = std::process::Command::new(player)
@@ -237,6 +253,30 @@ fn speak_piper(text: &str, voice: &str, length_scale: f64, noise_scale: f64, app
     let _ = std::fs::remove_file(&tmp_wav);
     log::error!("speak_piper: all players failed");
     Err("all audio players failed".to_string())
+}
+
+/// WEB-SERVE1：合成 Piper 音訊、回傳 base64 WAV（給瀏覽器播放；不在伺服器出聲）。
+/// 刻意「非 Tauri command」——只走 web 分派，桌面 generate_handler 命令數不變。
+pub async fn tts_synthesize(text: String, voice: Option<String>, length_scale: Option<f64>, noise_scale: Option<f64>, app_handle: Ctx) -> Result<String, String> {
+    if text.trim().is_empty() { return Err("空字串".into()); }
+    let wav = piper_synth(&text, voice.as_deref().unwrap_or("en_US-ryan-high"), length_scale.unwrap_or(1.0), noise_scale.unwrap_or(0.667), &app_handle)?;
+    let bytes = std::fs::read(&wav).map_err(|e| format!("讀取合成音訊失敗: {e}"))?;
+    let _ = std::fs::remove_file(&wav);
+    Ok(b64_encode(&bytes))
+}
+
+fn b64_encode(data: &[u8]) -> String {
+    const TBL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(TBL[((n >> 18) & 63) as usize] as char);
+        out.push(TBL[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { TBL[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TBL[(n & 63) as usize] as char } else { '=' });
+    }
+    out
 }
 
 #[tauri::command]

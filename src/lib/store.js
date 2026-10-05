@@ -10,6 +10,7 @@ import { FSRS, AGAIN, HARD, GOOD, EASY, STATE_NEW, STATE_LEARNING, STATE_REVIEW,
 import { mulberry32 } from './rng.js';
 import { DEFAULT_BLACKLIST, normalizeBlackWord } from './ocr-blacklist.js';
 import { FIELD_STUDY_ONLY } from './word-extra.js';
+import { setTtsSource as applyTtsSource } from './tts.js';
 
 /**
  * A9: 作答時間 cap — 對齊 Anki rslib `cap_answer_time_to_secs`（預設 60s，
@@ -177,6 +178,7 @@ export function createStore() {
     newRatedTodaySpell: 0,
     ttsSpeed: 0.9,        // speech rate multiplier (0.5 = slow, 2.0 = fast)
     ttsVoice: 'en_US-ryan-high',
+    ttsSource: 'browser',   // WEB 語音來源：'browser' | 'piper'（電腦 Piper）
     ttsPitch: 50,         // espeak-ng pitch 0..99 (50 = default)
     themeMode: 'dark',    // 'dark' | 'light' (theme-d)
     themeAccent: 'skyBlue',  // accent preset name
@@ -325,6 +327,7 @@ export function createStore() {
             dayCutoff: await db.getSetting('dayCutoff'),
             ttsSpeed: await db.getSetting('ttsSpeed'),
             ttsVoice: await db.getSetting('ttsVoice'),
+            ttsSource: await db.getSetting('ttsSource'),
             ttsPitch: await db.getSetting('ttsPitch'),
             themeMode: await db.getSetting('themeMode'),
             themeAccent: await db.getSetting('themeAccent'),
@@ -480,6 +483,8 @@ export function createStore() {
     state.dayCutoff = typeof settings.dayCutoff === 'number' ? settings.dayCutoff : 0;
     state.ttsSpeed = typeof settings.ttsSpeed === 'number' ? settings.ttsSpeed : 0.9;
     state.ttsVoice = typeof settings.ttsVoice === 'string' ? settings.ttsVoice : 'en_US-ryan-high';
+    state.ttsSource = settings.ttsSource === 'piper' ? 'piper' : 'browser';
+    applyTtsSource(state.ttsSource);   // 全域套用（study/exam 頁的 speak 才有正確來源）
     state.ttsPitch = typeof settings.ttsPitch === 'number' ? settings.ttsPitch : 50;
     state.themeMode = settings.themeMode === 'light' ? 'light' : 'dark';
     state.themeAccent = typeof settings.themeAccent === 'string' ? settings.themeAccent : 'skyBlue';
@@ -1869,6 +1874,14 @@ export function createStore() {
     async setTtsVoice(v) {
       state.ttsVoice = String(v || 'en_US-ryan-high');
       try { await db.setSetting('ttsVoice', state.ttsVoice); } catch (e) { console.warn('[store] setTtsVoice error:', e); }
+      notify();
+    },
+
+    /** WEB 語音來源：'browser' | 'piper'（電腦 Piper）。Persists＋全域套用。 */
+    async setTtsSource(v) {
+      state.ttsSource = v === 'piper' ? 'piper' : 'browser';
+      applyTtsSource(state.ttsSource);
+      try { await db.setSetting('ttsSource', state.ttsSource); } catch (e) { console.warn('[store] setTtsSource error:', e); }
       notify();
     },
 

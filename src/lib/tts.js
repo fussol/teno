@@ -1,4 +1,4 @@
-import { speakText as nativeSpeak, speakAndroid as androidSpeak, stopAndroid } from './api.js'
+import { speakText as nativeSpeak, speakAndroid as androidSpeak, stopAndroid, synthesizeTts } from './api.js'
 import { isAndroid, isWindows, isTauri } from './platform.js'
 
 const _voiceMap = {
@@ -86,11 +86,22 @@ if (isAndroid && isTauri) {
   });
 }
 
+// WEB 語音來源：'browser'（預設）| 'piper'（請電腦 web server 合成）。由 store/settings 設定。
+let _ttsSource = 'browser';
+export function setTtsSource(src) { _ttsSource = src === 'piper' ? 'piper' : 'browser'; }
+
 export function speak(text, speed, voice, pitch) {
   if (!text) return Promise.resolve();
-  // WEB 優先：純瀏覽器（!isTauri）無原生 TTS 後端 → 一律走瀏覽器 speechSynthesis。
-  // 舊碼先判 isAndroid，但手機瀏覽器 UA 同樣含 Android → 誤走 Tauri 原生分支（無後端＝完全沒聲）。
+  // WEB 優先：純瀏覽器（!isTauri）無原生 TTS 後端 → 語音來源可選
+  //   ① server-piper：請電腦（web server）Piper 合成回 WAV 播放（音質好，需連線）
+  //   ② browser（預設）：瀏覽器 speechSynthesis
   if (!isTauri) {
+    if (_ttsSource === 'piper') {
+      return speakServerPiper(text, speed ?? 0.9, voice).catch(() => {
+        // 電腦沒開/無模型/離線 → fallback 瀏覽器語音
+        return typeof speechSynthesis !== 'undefined' ? speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice) : Promise.resolve();
+      });
+    }
     if (typeof speechSynthesis !== 'undefined') return speakWebSpeech(text, speed ?? 0.9, pitch ?? 50, voice);
     return Promise.resolve();
   }
@@ -150,6 +161,31 @@ function speakWebSpeech(text, speed, pitch, voice) {
   });
 }
 
+// WEB：請伺服器（電腦）Piper 合成 → base64 WAV → 瀏覽器播放
+let _serverAudio = null;
+function base64ToBlob(b64, mime) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return new Blob([u8], { type: mime });
+}
+function speakServerPiper(text, speed, voice) {
+  return new Promise((resolve, reject) => {
+    synthesizeTts(text, { speed, voice }).then((b64) => {
+      if (!b64) { reject(new Error('no audio')); return; }
+      try {
+        if (_serverAudio) { try { _serverAudio.pause(); } catch (_) {} _serverAudio = null; }
+        const url = URL.createObjectURL(base64ToBlob(b64, 'audio/wav'));
+        const a = new Audio(url);
+        _serverAudio = a;
+        a.onended = () => { URL.revokeObjectURL(url); if (_serverAudio === a) _serverAudio = null; resolve(); };
+        a.onerror = () => { URL.revokeObjectURL(url); if (_serverAudio === a) _serverAudio = null; reject(new Error('audio play error')); };
+        a.play().catch((e) => { URL.revokeObjectURL(url); reject(e); });
+      } catch (e) { reject(e); }
+    }).catch(reject);
+  });
+}
+
 function speakAndroidTts(text, speed, voice, pitch) {
   return new Promise((resolve, reject) => {
     if (_speechResolve) {
@@ -202,6 +238,7 @@ export async function stopSpeech() {
     try { await stopAndroid(); } catch {}
     return;
   }
+  if (_serverAudio) { try { _serverAudio.pause(); } catch (_) {} _serverAudio = null; }
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }
 

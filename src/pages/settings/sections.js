@@ -109,6 +109,17 @@ export function renderSettingsContent(s) {
           </div>
           ${isAndroid || isWeb ? '' : `<button class="btn btn-sm" id="importPiperModelBtn" title="從本機選擇 .onnx 檔案">${icon('upload')}</button>`}
         </div>
+        ${isWeb ? `
+        <div class="config-field">
+          <div class="config-field-info">
+            <div class="config-field-label">${icon('volume')} 語音來源</div>
+            <div class="config-field-hint">「電腦 Piper」＝請執行 Teno 的電腦以 Piper 合成後傳回手機播放（音質較好；需連得到電腦，離線自動退回瀏覽器語音）；「瀏覽器」＝用手機內建語音。</div>
+          </div>
+          <select id="ttsSourceSel" class="form-input" style="width:auto">
+            <option value="browser" ${(s.state.ttsSource || 'browser') === 'browser' ? 'selected' : ''}>瀏覽器</option>
+            <option value="piper" ${s.state.ttsSource === 'piper' ? 'selected' : ''}>電腦 Piper</option>
+          </select>
+        </div>` : ''}
         ${isAndroid || isWeb ? '' : `
         <div class="config-field">
           <div style="display:flex;align-items:center;gap:var(--s3);width:100%">

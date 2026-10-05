@@ -14,6 +14,7 @@ export const speakAndroid = async (text, opts) => {
   }
 };
 export const stopAndroid = async () => { globalThis.__ttsApi.stopCalls++; };
+export const synthesizeTts = async (text, opts) => { (globalThis.__ttsApi.synthCalls ||= []).push({ text, opts }); return ''; };
 `;
 
 // 平台開關（G9 驗證用）：預設 true＝Android，verify-tts-contract 既有行為零變動；

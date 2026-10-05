@@ -250,6 +250,19 @@ async fn dispatch(cmd: &str, a: Value, app_handle: crate::Ctx) -> Result<Value, 
             let a: A = parse(a)?;
             ok(crate::speak_text(a.text, a.voice, a.length_scale, a.noise_scale, app_handle).await)
         }
+        "tts_synthesize" => {
+            // WEB-SERVE1：伺服器 Piper 合成 → 回 base64 WAV 給瀏覽器播放（不本機出聲）
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct A {
+                text: String,
+                voice: Option<String>,
+                length_scale: Option<f64>,
+                noise_scale: Option<f64>,
+            }
+            let a: A = parse(a)?;
+            Ok(Value::String(crate::tts_synthesize(a.text, a.voice, a.length_scale, a.noise_scale, app_handle).await?))
+        }
         "sql_tx" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase")]

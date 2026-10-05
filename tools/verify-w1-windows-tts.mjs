@@ -25,7 +25,7 @@ export function resolve(specifier, context, next) {
     // ※ 本段在 LOADER_SRC 模板字串內，嚴禁反引號
     src = 'export const isAndroid = false; export const isWindows = globalThis.__w1IsWindows === true; export const isTauri = true;';
   } else if (specifier === './api.js') {
-    src = 'globalThis.__w1NativeCalls = 0; export const speakText = async (t, o) => { globalThis.__w1NativeCalls++; }; export const speakAndroid = async () => {}; export const stopAndroid = async () => {};';
+    src = 'globalThis.__w1NativeCalls = 0; export const speakText = async (t, o) => { globalThis.__w1NativeCalls++; }; export const speakAndroid = async () => {}; export const stopAndroid = async () => {}; export const synthesizeTts = async () => {};';
   }
   if (src) return { url: 'data:text/javascript,' + encodeURIComponent(src), shortCircuit: true };
   return next(specifier, context);
