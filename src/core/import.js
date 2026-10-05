@@ -4,33 +4,6 @@
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Parse a single CSV line handling quoted fields.
- * Kept for backward compatibility; for multi-line input prefer
- * `tokenizeCSV` which correctly handles embedded newlines.
- * @param {string} str
- * @returns {string[]}
- */
-export function parseLine(str) {
-  const cols = [];
-  let cur = '', inQ = false;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i], next = str[i + 1];
-    if (inQ) {
-      if (ch === '"') {
-        if (next === '"') { cur += '"'; i++; }
-        else inQ = false;
-      } else cur += ch;
-    } else {
-      if (ch === '"') inQ = true;
-      else if (ch === ',') { cols.push(cur); cur = ''; }
-      else cur += ch;
-    }
-  }
-  cols.push(cur);
-  return cols;
-}
-
-/**
  * Tokenize a full CSV document into rows of cells.
  * Properly handles fields wrapped in double quotes that contain
  * embedded newlines and doubled ("") quote escapes. Normalizes CRLF
@@ -370,58 +343,11 @@ export function parseAnkiTSV(text) {
   // Normalize line endings
   s = s.replace(/\r\n?/g, '\n');
   for (const line of s.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    rows.push(trimmed.split('\t'));
+    // D-TSVTAB1: 不可整列 trim（會剝掉首/尾 tab → 首欄為空或尾欄空值時欄位位移）；
+    // 僅跳過純空白行，其餘原樣 split('\t')。
+    if (line.trim() === '') continue;
+    rows.push(line.split('\t'));
   }
   return rows;
-}
-
-/**
- * Decode simple HTML entities in a string.
- * @param {string} str
- * @returns {string}
- */
-function decodeHtmlEntities(str) {
-  return String(str ?? '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'").replace(/&#x2F;/g, '/').replace(/&nbsp;/g, ' ');
-}
-
-/**
- * Map Anki TSV rows to word objects.
- * Expects columns: [front, back, notes?]
- * Front = word, Back = definition, Notes (optional) = description
- * @param {string[][]} rows
- * @param {object} [defaults]
- * @returns {object[]}
- */
-export function mapAnkiRows(rows, defaults = {}) {
-  const out = [];
-  for (const cols of rows) {
-    const front = (cols[0] || '').trim();
-    if (!front) continue;
-    const back = decodeHtmlEntities((cols[1] || '').trim().replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''));
-    const notes = cols[2] ? decodeHtmlEntities(cols[2].trim().replace(/<[^>]+>/g, '')) : '';
-    out.push({
-      word: front.toLowerCase(),
-      definition: back,
-      pos: '',
-      pron: '',
-      example: '',
-      synonym: '',
-      antonym: '',
-      derivative: '',
-      etymology: '',
-      syllables: '',
-      phrases: '',
-      deck: defaults.deck || 'Default',
-      image: '',
-      description: notes,
-      examples: [],
-      tags: [],
-      related: [],
-      forms: [],
-    });
-  }
-  return out;
 }
 
