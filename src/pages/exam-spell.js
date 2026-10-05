@@ -270,7 +270,11 @@ function resumeSession(s, session) {
   e.decks = session.deckIds;
   e.settings = { ...session.settings };
   e.words = words;
-  e.idx = Math.min(session.idx, words.length - 1);
+  // B-RESUME1: 補刪除位移（words 已 filter 掉不存在者）；否則 idx 指到錯字（exam-flip 有 deletedBefore 補正，此檔原無）
+  const deletedBefore = session.wordIds.slice(0, session.idx ?? 0).filter(id => !wordMap.has(id)).length;
+  e.idx = Number.isFinite(session.idx)
+    ? Math.max(0, Math.min((session.idx ?? 0) - deletedBefore, words.length - 1))
+    : 0;
   e.correct = session.correct;
   e.wrong = session.wrong;
   e.totalTime = session.totalTime;
@@ -390,7 +394,7 @@ async function applyTags(s) {
 }
 
 export function onMount(s) {
-  document.querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
 
   // IMG1: 拼字測驗答題後（_correct 已寫）顯示完整卡含圖
