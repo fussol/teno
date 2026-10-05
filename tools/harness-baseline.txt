@@ -21,23 +21,15 @@ SKIP tools/verify-f13-url-encode.mjs # [C] 外網反爬（cambridge.org 403 Clou
 SKIP tools/verify-f6-manifest.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
 SKIP tools/verify-o3-api29.mjs # [B] git 歷史缺物件（show 舊 commit 失敗，clone 狀態）
 FAIL  T1 ./svg 旁支 import 零命中（313 檔掃）  [/home/jupiter/teno 修檢版/src/lib/custom-select.js,/home/jupiter/teno 修檢版/src/lib/sharepack.js,/home/jupiter/teno 修檢版/src/lib/word-image.js]
-FAIL C 登記到頂 v14 — 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
-FAIL D 新版開機 no-op — 未知登記 [15] VersionMissing
 FAIL D13 drive upload 加 audit
-FAIL F4 入庫詞集正確（fast-path 跳過 OCR 直入）: got=[] expect=["cat","hello","world"]
-FAIL G 真庫修後新版 no-op — 未知登記 [15] VersionMissing
 FAIL G22 data.synonym 帶入
 FAIL G22 save 讀取 fAntonyms
 FAIL G22 save 讀取 fDerivatives
 FAIL G22 save 讀取 fSynonyms
-FAIL H 產物新版開機 no-op — 未知登記 [15] VersionMissing
 FAIL NC1 錨點漂移
 FAIL NC2 錨點漂移
 FAIL T0d D15 rollback：tx 失敗回滾 state.words 新字: got=false expect=true
-FAIL T1 apple 真入庫: got=false expect=true
-FAIL T1 cat 真入庫: got=false expect=true
 FAIL T1 db.js 有 saveWordsInTx 批次 API
-FAIL T1 pron 填 uk/us 併: got="/ˈæp.əl/ / /ˈæp.əl/" expect="ˈæp.əl / ˈæp.əl"
 FAIL T1 失敗事務回傳 added=0（幽靈消除）: got=3 expect=0
 FAIL T1 落盤詞集（正規化＋白名單）: got=[] expect=["don't","neon","upper","well-known","zebra"]
 FAIL T2 DB 實查 2+3=5 行: got=2 expect=5
@@ -47,13 +39,9 @@ FAIL T2 修後 點.card-panel-word → 觸發
 FAIL T2a 呼叫順序 = checkpoint → invoke(backup_db)  «["checkpoint","plugin:sql|load","plugin:sql|execute","backup_db"]»
 FAIL T3 修後 點.card-panel-def → 觸發
 FAIL T3c 舊碼尾斜杠生成 URL 實網 404（bug 徵狀目視） :: 206
-FAIL T4 cat 真入庫（override 過第二道）: got=false expect=true
 FAIL T4 deckName 透傳: got=[1,null] expect=[1,"Physics"]
 FAIL T4 修後 點.card-panel-example → 觸發
-FAIL T4b 正常字 gizmo 入庫: got=[] expect=["gizmo"]
 FAIL T6 修後 點.tts-click → 觸發
-FAIL T9 loadAll migration DB 落庫: got=null expect={"wA":"2026-10-05"}
-FAIL T9 loadAll migration 補 today: got=undefined expect="2026-10-05"
 FAIL U1a tools.js import listEngines
 FAIL U1b 選項由 listEngines().map 生成
 FAIL U2a #ocrEngineSelect class=form-input
@@ -69,14 +57,11 @@ FAIL U8b busy 態 capBtn.disabled 切換
 FAIL U8c 辨識中點擊防重入（_ocrBusy 守衛）
 FAIL U9 registry 全部 id 有標籤
 FAIL _normalizePos 委派 core — 寫入路徑
-FAIL tools/verify-a5-unbury.mjs
 FAIL tools/verify-antfix.mjs
 FAIL tools/verify-d19-import-magic.mjs
 FAIL tools/verify-d20-delete-deck.mjs
 FAIL tools/verify-d20-dual-generations.mjs
 FAIL tools/verify-d5-checkpoint.mjs
-FAIL tools/verify-d7-restore-wal.mjs
-FAIL tools/verify-db-compat.mjs
 FAIL tools/verify-dictrebuild.mjs
 FAIL tools/verify-e10-selftest-container.mjs
 FAIL tools/verify-e11-report-totalwords.mjs
@@ -88,7 +73,6 @@ FAIL tools/verify-e5-seeded-fuzz.mjs
 FAIL tools/verify-e6-study-log.mjs
 FAIL tools/verify-e7-mode-cards.mjs
 FAIL tools/verify-e8-selftest.mjs
-FAIL tools/verify-e9-rate-date.mjs
 FAIL tools/verify-f9-piper-url.mjs
 FAIL tools/verify-g-tool1-pos.mjs
 FAIL tools/verify-g10-card-body-click.mjs
@@ -96,12 +80,8 @@ FAIL tools/verify-g15-g31.mjs
 FAIL tools/verify-g18-tag-batch.mjs
 FAIL tools/verify-g28-import-reentry.mjs
 FAIL tools/verify-logfix1.mjs
-FAIL tools/verify-ocr-graylist.mjs
 FAIL tools/verify-ocr-imp.mjs
 FAIL tools/verify-ocr-import.mjs
 FAIL tools/verify-ocr-ui.mjs
-FAIL tools/verify-ocr2-enrich.mjs
-FAIL tools/verify-ocr2-importfile.mjs
-FAIL tools/verify-ocr2-override.mjs
 FAIL tools/verify-settings-collapse.mjs
 FAIL tools/verify-toast1.mjs

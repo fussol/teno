@@ -57,7 +57,7 @@ function mkDb(p, val) {
   d.close();
   return p;
 }
-const readWord = (p) => new DatabaseSync(p, { readOnly: true }).prepare("SELECT word FROM words WHERE id='w1'").get()?.word;
+const readWord = (p) => { const d = new DatabaseSync(p, { readOnly: true }); try { return d.prepare("SELECT word FROM words WHERE id='w1'").get()?.word; } finally { d.close(); } };
 
 function runCli(cliPath, argv, env) {
   return spawnSync('node', [cliPath, ...argv], {

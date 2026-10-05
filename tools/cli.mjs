@@ -29,7 +29,7 @@ function log(evt, detail) {
   if (!args.includes('--json')) console.log(line.trim());
 }
 
-const db = new DatabaseSync(DB, { readOnly: true });
+let db = new DatabaseSync(DB, { readOnly: true });
 // E3: dayCutoff 是 settings 頂層 key（fallback 0 = app 預設）；timezoneOffset 在 ankiSettings blob（fallback 系統本地，勿用 0=UTC）
 const DAY_CUTOFF = (db.prepare("SELECT value FROM settings WHERE key='dayCutoff'").get()?.value) | 0;
 const TZ_OFFSET = (() => {
@@ -2379,13 +2379,25 @@ function cmdImportDb() {
   }
   backupDb();
   // D7: 覆寫前清掉舊 WAL/SHM（頂層 rmWal，語意同原本地定義）
+  // 模組級唯讀 handle 會鎖住舊檔／殭屍 WAL：覆寫前先收掉、寫完重開，
+  // 否則後面 audit() 的 dbw() 每次卡 busy_timeout 10s（實測殭屍 wal 下 3×10s＝30s 假死）。
+  try { db.close(); } catch {}
   rmWal(DB);
   writeFileSync(DB, tenoBytes);
+  db = new DatabaseSync(DB, { readOnly: true });
   if (logBytes?.length) { rmWal(appLogDbPath()); writeFileSync(appLogDbPath(), logBytes); }
   if (repaired) { try { rmSync(effSrc, { force: true }); } catch {} }
   console.log(`✅ 已匯入 ${src}${repaired ? '（已自動修復到本版）' : ''} (teno.db=${(tenoBytes.length / 1024 / 1024).toFixed(2)} MB${logBytes?.length ? `, app-log.db=${(logBytes.length / 1024 / 1024).toFixed(2)} MB` : ', 無操作日誌'})`);
   log('WRITE', `import-db ${src} teno=${tenoBytes.length}b log=${logBytes?.length ? logBytes.length : 0}b${repaired ? ' repaired' : ''} ${fpNote}`);
   audit('import-db', `匯入 DB ${args[0] || ''}${repaired ? '（指紋→修復工具 v14 自動修復）' : ''}`);
+  // D7 契約：import-db 後不得留殭屍 -wal/-shm。先關唯讀 handle，再用可寫連線
+  // checkpoint(TRUNCATE) 把 WAL 併回主檔（保資料），其為最後連線 → 關閉即清 sidecar；
+  // 最後 rmWal 保險（唯讀連線無法自行 checkpoint，故不能只靠 close）。
+  try { db.close(); } catch {}
+  // checkpoint 保 audit 資料 → 還原 DELETE journal（匯入檔原始語意非 WAL；app 開機自會設 WAL），
+  // 否則 WAL 模式下任何唯讀開啟（含 harness 量測）都會再生成 -shm/-wal 幽靈。
+  try { const d = dbw(); d.exec('PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;'); d.close(); } catch {}
+  rmWal(DB);
 }
 
 // ─── 自我測試: 一鍵檢查 DB/FSRS/模擬引擎/容器, 並寫入 [TEST] 標記 log ───
