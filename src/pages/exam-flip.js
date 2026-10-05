@@ -414,7 +414,7 @@ async function applyTags(s) {
 }
 
 export function onMount(s) {
-  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer')?.querySelectorAll ? document.getElementById('pageContainer') : document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
 
   // IMG1: 測驗答題後（answered 態）顯示完整卡含圖；答前不帶圖

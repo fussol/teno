@@ -239,7 +239,7 @@ export async function undoRating(store, renderFn) {
 }
 
 export function mount(store, renderFn) {
-  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer')?.querySelectorAll ? document.getElementById('pageContainer') : document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => store.actions.navigate(el.dataset.goto)));
   if (keyCleanup) keyCleanup();
   if (!session?.running && !_undoSnapshot) return; // C7: 完成畫面有快照仍註冊 handler（原早退致零 handler）

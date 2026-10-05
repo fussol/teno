@@ -394,7 +394,7 @@ async function applyTags(s) {
 }
 
 export function onMount(s) {
-  (document.getElementById('pageContainer') || document).querySelectorAll('[data-goto]').forEach(el =>
+  (document.getElementById('pageContainer')?.querySelectorAll ? document.getElementById('pageContainer') : document).querySelectorAll('[data-goto]').forEach(el =>
     el.addEventListener('click', () => s.actions.navigate(el.dataset.goto)));
 
   // IMG1: 拼字測驗答題後（_correct 已寫）顯示完整卡含圖
