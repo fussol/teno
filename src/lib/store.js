@@ -1063,7 +1063,8 @@ export function createStore() {
           : state.ankiSettings?.timezoneOffset;
         const { computeStreak, computeBestStreak } = requireScheduler();
         const current = computeStreak(dates[m], state.dayCutoff, tzOffset);
-        const best = Math.max(gs.best || 0, computeBestStreak(dates[m], state.dayCutoff, tzOffset));
+        // C-STREAK1: 還原「評分前」的 best（原以評分後 gs.best 為底 Math.max，剛刷新的紀錄撤不掉）
+        const best = snap.goalStreakBefore.best ?? computeBestStreak(dates[m], state.dayCutoff, tzOffset);
         state.goalStreak = { ...gs, current, best, dates };
         try { await db.saveGoalStreak(state.goalStreak); } catch (e) { console.warn('[store] undo saveGoalStreak error:', e); }
       }
