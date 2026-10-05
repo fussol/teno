@@ -127,12 +127,12 @@ function speakWebSpeech(text, speed, pitch, voice) {
       u.lang = v?.lang || 'en-US';
       u.rate = Math.max(0.5, Math.min(2.0, speed));
       u.pitch = Math.max(0, Math.min(2.0, pitch / 50));
-      u.onend = () => resolve();
-      u.onerror = (ev) => reject(new Error('speech error: ' + (ev?.error || 'unknown')));
+      u.onend = () => { clearTimeout(wsTimer); resolve(); };
+      u.onerror = (ev) => { clearTimeout(wsTimer); reject(new Error('speech error: ' + (ev?.error || 'unknown'))); };
       speechSynthesis.cancel();
+      // 保底 timeout：onend 不觸發時不永久 pending——先建再 speak，同步 onend 也清得到
+      const wsTimer = setTimeout(() => { speechSynthesis.cancel(); resolve({ cancelled: true }); }, TTS_TIMEOUT_MS);
       speechSynthesis.speak(u);
-      // 保底 timeout：onend 不觸發時不永久 pending
-      setTimeout(() => { speechSynthesis.cancel(); resolve({ cancelled: true }); }, 30000);
     } catch (e) {
       reject(e);
     }

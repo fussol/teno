@@ -110,7 +110,7 @@ export async function showBackups() {
       // LOG-BACKUP1: 增量行——徽標＋筆數，還原走「回放到此」（reset＋逐 patch import）
       const isPatch = b.kind === 'applog-patch';
       const kindTag = isPatch
-        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--accent-soft);color:var(--accent);font-weight:700">日誌增量${Number.isFinite(b.rows) ? ` ＋${b.rows}筆` : ''}</span>`
+        ? `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--accent);color:var(--accent-on);font-weight:700">日誌增量${Number.isFinite(b.rows) ? ` ＋${b.rows}筆` : ''}</span>`
         : `<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg-hover);color:var(--text-secondary);font-weight:700">主庫全量</span>`;
       const restoreBtn = isPatch
         ? `<button class="btn btn-xs" data-breplay="${escapeAttr(b.filename)}" style="font-size:11px">${icon('clock')} 回放到此</button>`

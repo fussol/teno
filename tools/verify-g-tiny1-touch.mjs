@@ -10,6 +10,6 @@ const mob600 = css.slice(css.indexOf('@media(max-width:600px){'));
 ok('行動主鈕 44 高', /\.btn,\.btn-primary,\.btn-sm,\.btn-xs\{min-height:44px\}/.test(mob600), '40→44');
 ok('字卡換字鈕 44', /button\.card-panel-nav-btn\{min-width:44px;min-height:44px\}/.test(css), '36→44');
 ok('study 時間標 ≥11', !/\.study-btn-time\{font-size:9px\}/.test(css), '9px 已清');
-const br = readFileSync(join(root, 'src/pages/browser.js'), 'utf8');
-ok('桌機 36px 原樣', br.includes('.card-panel-nav-btn{width:36px;height:36px'), '桌機像素不動');
+const panel = readFileSync(join(root, 'src/styles/card-panel.js'), 'utf8');
+ok('桌機 36px 原樣', panel.includes('.card-panel-nav-btn{width:36px;height:36px'), '桌機像素不動');
 process.exit(fail ? 1 : 0);

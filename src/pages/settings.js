@@ -145,14 +145,14 @@ function _mount(s) {
       const label = isAndroid
         ? v.replace(/^[a-z]{2}-[a-z]{2}-x-/, '').replace(/-/g, ' ')  // prettify Google voice names
         : v.replace(/_/g, ' ');
-      return `<span class="voice-chip${v === current ? ' active' : ''}" data-voice="${v}" style="cursor:pointer;padding:2px 10px;border-radius:var(--r2);font-size:13px;background:var(--bg2);border:1px solid var(--border);transition:background-color .15s,border-color .15s,color .15s">${label}</span>`;
+      return `<span class="voice-chip${v === current ? ' active' : ''}" data-voice="${v}" style="cursor:pointer;padding:2px 10px;border-radius:var(--r-md);font-size:13px;background:var(--bg-elevated);border:1px solid var(--border);transition:background-color .15s,border-color .15s,color .15s">${label}</span>`;
     }).join('');
 
     // Piper model list (desktop only)
     const list = document.getElementById('piperModelList');
     if (list) {
       list.innerHTML = (voices || []).map(v => `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s2);background:var(--bg2);border-radius:var(--r2)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s2);background:var(--bg-elevated);border-radius:var(--r-md)">
           <span>${(typeof v === 'string' ? v : v.name).replace(/_/g, ' ')}</span>
           <button class="btn btn-sm btn-secondary del-model-btn" data-model="${typeof v === 'string' ? v : v.name}">${icon('x')}</button>
         </div>`).join('');

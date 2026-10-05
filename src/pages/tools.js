@@ -108,13 +108,13 @@ function bankPreviewHtml() {
   if (!bPreview.length) { el.innerHTML = ''; return; }
   el.innerHTML = bPreview.map(q => {
     if (q.type === 'mc') {
-      return `<div style="border:1px solid var(--border);border-radius:var(--r1);padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary)">
+      return `<div style="border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-bottom:6px;background:var(--bg-elevated)">
         <div style="font-size:13px;color:var(--text-primary)">${esc(q.stem)}</div>
         <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;line-height:1.6">${q.options.map((o, i) => `${String.fromCharCode(65 + i)}. ${esc(o)}${i === q.answer ? ' ✓' : ''}`).join('<br>')}</div>
         <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${esc(q.explain)} · 難度 ${q.difficulty || 1}</div>
       </div>`;
     }
-    return `<div style="border:1px solid var(--border);border-radius:var(--r1);padding:8px 10px;margin-bottom:6px;background:var(--bg-secondary)">
+    return `<div style="border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 10px;margin-bottom:6px;background:var(--bg-elevated)">
       <div style="font-size:13px;color:var(--text-primary)">${esc(q.translation)}</div>
       <div style="font-size:12px;color:var(--green);margin-top:4px">${esc(q.reference)}</div>
       ${q.comment ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">${esc(q.comment)}</div>` : ''}
@@ -274,9 +274,9 @@ function aiChatRender() {
     return;
   }
   el.innerHTML = bChat.slice(-40).map(m => {
-    if (m.role === 'user') return `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--accent);color:#fff;border-radius:10px 10px 2px 10px;font-size:13px;text-align:left;white-space:pre-wrap">${esc(m.content)}</span></div>`;
-    if (m.role === 'tool') return `<div style="margin:4px 0;font-family:var(--mono);font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);border-left:2px solid var(--border);padding:3px 8px;white-space:pre-wrap">⚙ ${esc(m.content)}</div>`;
-    return `<div style="margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px 10px 10px 2px;font-size:13px;white-space:pre-wrap">${esc(m.content)}</span></div>`;
+    if (m.role === 'user') return `<div style="text-align:right;margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--accent);color:var(--accent-on);border-radius:10px 10px 2px 10px;font-size:13px;text-align:left;white-space:pre-wrap">${esc(m.content)}</span></div>`;
+    if (m.role === 'tool') return `<div style="margin:4px 0;font-family:var(--mono);font-size:11px;color:var(--text-tertiary);background:var(--bg-elevated);border-left:2px solid var(--border);padding:3px 8px;white-space:pre-wrap">⚙ ${esc(m.content)}</div>`;
+    return `<div style="margin:6px 0"><span style="display:inline-block;max-width:88%;padding:5px 10px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px 10px 10px 2px;font-size:13px;white-space:pre-wrap">${esc(m.content)}</span></div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
@@ -424,7 +424,7 @@ export function render(s) {
       .tool-progress{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2)}
       .tool-progress-bar{height:6px;background:var(--accent);border-radius:3px;transition:width .2s;max-width:100%}
       .tool-progress span{font-size:12px;color:var(--text-tertiary);white-space:nowrap;font-variant-numeric:tabular-nums}
-      .task-item{display:flex;align-items:center;gap:var(--s2);padding:6px 8px;margin-bottom:4px;background:var(--bg-secondary);border-radius:var(--r1);font-size:13px}
+      .task-item{display:flex;align-items:center;gap:var(--s2);padding:6px 8px;margin-bottom:4px;background:var(--bg-elevated);border-radius:var(--r-sm);font-size:13px}
       .task-item .task-label{flex:1;color:var(--text-primary)}
       .task-item .task-status{font-size:11px;color:var(--text-tertiary)}
       .task-item .task-dismiss{cursor:pointer;color:var(--text-tertiary);font-size:16px;line-height:1;padding:0 4px}
@@ -521,7 +521,7 @@ export function render(s) {
           </div>
           ${t.result && t.result.type === 'spellcheck' ? renderSpellResult(t.result) : ''}
           ${t.result && t.result.type === 'summary' ? `
-          <div style="padding:6px 8px;margin:4px 0 4px 24px;background:var(--bg-base);border-radius:var(--r1);font-size:12px;color:var(--text-secondary)">${t.result.message}</div>
+          <div style="padding:6px 8px;margin:4px 0 4px 24px;background:var(--bg-base);border-radius:var(--r-sm);font-size:12px;color:var(--text-secondary)">${t.result.message}</div>
           ` : ''}
         `).join('')}
       </div><!-- /bgTaskConfig -->
@@ -690,7 +690,7 @@ export function render(s) {
       <div class="card">
         <div class="card-title">${icon('brain')} 聊天</div>
         <div class="card-desc">用上面的權限對話與操作（分析、增刪題、讀寫設定/單字庫）；可附加文字檔（txt/md/json/csv）。工具軌跡列在對話裡；LLM 走設定頁的 API 設定。</div>
-        <div id="aiChatLog" style="max-height:320px;min-height:110px;overflow:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--r1);font-size:13px;line-height:1.6;margin-top:var(--s2)"></div>
+        <div id="aiChatLog" style="max-height:320px;min-height:110px;overflow:auto;padding:8px;background:var(--bg-base);border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;line-height:1.6;margin-top:var(--s2)"></div>
         <div class="tool-row" style="margin-top:var(--s2)">
           <input id="aiChatInput" type="text" placeholder="例：幫我分析題庫覆蓋 / 刪掉 g-1-1-mc-3 / llmModel 現在是什麼"
             style="flex:1;min-width:0;font-size:13px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-surface);color:var(--text-primary);box-sizing:border-box">
@@ -704,10 +704,10 @@ export function render(s) {
 }
 
 function renderSpellResult(r) {
-  if (!r.entries || !r.entries.length) return `<div style="padding:6px 8px;margin:4px 0 4px 24px;background:var(--bg-base);border-radius:var(--r1);font-size:12px;color:var(--green)">${icon('check')} 所有單字拼字正確！</div>`;
-  let html = `<div style="margin:4px 0 4px 24px;padding:6px 8px;background:var(--bg-base);border-radius:var(--r1)"><div style="margin-bottom:4px;font-size:12px;color:var(--text-secondary)">發現 ${r.entries.length} 個可能拼錯的單字：</div>`;
+  if (!r.entries || !r.entries.length) return `<div style="padding:6px 8px;margin:4px 0 4px 24px;background:var(--bg-base);border-radius:var(--r-sm);font-size:12px;color:var(--green)">${icon('check')} 所有單字拼字正確！</div>`;
+  let html = `<div style="margin:4px 0 4px 24px;padding:6px 8px;background:var(--bg-base);border-radius:var(--r-sm)"><div style="margin-bottom:4px;font-size:12px;color:var(--text-secondary)">發現 ${r.entries.length} 個可能拼錯的單字：</div>`;
   for (const e of r.entries) {
-    html += `<div style="display:flex;align-items:center;gap:var(--s2);padding:4px 6px;margin-bottom:2px;background:var(--bg-secondary);border-radius:var(--r1);font-size:13px">
+    html += `<div style="display:flex;align-items:center;gap:var(--s2);padding:4px 6px;margin-bottom:2px;background:var(--bg-elevated);border-radius:var(--r-sm);font-size:13px">
       <span style="flex:1;color:var(--red);text-decoration:line-through">${e.wrong}</span>
       <span style="font-size:12px;color:var(--text-tertiary)">→</span>
       <span style="flex:1;color:var(--green);font-weight:600">${e.right}</span>
@@ -1204,7 +1204,7 @@ function _mount(s) {
     try {
       const json = await lookupCambridge(word, lang);
       const data = JSON.parse(json);
-      let html = `<div style="padding:8px;background:var(--bg-base);border-radius:var(--r1)">`;
+      let html = `<div style="padding:8px;background:var(--bg-base);border-radius:var(--r-sm)">`;
       html += `<div style="font-size:16px;font-weight:600;margin-bottom:4px">${data.word}</div>`;
       if (data.uk_ipa || data.us_ipa) {
         html += `<div style="margin-bottom:6px;font-size:13px;color:var(--text-secondary)">`;
@@ -1214,7 +1214,7 @@ function _mount(s) {
       }
         for (const s of (data.senses || [])) {
         const pos = normalizePos(s.part_of_speech || '');
-        html += `<div style="margin-top:4px;padding:6px;background:var(--bg-secondary);border-radius:var(--r1)">`;
+        html += `<div style="margin-top:4px;padding:6px;background:var(--bg-elevated);border-radius:var(--r-sm)">`;
         html += `<div style="font-size:12px;color:var(--accent);margin-bottom:2px">${pos}${s.cefr_level ? ` <span style="color:var(--orange)">${s.cefr_level}</span>` : ''}</div>`;
         // DICTREBUILD：英中模式只回翻譯（definition 空）→ 不要留一行空白的資訊圖示
         if (s.definition) html += `<div style="font-size:13px;margin-bottom:2px">${icon('info')} ${s.definition}</div>`;
