@@ -8,7 +8,6 @@ import android.webkit.WebView
 import org.json.JSONObject
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.ProcessLifecycleOwner
 
 class MainActivity : TauriActivity() {
   private var webViewRef: WebView? = null
@@ -62,13 +61,10 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
     readRoute()   // 冷啟：pending 先立好，webViewRef 起來後由 flushTick 送達
 
-    // F3：接通 plugin lifecycle 橋（v3 盲點修正）。
-    // TauriLifecycleObserver（generated/TauriActivity.kt:17，同 package）onPause/onStop/onResume
-    // → PluginManager 遍歷 plugins → TtsPlugin.onPause/onStop/onResume。
-    // 官方模板只定義不註冊；在此註冊為唯一最小正確點（WryActivity 為 generated 不可改）。
-    // 註冊時機：super.onCreate 鏈（PluginManager.onActivityCreate）已跑完，無 race；
-    // ProcessLifecycleOwner 當下狀態 CREATED，addObserver 只快進 onCreate 回呼（無 override → 無操作）。
-    ProcessLifecycleOwner.get().lifecycle.addObserver(TauriLifecycleObserver)
+    // plugin lifecycle 橋不在此註冊：tauri 2.12 起官方 TauriActivity 自己 override
+    // onResume/onPause/onStop → PluginManager.on*(activity) → triggerOn* → TtsPlugin。
+    // 2.11 模板的 TauriLifecycleObserver 已被上游移除（且 PluginManager 不再有無參數
+    // onResume/onPause/onStop），引用它會讓 release/Debug 編譯掛 Unresolved reference。
 
     // Android back：優先交給 SPA 導覽。JS 有 __handleAndroidBack（view stack 有上一頁）
     // 就返回；JS 沒定義或沒上一頁才退出 app。

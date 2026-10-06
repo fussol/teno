@@ -542,8 +542,10 @@ class TtsPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
-    // F3：lifecycle 三事件（TauriLifecycleObserver 註冊於 MainActivity.onCreate 後接通）。
-    // 語意：app 整體背景化（ProcessLifecycleOwner 無可見 activity）才觸發 — 通知列下拉/系統對話框不停。
+    // F3：lifecycle 三事件 — tauri 2.12 起由官方 TauriActivity.onResume/onPause/onStop
+    // → PluginManager.on*(activity) → triggerOn* 傳入（2.11 模板的 TauriLifecycleObserver
+    // 已隨上游移除，MainActivity 的註冊一併拿掉）。
+    // 語意：app 整體背景化（無可見 activity）才觸發。
 
     /** 背景化 pause 共用路徑（onPause/onStop 都會來，冪等：第二次 id 已 null → no-op，只 emit 一次 stopped(pause)）。 */
     private fun pauseTts() {
