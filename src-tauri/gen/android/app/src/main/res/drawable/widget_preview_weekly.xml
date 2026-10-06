@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget 選擇畫面靜態預覽（previewImage 備援）：單純示意各 widget 外觀，非實際渲染 — 實際畫面走 previewLayout。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="110dp"
+    android:viewportWidth="250"
+    android:viewportHeight="110">
+    <path
+        android:fillColor="#16161C"
+        android:pathData="M16,0 L234,0 A16,16 0 0 1 250,16 L250,94 A16,16 0 0 1 234,110 L16,110 A16,16 0 0 1 0,94 L0,16 A16,16 0 0 1 16,0 Z"/>
+    <path
+        android:fillColor="#4A4A55"
+        android:pathData="M17.5,14 L82.5,14 A3.5,3.5 0 0 1 86,17.5 L86,17.5 A3.5,3.5 0 0 1 82.5,21 L17.5,21 A3.5,3.5 0 0 1 14,17.5 L14,17.5 A3.5,3.5 0 0 1 17.5,14 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M21,74 L31,74 A4,4 0 0 1 35,78 L35,80 A4,4 0 0 1 31,84 L21,84 A4,4 0 0 1 17,80 L17,78 A4,4 0 0 1 21,74 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M54,58 L64,58 A4,4 0 0 1 68,62 L68,80 A4,4 0 0 1 64,84 L54,84 A4,4 0 0 1 50,80 L50,62 A4,4 0 0 1 54,58 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M87,66 L97,66 A4,4 0 0 1 101,70 L101,80 A4,4 0 0 1 97,84 L87,84 A4,4 0 0 1 83,80 L83,70 A4,4 0 0 1 87,66 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M120,44 L130,44 A4,4 0 0 1 134,48 L134,80 A4,4 0 0 1 130,84 L120,84 A4,4 0 0 1 116,80 L116,48 A4,4 0 0 1 120,44 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M153,56 L163,56 A4,4 0 0 1 167,60 L167,80 A4,4 0 0 1 163,84 L153,84 A4,4 0 0 1 149,80 L149,60 A4,4 0 0 1 153,56 Z"/>
+    <path
+        android:fillColor="#4E7A8C"
+        android:pathData="M186,38 L196,38 A4,4 0 0 1 200,42 L200,80 A4,4 0 0 1 196,84 L186,84 A4,4 0 0 1 182,80 L182,42 A4,4 0 0 1 186,38 Z"/>
+    <path
+        android:fillColor="#87CEEB"
+        android:pathData="M219,28 L229,28 A4,4 0 0 1 233,32 L233,80 A4,4 0 0 1 229,84 L219,84 A4,4 0 0 1 215,80 L215,32 A4,4 0 0 1 219,28 Z"/>
+    <path
+        android:fillColor="#4A4A55"
+        android:pathData="M17,96 L121,96 A3,3 0 0 1 124,99 L124,99 A3,3 0 0 1 121,102 L17,102 A3,3 0 0 1 14,99 L14,99 A3,3 0 0 1 17,96 Z"/>
+</vector>

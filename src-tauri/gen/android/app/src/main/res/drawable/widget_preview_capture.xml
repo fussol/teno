@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget 選擇畫面靜態預覽（previewImage 備援）：單純示意各 widget 外觀，非實際渲染 — 實際畫面走 previewLayout。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="110dp"
+    android:height="110dp"
+    android:viewportWidth="110"
+    android:viewportHeight="110">
+    <path
+        android:fillColor="#16161C"
+        android:pathData="M16,0 L94,0 A16,16 0 0 1 110,16 L110,94 A16,16 0 0 1 94,110 L16,110 A16,16 0 0 1 0,94 L0,16 A16,16 0 0 1 16,0 Z"/>
+    <path
+        android:fillColor="#87CEEB"
+        android:pathData="M34,40 L76,40 A6,6 0 0 1 82,46 L82,46 A6,6 0 0 1 76,52 L34,52 A6,6 0 0 1 28,46 L28,46 A6,6 0 0 1 34,40 Z"/>
+    <path
+        android:fillColor="#87CEEB"
+        android:pathData="M55,19 L55,19 A6,6 0 0 1 61,25 L61,67 A6,6 0 0 1 55,73 L55,73 A6,6 0 0 1 49,67 L49,25 A6,6 0 0 1 55,19 Z"/>
+    <path
+        android:fillColor="#4A4A55"
+        android:pathData="M37,80 L73,80 A3,3 0 0 1 76,83 L76,83 A3,3 0 0 1 73,86 L37,86 A3,3 0 0 1 34,83 L34,83 A3,3 0 0 1 37,80 Z"/>
+</vector>

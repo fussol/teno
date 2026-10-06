@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget 選擇畫面靜態預覽（previewImage 備援）：單純示意各 widget 外觀，非實際渲染 — 實際畫面走 previewLayout。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="250dp"
+    android:height="140dp"
+    android:viewportWidth="250"
+    android:viewportHeight="140">
+    <path
+        android:fillColor="#16161C"
+        android:pathData="M16,0 L234,0 A16,16 0 0 1 250,16 L250,124 A16,16 0 0 1 234,140 L16,140 A16,16 0 0 1 0,124 L0,16 A16,16 0 0 1 16,0 Z"/>
+    <path
+        android:fillColor="#87CEEB"
+        android:pathData="M20,16 L98,16 A6,6 0 0 1 104,22 L104,28 A6,6 0 0 1 98,34 L20,34 A6,6 0 0 1 14,28 L14,22 A6,6 0 0 1 20,16 Z"/>
+    <path
+        android:fillColor="#3A3A45"
+        android:pathData="M220,16 L230,16 A6,6 0 0 1 236,22 L236,28 A6,6 0 0 1 230,34 L220,34 A6,6 0 0 1 214,28 L214,22 A6,6 0 0 1 220,16 Z"/>
+    <path
+        android:fillColor="#7FE0D8"
+        android:pathData="M18,44 L80,44 A4,4 0 0 1 84,48 L84,48 A4,4 0 0 1 80,52 L18,52 A4,4 0 0 1 14,48 L14,48 A4,4 0 0 1 18,44 Z"/>
+    <path
+        android:fillColor="#4A4A55"
+        android:pathData="M17.5,60 L64.5,60 A3.5,3.5 0 0 1 68,63.5 L68,63.5 A3.5,3.5 0 0 1 64.5,67 L17.5,67 A3.5,3.5 0 0 1 14,63.5 L14,63.5 A3.5,3.5 0 0 1 17.5,60 Z"/>
+    <path
+        android:fillColor="#9A9AA6"
+        android:pathData="M17.5,80 L190.5,80 A3.5,3.5 0 0 1 194,83.5 L194,83.5 A3.5,3.5 0 0 1 190.5,87 L17.5,87 A3.5,3.5 0 0 1 14,83.5 L14,83.5 A3.5,3.5 0 0 1 17.5,80 Z"/>
+    <path
+        android:fillColor="#9A9AA6"
+        android:pathData="M17.5,94 L150.5,94 A3.5,3.5 0 0 1 154,97.5 L154,97.5 A3.5,3.5 0 0 1 150.5,101 L17.5,101 A3.5,3.5 0 0 1 14,97.5 L14,97.5 A3.5,3.5 0 0 1 17.5,94 Z"/>
+    <path
+        android:fillColor="#4A4A55"
+        android:pathData="M17.5,116 L210.5,116 A3.5,3.5 0 0 1 214,119.5 L214,119.5 A3.5,3.5 0 0 1 210.5,123 L17.5,123 A3.5,3.5 0 0 1 14,119.5 L14,119.5 A3.5,3.5 0 0 1 17.5,116 Z"/>
+</vector>

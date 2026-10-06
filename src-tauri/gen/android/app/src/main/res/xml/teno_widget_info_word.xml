@@ -4,6 +4,8 @@
     android:minHeight="140dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_word"
+    android:previewLayout="@layout/widget_word"
+    android:previewImage="@drawable/widget_preview_word"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_desc" />

@@ -176,6 +176,14 @@ ok(infoS.includes('android:initialLayout="@layout/widget_status"'), 'status prov
 const infoW = read(`${RES}/xml/teno_widget_info_word.xml`);
 ok(infoW.includes('android:updatePeriodMillis="0"'), 'word provider 自管刷新（updatePeriod=0）');
 ok(infoW.includes('android:initialLayout="@layout/widget_word"'), 'word provider initialLayout');
+// 選擇畫面預覽：缺 previewImage/previewLayout → OEM 只畫白底＋app icon（白底紅十字 bug）。
+for (const [nm, ly] of [['status', 'widget_status'], ['word', 'widget_word'],
+  ['weekly', 'widget_weekly'], ['capture', 'widget_capture']]) {
+  const inf = read(`${RES}/xml/teno_widget_info_${nm}.xml`);
+  ok(inf.includes(`android:previewLayout="@layout/${ly}"`), `${nm} provider previewLayout`);
+  ok(inf.includes(`android:previewImage="@drawable/widget_preview_${nm}"`), `${nm} provider previewImage`);
+  ok(exists(`${RES}/drawable/widget_preview_${nm}.xml`), `res drawable/widget_preview_${nm}.xml 存在`);
+}
 ok(read(`${RES}/values/strings.xml`).includes('widget_desc'), 'widget 描述字串');
 
 // ── 4) Rust ──
