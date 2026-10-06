@@ -36,6 +36,12 @@ RUSTUP_BIN=$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin
 export PATH="$RUSTUP_BIN:$NDK_BIN:$JAVA_HOME/bin:$PATH"
 BT="$ANDROID_HOME/build-tools/35.0.0"
 
+# LLD-DGC1：cdylib 連結時 --gc-sections 把 97% 程式碼（含 generate_context! 內嵌的 40MB 前端資產）
+# 當死碼丟掉 → .so 只剩 2.1MB 空殼、無 index.html、開機黑畫面。
+# -Clink-dead-code=on ＝ --no-gc-sections，實測 .so 2.1MB→69MB、index.html 12 條。
+# 必須連 tauri CLI 設的 3 個 link-arg 一起帶（RUSTFLAGS 一設就蓋掉 target.*.rustflags）。
+export RUSTFLAGS="-Clink-dead-code=on -Clink-arg=-landroid -Clink-arg=-llog -Clink-arg=-lOpenSLES"
+
 echo "== 版本門 =="
 node tools/verify-version-sync.mjs
 
