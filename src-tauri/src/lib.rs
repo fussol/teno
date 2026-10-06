@@ -3497,7 +3497,6 @@ fn preensure_upgrade_columns(app_dir: &std::path::Path) {
     }
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 // WEB-SERVE1: 抽自 run() 原 inline vec — 桌面與網站伺服器共用同一份（migration 內容一字不動）。
 /// teno.db（sqlite:teno.db）migration 清單。
 pub fn teno_db_migrations() -> Vec<Migration> {
@@ -3687,6 +3686,9 @@ pub fn app_log_db_migrations() -> Vec<Migration> {
     ]
 }
 
+// BOOTFIX：mobile_entry_point 掛這裡（5ab7ce0 抽 migrations 時屬性被孤立到
+// teno_db_migrations 上，Android 入口變成只建 Vec 就返回 → tauri 從不啟動 → 全黑）。
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = teno_db_migrations();
 

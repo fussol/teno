@@ -57,9 +57,12 @@ class MainActivity : TauriActivity() {
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    BootDiag.preCreate(this)   // BOOTDIAG：super.onCreate 之前掛 PLC 觀測（與 Wry 同一起跑點）
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     readRoute()   // 冷啟：pending 先立好，webViewRef 起來後由 flushTick 送達
+    BootDiag.start(this)   // BOOTDIAG：只在 .test 生效；黑畫面時的原生觀測窗
+    webViewRef?.let { BootDiag.attach(it) }   // 若 super.onCreate 內就建好 webview，這裡補記
 
     // plugin lifecycle 橋不在此註冊：tauri 2.12 起官方 TauriActivity 自己 override
     // onResume/onPause/onStop → PluginManager.on*(activity) → triggerOn* → TtsPlugin。
@@ -94,9 +97,20 @@ class MainActivity : TauriActivity() {
     })
   }
 
+  override fun onStart() {
+    super.onStart()
+    BootDiag.mark("onStart")
+  }
+
+  override fun onResume() {
+    super.onResume()
+    BootDiag.mark("onResume")
+  }
+
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webViewRef = webView
+    BootDiag.attach(webView)   // BOOTDIAG：開始輪詢 JS 面（只在 .test 生效）
     flushHandler.post(flushTick)   // 暖路徑：onNewIntent 先於 webview 建立時也在這裡補送
   }
 }
