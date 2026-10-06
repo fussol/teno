@@ -39,12 +39,13 @@ export async function fetchBuiltinData(id) {
   throw new Error('未知隨附包：' + id);
 }
 
-/** 點「匯入」→ 抓隨附包 → 寫 DB → 回資料給頁面 hydrate */
+/** 點「匯入」→ 抓隨附包 → 包成標準題包 → 走與外部匯入完全同一條路（parsePack 驗證 → applyPack 落 TARGET_KEY）。
+ *  隨附包沒有特權路徑：同一份資料、同一條驗證、同一個 DB key——export → import 可反推驗證。 */
 export async function importBuiltin(id) {
   const meta = BUILTIN_PACKS.find(p => p.id === id);
   if (!meta) throw new Error('未知隨附包：' + id);
   const data = await fetchBuiltinData(id);
-  await setSetting(TARGET_KEY[meta.kind], data);
+  await applyPack(packToJson(meta.kind, data, meta.title));
   return data;
 }
 

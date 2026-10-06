@@ -121,6 +121,10 @@ ok(core && core.qs.length === ga.qs.length && core.topics && Object.keys(core.to
 const expG = JSON.parse(await exportBuiltinPackJson('gsat'));
 ok(expG.kind === 'pack-gsat' && expG.data.mc.length === g.mc.length, 'exportBuiltinPackJson gsat → 可 parse 的單檔');
 ok(await rejects(() => exportBuiltinPackJson('nope')), 'exportBuiltinPackJson：未知 id 拒收');
+// 隨附包 ≡ 外部匯入：同一條路（字串 → parsePack 驗證 → applyPack 落 TARGET_KEY）
+await applyPack(await exportBuiltinPackJson('gsat'));
+const reBank = await dbMod.getSetting('gsat_bank');
+ok(reBank.mc.length === g.mc.length && reBank.tr.length === g.tr.length, '隨附包 ≡ 外部匯入：export → applyPack 落庫與 importBuiltin 等價');
 
 // ── 3) applyPack：覆寫 + overlay upsert 合併 ──
 await applyPack(packToJson('pack-gsat', { mc: [{ id: 'a' }], tr: [{ id: 'b' }] }));
