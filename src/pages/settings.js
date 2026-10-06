@@ -529,6 +529,11 @@ function _mount(s) {
     const cWord = document.getElementById('notifyContentWord');
     const cGoal = document.getElementById('notifyContentGoal');
     const res = document.getElementById('widgetResident');
+    // 抽字 widget 額外欄位（key 與 Kotlin WORD_FIELD_LABEL 白名單一致）
+    const W_FIELDS = [['widgetFieldSyllables', 'syllables'], ['widgetFieldDeck', 'deck'],
+      ['widgetFieldRelated', 'related'], ['widgetFieldForms', 'forms'],
+      ['widgetFieldSynonym', 'synonym'], ['widgetFieldAntonym', 'antonym']];
+    const fieldBoxes = W_FIELDS.map(([id]) => document.getElementById(id)).filter(Boolean);
     const wEl = document.getElementById('widgetPermStatus');
     const nEl = document.getElementById('notifPermStatus');
     let loaded = false;
@@ -540,6 +545,8 @@ function _mount(s) {
       notifyWord: !!cWord.checked,
       notifyGoal: !!cGoal.checked,
       residentOn: !!res.checked,
+      wordFields: W_FIELDS.filter(([id]) => document.getElementById(id)?.checked)
+        .map(([, key]) => key).join(','),
     });
     // 狀態字串分兩區：widget 區看 DB／精確鬧鐘；通知區看通知權限
     const wText = (st) => {
@@ -568,6 +575,11 @@ function _mount(s) {
         cWord.checked = st.notifyWord !== false;
         cGoal.checked = st.notifyGoal !== false;
         res.checked = !!st.residentOn;
+        const sel = new Set((st.wordFields || '').split(',').filter(Boolean));
+        for (const [id, key] of W_FIELDS) {
+          const b = document.getElementById(id);
+          if (b) b.checked = sel.has(key);
+        }
         paint(st);
       } catch (e) { console.warn('[widget] status:', e); }
       loaded = true;
@@ -579,7 +591,7 @@ function _mount(s) {
         paint(st);
       } catch (e) { console.warn('[widget] save:', e); }
     };
-    for (const el of [rot, nOn, nInt, cDue, cWord, cGoal, res]) el.addEventListener('change', save);
+    for (const el of [rot, nOn, nInt, cDue, cWord, cGoal, res, ...fieldBoxes]) el.addEventListener('change', save);
     document.getElementById('widgetRefreshBtn')?.addEventListener('click', async () => {
       try { await widgetRefresh(); toast('Widget 已刷新'); }
       catch (e) { console.warn('[widget] refresh:', e); toast('Widget 刷新失敗'); }

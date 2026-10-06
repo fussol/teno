@@ -85,5 +85,15 @@
             android:maxLines="2"
             android:ellipsize="end"
             android:visibility="gone" />
+        <TextView
+            android:id="@+id/wwExtra"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
+            android:text=""
+            android:textColor="#9A9AA6"
+            android:textSize="11sp"
+            android:lineSpacingExtra="2dp"
+            android:visibility="gone" />
     </LinearLayout>
 </FrameLayout>

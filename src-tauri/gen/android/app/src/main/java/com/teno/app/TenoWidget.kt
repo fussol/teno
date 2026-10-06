@@ -55,6 +55,7 @@ object TenoWidget {
         val notifyWord: Boolean,     // 內容池：隨機字卡
         val notifyGoal: Boolean,     // 內容池：今日進度
         val residentOn: Boolean,
+        val wordFields: List<String> = emptyList(),  // 抽字 widget 額外顯示欄位（words 欄名）
     ) {
         val periodMs: Long get() = rotateMin * 60_000L
         val notifyIntervalMs: Long get() = notifyIntervalMin.coerceIn(1, 1440) * 60_000L
@@ -88,9 +89,39 @@ object TenoWidget {
             }
     }
 
-    data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String, val id: String = "") {
+    data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String, val id: String = "",
+                          val extra: Map<String, String> = emptyMap()) {
         /** 通知組字用（已含 /…/ 的音標＋詞性）。 */
         val meta: String get() = listOf(pron, pos).filter { it.isNotEmpty() }.joinToString("   ")
+    }
+
+    /**
+     * 抽字 widget 額外可顯示欄位白名單（key = words 欄名 = 設定值；value = 卡片標籤）。
+     * 只收這 6 個：覆蓋率高的欄位才值得佔卡片空間（syllables 97.7%、deck 100%、
+     * related 92.8%、forms 89.7%、synonym 72.8%、antonym 57.6%）；etymology 太長、
+     * examples/phrases 是 0% 死欄位，不開放。
+     */
+    val WORD_FIELD_LABEL = mapOf(
+        "syllables" to "音節",
+        "deck" to "字本",
+        "related" to "相關",
+        "forms" to "變化",
+        "synonym" to "同",
+        "antonym" to "反",
+    )
+
+    /**
+     * 欄位值 → 卡片顯示文字。related/forms 存的是 JSON 陣列字串（'["a","b"]'），
+     * 直接印會看到括號引號，故拆成逗號列；單欄截 60 字避免撐爆卡片。
+     */
+    internal fun wordFieldText(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        val s = if (t.startsWith("[")) {
+            t.trim('[', ']').split(",").map { it.trim().trim('"') }
+                .filter { it.isNotEmpty() }.joinToString(", ")
+        } else t
+        return if (s.length > 60) s.take(59) + "…" else s
     }
 
     /** 發音統一 `/.../` 包覆 — db.js normPron 同口徑（舊資料裸音標/已包過都收斂；[ ] ( ) 界定保留）。 */
@@ -124,6 +155,8 @@ object TenoWidget {
             notifyWord = p.getBoolean("notifyWord", true),
             notifyGoal = p.getBoolean("notifyGoal", true),
             residentOn = p.getBoolean("residentOn", false),
+            wordFields = (p.getString("wordFields", "") ?: "").split(",")
+                .map { it.trim() }.filter { it in WORD_FIELD_LABEL },
         )
     }
 
@@ -138,6 +171,7 @@ object TenoWidget {
             .putBoolean("notifyWord", c.notifyWord)
             .putBoolean("notifyGoal", c.notifyGoal)
             .putBoolean("residentOn", c.residentOn)
+            .putString("wordFields", c.wordFields.filter { it in WORD_FIELD_LABEL }.joinToString(","))
             .apply()
         // 開啟或改間隔 → 下一期從現在重算（關→開不沿用舊排程）
         if (resetNext) {
@@ -267,6 +301,8 @@ object TenoWidget {
             val db = openDb(ctx) ?: return null
             db.use {
                 val last = prefs(ctx).getLong("lastWordId", -1)
+                //只撈勾選的額外欄位（未勾不 SELECT，維持原本 7 欄）
+                val want = cfg(ctx).wordFields.filter { it in WORD_FIELD_LABEL }
                 fun q(sql: String, args: Array<String>?): PickedWord? =
                     db.rawQuery(sql, args).use { c ->
                         if (!c.moveToFirst()) return@use null
@@ -277,9 +313,14 @@ object TenoWidget {
                         val ex = if (c.isNull(4)) "" else c.getString(4)
                         prefs(ctx).edit().putLong("lastWordId", c.getLong(5)).apply()
                         val wid = if (c.isNull(6)) "" else c.getString(6)
-                        PickedWord(w, d, pron, pos, ex, wid)
+                        val extra = want.mapNotNull { f ->
+                            val i = c.getColumnIndex(f)
+                            if (i < 0 || c.isNull(i)) null else f to c.getString(i)
+                        }.filter { it.second.isNotBlank() }.toMap()
+                        PickedWord(w, d, pron, pos, ex, wid, extra)
                     }
-                val cols = "word, definition, pronunciation, part_of_speech, example, rowid, id"
+                val cols = "word, definition, pronunciation, part_of_speech, example, rowid, id" +
+                    want.joinToString("") { ", $it" }
                 q("SELECT $cols FROM words WHERE word != '' AND rowid != ? ORDER BY RANDOM() LIMIT 1",
                     arrayOf(last.toString()))
                     ?: q("SELECT $cols FROM words WHERE word != '' ORDER BY RANDOM() LIMIT 1", null)
@@ -474,6 +515,7 @@ object TenoWidget {
         rv.setInt(R.id.wwMeta, "setTextColor", t.text2)
         rv.setInt(R.id.wwDef, "setTextColor", t.text2)
         rv.setInt(R.id.wwEx, "setTextColor", t.text2)
+        rv.setInt(R.id.wwExtra, "setTextColor", t.text2)
         rv.setInt(R.id.wwRefresh, "setColorFilter", t.accent)
         val w = pickWord(ctx)
         rv.setTextViewText(R.id.wwWord, w?.word ?: "—")
@@ -495,6 +537,16 @@ object TenoWidget {
         else {
             rv.setViewVisibility(R.id.wwEx, View.VISIBLE)
             rv.setTextViewText(R.id.wwEx, ex)
+        }
+        // 額外欄位：設定頁勾選的欄位逐行顯示（一欄沒值就跳過；全空 = GONE，維持原樣）
+        val extra = cfg(ctx).wordFields.filter { it in WORD_FIELD_LABEL }.mapNotNull { f ->
+            val v = wordFieldText(w?.extra?.get(f) ?: "")
+            if (v.isEmpty()) null else "${WORD_FIELD_LABEL[f]} $v"
+        }.joinToString("\n")
+        if (extra.isEmpty()) rv.setViewVisibility(R.id.wwExtra, View.GONE)
+        else {
+            rv.setViewVisibility(R.id.wwExtra, View.VISIBLE)
+            rv.setTextViewText(R.id.wwExtra, extra)
         }
         rv.setOnClickPendingIntent(R.id.wwRefresh, pi(ctx, ACTION_ROTATE))
         launchPending(ctx, "word", w?.id?.ifEmpty { null }, 20)

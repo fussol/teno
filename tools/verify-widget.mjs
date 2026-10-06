@@ -91,8 +91,15 @@ ok(kw.includes('route != null') && kw.includes('removeExtra'), 'route 空 → re
 ok(kw.includes('launchPending(ctx, "review", null, 10)'), '狀態 widget 點擊 → review（study 複習頁）');
 ok(kw.includes('launchPending(ctx, "word", w?.id') && kw.includes(', 20)'), '抽字 widget 點擊 → word（帶字 id）');
 ok(kw.includes('launchPending(ctx, "add", null, 40)'), '收詞 widget 點擊 → add');
-ok(kw.includes('PickedWord(w, d, pron, pos, ex, wid)'), 'pickWord 帶 words.id 給字卡路由');
+ok(kw.includes('PickedWord(w, d, pron, pos, ex, wid, extra)'), 'pickWord 帶 words.id 給字卡路由（＋額外欄位）');
 ok(kw.includes('rowid, id'), 'pickWord cols 含 id');
+// 抽字 widget 額外顯示欄位（設定頁勾選；白名單防 SQL 欄名注入）
+ok(kw.includes('WORD_FIELD_LABEL') && kw.includes('"syllables" to "音節"'), 'Kotlin WORD_FIELD_LABEL 白名單');
+ok(kw.includes('c.getColumnIndex(f)'), 'pickWord 只撈勾選欄位（動態 cols）');
+ok(kw.includes('want.joinToString("") { ", $it" }'), 'pickWord 依勾選拼 SELECT 欄位');
+ok(kw.includes('wordFieldText') && kw.includes("startsWith(\"[\")"), 'JSON 陣列欄位轉逗號列');
+ok(kw.includes('rv.setTextViewText(R.id.wwExtra'), 'wordViews 寫 wwExtra');
+ok(kw.includes('R.id.wwExtra, View.GONE'), '全欄無值 → wwExtra GONE（維持原樣）');
 // 本週複習（review_log 近7日）
 ok(kw.includes('fun readWeekly'), 'readWeekly 讀 review_log 近 7 日');
 ok(kw.includes('6 - off') && kw.includes('IntArray(7)'), '週桶 [0]=6天前…[6]=今天');
@@ -113,6 +120,11 @@ ok(kp.includes('@TauriPlugin'), 'WidgetPlugin @TauriPlugin');
 for (const cmd of ['getStatus', 'saveConfig', 'refreshNow', 'requestPerms'])
   ok(kp.includes(`fun ${cmd}(`), `命令 ${cmd}`);
 ok(kp.includes('parseArgs(SaveCfgArgs'), 'saveConfig 解析 SaveCfgArgs');
+// 抽字額外欄位 transport（JS → SaveCfgArgs 字串 → Cfg List → prefs）
+ok(kp.includes('var wordFields: String = ""'), 'SaveCfgArgs.wordFields（逗號字串 transport）');
+ok(kp.includes('js.put("wordFields"'), 'statusJs 回傳 wordFields（設定頁回填）');
+ok(kp.includes('args.wordFields.split(",")'), 'saveConfig 拆逗號 → List');
+ok(kw.includes('putString("wordFields"'), 'saveCfg 寫入 wordFields prefs');
 
 const kr = read(`${KDIR}/TenoWidgetReceiver.kt`);
 ok(kr.includes('class TenoWidgetProviderBase : AppWidgetProvider()'), 'TenoWidgetProviderBase 繼承 AppWidgetProvider');
@@ -152,7 +164,7 @@ const ws = read(`${RES}/layout/widget_status.xml`);
 for (const id of ['wsBg', 'wsTitle', 'wsGoal', 'wsNewNum', 'wsLearnNum', 'wsReviewNum', 'wsBar', 'wsTrack', 'wsFill'])
   ok(ws.includes(`@+id/${id}`), `狀態 layout 有 ${id}`);
 const ww = read(`${RES}/layout/widget_word.xml`);
-for (const id of ['wgBg', 'wwWord', 'wwRefresh', 'wwMeta', 'wwDef'])
+for (const id of ['wgBg', 'wwWord', 'wwRefresh', 'wwMeta', 'wwDef', 'wwEx', 'wwExtra'])
   ok(ww.includes(`@+id/${id}`), `抽字 layout 有 ${id}`);
 const wk = read(`${RES}/layout/widget_weekly.xml`);
 for (const id of ['widgetRoot', 'wkBg', 'wkTitle', 'wkChart', 'wkCaption'])
@@ -211,6 +223,10 @@ for (const id of ['widgetRotate', 'widgetNotifyOn', 'widgetNotifyInterval',
   'widgetResident', 'widgetRefreshBtn', 'widgetPermBtn', 'widgetPermStatus',
   'notifPermBtn', 'notifPermStatus'])
   ok(st.includes(`id="${id}"`), `settings #${id}`);
+// 抽字額外欄位開關（JS ↔ Kotlin WORD_FIELD_LABEL 白名單同 key）
+for (const f of ['syllables', 'deck', 'related', 'forms', 'synonym', 'antonym'])
+  ok(st.includes(`widgetField${f[0].toUpperCase()}${f.slice(1)}`), `settings #widgetField${f[0].toUpperCase()}${f.slice(1)}`);
+ok(st.includes('wordFields') && st.includes("st.wordFields"), 'settings wordFields 存／回填');
 ok(!st.includes('id="widgetNotifyTime"') && !st.includes('id="widgetMode"'), '固定時刻／模式切換 UI 已移除');
 ok(st.includes('widgetSaveConfig(collect())'), 'settings 變更即存');
 ok(st.includes('isAndroid && isTauri') && /isAndroid && isTauri \? `[\s\S]*?桌面 Widget/.test(st), '區塊僅 Android App 顯示（瀏覽器版/桌機隱藏）');

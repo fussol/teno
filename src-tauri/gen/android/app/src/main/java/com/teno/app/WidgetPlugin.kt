@@ -25,6 +25,7 @@ class SaveCfgArgs {
     var notifyWord: Boolean = true
     var notifyGoal: Boolean = true
     var residentOn: Boolean = false
+    var wordFields: String = ""   // 逗號分隔的 words 欄名（syllables,deck,…）
 }
 
 /**
@@ -45,6 +46,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
         js.put("notifyWord", c.notifyWord)
         js.put("notifyGoal", c.notifyGoal)
         js.put("residentOn", c.residentOn)
+        js.put("wordFields", c.wordFields.joinToString(","))
         js.put("dbOk", TenoWidget.dbOk(activity))
         js.put("notifGranted",
             Build.VERSION.SDK_INT < 33 ||
@@ -72,6 +74,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
                 notifyWord = args.notifyWord,
                 notifyGoal = args.notifyGoal,
                 residentOn = args.residentOn,
+                wordFields = args.wordFields.split(",").map { it.trim() }.filter { it.isNotEmpty() },
             ))
             TenoWidget.armAlarms(activity)
             TenoWidget.renderAll(activity)

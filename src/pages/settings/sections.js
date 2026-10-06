@@ -514,6 +514,20 @@ export function renderSettingsContent(s) {
         </div>
         <div class="config-field">
           <div class="config-field-info">
+            <div class="config-field-label">抽字顯示欄位</div>
+            <div class="config-field-hint">在字／音標／詞性／釋義／例句之外額外顯示；勾越多卡片越高，可把 widget 拉大（該欄沒資料就不佔行）</div>
+          </div>
+          <div style="display:flex;gap:var(--s3);flex-wrap:wrap">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldSyllables"> 音節</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldDeck"> 字本</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldRelated"> 相關字</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldForms"> 變化形</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldSynonym"> 同義</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldAntonym"> 反義</label>
+          </div>
+        </div>
+        <div class="config-field">
+          <div class="config-field-info">
             <div class="config-field-label">背景常駐</div>
             <div class="config-field-hint">每日＋開 App 刷新已足夠省電；只有要很密的間隔才需開（系統要求會有一則低耗電常駐通知，可關）</div>
           </div>
