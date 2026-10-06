@@ -56,6 +56,13 @@ cpal = "0.15"
 # 桌面＋手機通用，零行為影響（只去 debug symbols）。
 [profile.release]
 strip = true
+# SIZE1（2026-10-06 實測回退）：lto=fat + codegen-units=1 反效果 —
+# .text 22→28MB、.eh_frame +2.3MB，.so 反而 +9MB，故不帶。
+
+[profile.dev]
+# SIZE2：test/debug 包免 DWARF（114MB→瘦身主力；panic 行號走 track_caller
+# 與 debuginfo 無關，backtrace 仍留 symtab）。
+debug = false
 
 [features]
 # WEB-SERVE1: 網站版伺服器（axum 靜態站＋invoke 路由）。桌面/Android 不帶 → 二進位零增肥。

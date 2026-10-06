@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npx vite",
-    "beforeBuildCommand": "vite build"
+    "beforeBuildCommand": "vite build && node tools/prune-dist.mjs"
   },
   "app": {
     "windows": [
