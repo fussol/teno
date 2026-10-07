@@ -115,8 +115,10 @@ a{color:var(--accent);text-decoration:none}
 ::selection{background:var(--accent-glow);color:var(--text-primary)}
 ::placeholder{color:var(--text-disabled)}
 ::-webkit-scrollbar{display:none;width:0;height:0}
-*{scrollbar-width:none;-ms-overflow-style:none}
-/* 全域強制隱藏所有 scrollbar（含 overflow-x 與 textarea/select/pre 內建），滾動功能不變 */
+*{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior:none}
+/* 全域強制隱藏所有 scrollbar（含 overflow-x 與 textarea/select/pre 內建），滾動功能不變。
+   overscroll-behavior:none ＝從網頁層拔根：捲到任何邊界都不觸發連鎖/回彈/光暈（配合原生
+   MainActivity 的 overScrollMode=NEVER，雙層殺掉捲到頂/底右側的白線） */
 textarea::-webkit-scrollbar,select::-webkit-scrollbar,pre::-webkit-scrollbar{display:none;width:0;height:0}
 pre,code{scrollbar-width:none;-ms-overflow-style:none}
 /* 觸控全域：div/li/span 偽按鈕也要關 tap highlight（否則 Android WebView 深色下白 flash）+ 禁雙擊縮放延遲。
