@@ -115,6 +115,9 @@ ok(kw.includes('notifyIntervalSec') && kw.includes('coerceAtLeast(1)'), '間隔�
 ok(kw.includes('"Teno" to (if (w == null)'), '字卡通知標題 Teno（不叫 Teno 抽字）');
 ok(kw.includes('randomSentence') && kw.includes("split('\\n')"), '通知例句多行只隨機抽一句');
 ok(kw.includes('BigTextStyle'), '通知 BigTextStyle 多行展開');
+ok(kw.includes('pickWord(ctx, c.notifyDeck, c.notifyFields)'), '通知字卡：字本來源＋通知專屬欄位（與 widget 分離）');
+ok(kw.includes('NOTIFY_FIELD_LABEL') && kw.includes('filterKeys { it != "deck"'), '通知欄位白名單扣 deck（字本＝抽字來源）');
+ok(kw.includes('AND deck = ?'), 'pickWord deck 綁定參數過濾（通知指定字本）');
 ok(kw.includes('lines.joinToString("\\n")'), '通知字卡各件 enter 分行');
 ok(kw.includes('notifyPool') && kw.includes('Random.nextInt'), '內容池隨機抽一則');
 ok(!kw.includes('notifyHour') && !kw.includes('nextNotifyAt'), '固定時刻（20:00）路徑已移除');
@@ -232,6 +235,12 @@ for (const id of ['widgetRotate', 'widgetNotifyOn', 'widgetNotifyInterval',
 for (const f of ['syllables', 'deck', 'related', 'forms', 'synonym', 'antonym'])
   ok(st.includes(`widgetField${f[0].toUpperCase()}${f.slice(1)}`), `settings #widgetField${f[0].toUpperCase()}${f.slice(1)}`);
 ok(st.includes('wordFields') && st.includes("st.wordFields"), 'settings wordFields 存／回填');
+// 通知專屬欄位（與 widget 分開）＋抽字字本 select
+for (const f of ['syllables', 'related', 'forms', 'synonym', 'antonym'])
+  ok(st.includes(`id="notifyField${f[0].toUpperCase()}${f.slice(1)}"`), `settings #notifyField${f[0].toUpperCase()}${f.slice(1)}`);
+ok(st.includes('id="notifyDeckSelect"') && st.includes('全部字本'), 'settings 抽字字本 select（通知專屬）');
+ok(st.includes('notifyFields') && st.includes("st.notifyFields"), 'settings notifyFields 存／回填');
+ok(st.includes("st.notifyDeck") && st.includes('nDeck.value'), 'settings notifyDeck 存／回填');
 ok(!st.includes('id="widgetNotifyTime"') && !st.includes('id="widgetMode"'), '固定時刻／模式切換 UI 已移除');
 ok(st.includes('widgetSaveConfig(collect())'), 'settings 變更即存');
 ok(st.includes('isAndroid && isTauri') && /isAndroid && isTauri \? `[\s\S]*?桌面 Widget/.test(st), '區塊僅 Android App 顯示（瀏覽器版/桌機隱藏）');

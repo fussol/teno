@@ -534,7 +534,12 @@ function _mount(s) {
     const W_FIELDS = [['widgetFieldSyllables', 'syllables'], ['widgetFieldDeck', 'deck'],
       ['widgetFieldRelated', 'related'], ['widgetFieldForms', 'forms'],
       ['widgetFieldSynonym', 'synonym'], ['widgetFieldAntonym', 'antonym']];
+    // 通知字卡額外欄位（與 widget 分開；白名單 = widget 扣 deck）
+    const N_FIELDS = [['notifyFieldSyllables', 'syllables'], ['notifyFieldRelated', 'related'],
+      ['notifyFieldForms', 'forms'], ['notifyFieldSynonym', 'synonym'], ['notifyFieldAntonym', 'antonym']];
+    const nDeck = document.getElementById('notifyDeckSelect');
     const fieldBoxes = W_FIELDS.map(([id]) => document.getElementById(id)).filter(Boolean);
+    const nFieldBoxes = N_FIELDS.map(([id]) => document.getElementById(id)).filter(Boolean);
     const wEl = document.getElementById('widgetPermStatus');
     const nEl = document.getElementById('notifPermStatus');
     let loaded = false;
@@ -549,6 +554,9 @@ function _mount(s) {
       residentOn: !!res.checked,
       wordFields: W_FIELDS.filter(([id]) => document.getElementById(id)?.checked)
         .map(([, key]) => key).join(','),
+      notifyFields: N_FIELDS.filter(([id]) => document.getElementById(id)?.checked)
+        .map(([, key]) => key).join(','),
+      notifyDeck: nDeck?.value ?? '',
     });
     // 狀態字串分兩區：widget 區看 DB／精確鬧鐘；通知區看通知權限
     const wText = (st) => {
@@ -586,6 +594,21 @@ function _mount(s) {
           const b = document.getElementById(id);
           if (b) b.checked = sel.has(key);
         }
+        const selN = new Set((st.notifyFields || '').split(',').filter(Boolean));
+        for (const [id, key] of N_FIELDS) {
+          const b = document.getElementById(id);
+          if (b) b.checked = selN.has(key);
+        }
+        if (nDeck) {
+          nDeck.length = 1;   // 保留「全部字本」
+          for (const d of (s.state.decks || [])) {
+            const o = document.createElement('option');
+            o.value = d.name; o.textContent = d.name;
+            nDeck.appendChild(o);
+          }
+          nDeck.value = st.notifyDeck ?? '';
+          if (nDeck.selectedIndex < 0) nDeck.value = '';   // 字本已刪 → 退回全部
+        }
         paint(st);
       } catch (e) { console.warn('[widget] status:', e); }
       loaded = true;
@@ -597,7 +620,8 @@ function _mount(s) {
         paint(st);
       } catch (e) { console.warn('[widget] save:', e); }
     };
-    for (const el of [rot, nOn, nInt, nUnit, cDue, cWord, cGoal, res, ...fieldBoxes].filter(Boolean)) el.addEventListener('change', save);
+    for (const el of [rot, nOn, nInt, nUnit, cDue, cWord, cGoal, res, nDeck,
+      ...fieldBoxes, ...nFieldBoxes].filter(Boolean)) el.addEventListener('change', save);
     document.getElementById('widgetRefreshBtn')?.addEventListener('click', async () => {
       try { await widgetRefresh(); toast('Widget 已刷新'); }
       catch (e) { console.warn('[widget] refresh:', e); toast('Widget 刷新失敗'); }
