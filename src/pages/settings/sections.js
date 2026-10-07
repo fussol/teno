@@ -515,7 +515,7 @@ export function renderSettingsContent(s) {
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">抽字顯示欄位</div>
-            <div class="config-field-hint">在字／音標／詞性／釋義／例句之外額外顯示；勾越多卡片越高，可把 widget 拉大（該欄沒資料就不佔行）</div>
+            <div class="config-field-hint">在字／音標／詞性／釋義／例句之外額外顯示（含字本）；widget 與定時通知的字卡共用這組勾選。勾越多卡片越高，可把 widget 拉大（該欄沒資料就不佔行）</div>
           </div>
           <div style="display:flex;gap:var(--s3);flex-wrap:wrap">
             <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="widgetFieldSyllables"> 音節</label>
@@ -548,12 +548,16 @@ export function renderSettingsContent(s) {
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">間隔提醒</div>
-            <div class="config-field-hint">每隔 X 分鐘從下方勾選的內容隨機抽一則推播（1 分鐘～1 天；深度休眠時可能稍有延遲）</div>
+            <div class="config-field-hint">每隔 X 從下方勾選的內容隨機抽一則推播（下限 1 秒，單位到小時、小時無上限例如 100；深度休眠時可能稍有延遲）</div>
           </div>
           <div style="display:flex;gap:var(--s2);align-items:center">
             <input type="checkbox" id="widgetNotifyOn">
-            <input type="number" id="widgetNotifyInterval" class="form-input" style="width:6em" min="1" max="1440" step="1" value="60">
-            <span style="font-size:12px;color:var(--text-tertiary)">分鐘</span>
+            <input type="number" id="widgetNotifyInterval" class="form-input" style="width:6em" min="1" step="1" value="60">
+            <select id="widgetNotifyIntervalUnit" class="form-input" style="width:auto">
+              <option value="1">秒</option>
+              <option value="60" selected>分鐘</option>
+              <option value="3600">小時</option>
+            </select>
           </div>
         </div>
         <div class="config-field">

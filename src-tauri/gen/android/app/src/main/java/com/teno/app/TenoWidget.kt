@@ -50,15 +50,15 @@ object TenoWidget {
     data class Cfg(
         val rotateMin: Int,      // 抽字 widget 換字間隔（分鐘）
         val notifyOn: Boolean,
-        val notifyIntervalMin: Int,  // 定時通知間隔（分鐘，1..1440）
+        val notifyIntervalSec: Int,  // 定時通知間隔（秒；下限 1 秒，小時無上限如 100）
         val notifyDue: Boolean,      // 內容池：今日到期
         val notifyWord: Boolean,     // 內容池：隨機字卡
         val notifyGoal: Boolean,     // 內容池：今日進度
         val residentOn: Boolean,
-        val wordFields: List<String> = emptyList(),  // 抽字 widget 額外顯示欄位（words 欄名）
+        val wordFields: List<String> = emptyList(),  // 抽字 widget／通知 額外顯示欄位（words 欄名）
     ) {
         val periodMs: Long get() = rotateMin * 60_000L
-        val notifyIntervalMs: Long get() = notifyIntervalMin.coerceIn(1, 1440) * 60_000L
+        val notifyIntervalMs: Long get() = notifyIntervalSec.coerceAtLeast(1) * 1000L
         val notifyPool: List<String>
             get() = buildList {
                 if (notifyDue) add("due")
@@ -124,6 +124,12 @@ object TenoWidget {
         return if (s.length > 60) s.take(59) + "…" else s
     }
 
+    /** 例句多行只抽一行（通知用；空/無例句 → null）。 */
+    internal fun randomSentence(example: String): String? {
+        val lines = example.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        return if (lines.isEmpty()) null else lines[kotlin.random.Random.nextInt(lines.size)]
+    }
+
     /** 發音統一 `/.../` 包覆 — db.js normPron 同口徑（舊資料裸音標/已包過都收斂；[ ] ( ) 界定保留）。 */
     internal fun normPron(raw: String): String {
         val t = raw.trim()
@@ -150,7 +156,9 @@ object TenoWidget {
         return Cfg(
             rotateMin = p.getInt("rotateMin", 60),
             notifyOn = p.getBoolean("notifyOn", false),
-            notifyIntervalMin = p.getInt("notifyIntervalMin", 60).coerceIn(1, 1440),
+            // 秒制；舊版只存 notifyIntervalMin（分）→ 首次升級 ×60 遷移
+            notifyIntervalSec = (if (p.contains("notifyIntervalSec")) p.getInt("notifyIntervalSec", 3600)
+                else p.getInt("notifyIntervalMin", 60) * 60).coerceAtLeast(1),
             notifyDue = p.getBoolean("notifyDue", true),
             notifyWord = p.getBoolean("notifyWord", true),
             notifyGoal = p.getBoolean("notifyGoal", true),
@@ -162,11 +170,11 @@ object TenoWidget {
 
     fun saveCfg(ctx: Context, c: Cfg) {
         val old = cfg(ctx)
-        val resetNext = c.notifyOn && (!old.notifyOn || c.notifyIntervalMin != old.notifyIntervalMin)
+        val resetNext = c.notifyOn && (!old.notifyOn || c.notifyIntervalSec != old.notifyIntervalSec)
         prefs(ctx).edit()
             .putInt("rotateMin", c.rotateMin)
             .putBoolean("notifyOn", c.notifyOn)
-            .putInt("notifyIntervalMin", c.notifyIntervalMin.coerceIn(1, 1440))
+            .putInt("notifyIntervalSec", c.notifyIntervalSec.coerceAtLeast(1))
             .putBoolean("notifyDue", c.notifyDue)
             .putBoolean("notifyWord", c.notifyWord)
             .putBoolean("notifyGoal", c.notifyGoal)
@@ -731,10 +739,17 @@ object TenoWidget {
         val (title, body) = when (pick) {
             "word" -> {
                 val w = pickWord(ctx)
-                "Teno 抽字" to (if (w == null) "開啟 Teno 匯入字庫" else buildString {
-                    append(w.word)
-                    if (w.meta.isNotEmpty()) { append("  "); append(w.meta) }
-                    if (w.def.isNotEmpty()) { append(" — "); append(w.def) }
+                // 各件 enter 分行；例句多行隨機抽一句；額外欄位吃 wordFields 勾選（含字本）
+                "Teno" to (if (w == null) "開啟 Teno 匯入字庫" else run {
+                    val lines = mutableListOf(w.word)
+                    if (w.meta.isNotEmpty()) lines += w.meta
+                    if (w.def.isNotEmpty()) lines += w.def
+                    randomSentence(w.example)?.let { lines += it }
+                    for (f in c.wordFields) {
+                        val v = w.extra[f]?.let { wordFieldText(it) }
+                        if (!v.isNullOrEmpty()) lines += "${WORD_FIELD_LABEL[f]} $v"
+                    }
+                    lines.joinToString("\n")
                 })
             }
             "goal" -> "Teno 今日進度" to (if (counts != null && counts.goalTotal > 0)
@@ -751,6 +766,7 @@ object TenoWidget {
             .setSmallIcon(R.drawable.ic_stat_teno)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(android.app.Notification.BigTextStyle().bigText(body))
             .setContentIntent(launchPending(ctx))
             .setAutoCancel(true)
             .build()

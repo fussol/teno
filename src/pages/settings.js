@@ -525,6 +525,7 @@ function _mount(s) {
     if (!rot) return;
     const nOn = document.getElementById('widgetNotifyOn');
     const nInt = document.getElementById('widgetNotifyInterval');
+    const nUnit = document.getElementById('widgetNotifyIntervalUnit');
     const cDue = document.getElementById('notifyContentDue');
     const cWord = document.getElementById('notifyContentWord');
     const cGoal = document.getElementById('notifyContentGoal');
@@ -540,7 +541,8 @@ function _mount(s) {
     const collect = () => ({
       rotateMin: parseInt(rot.value, 10) || 60,
       notifyOn: !!nOn.checked,
-      notifyIntervalMin: Math.min(1440, Math.max(1, parseInt(nInt.value, 10) || 60)),
+      // 秒制：值×單位（秒/分/時），下限 1 秒、小時無上限
+      notifyIntervalSec: Math.max(1, (parseInt(nInt.value, 10) || 60) * (parseInt(nUnit?.value, 10) || 60)),
       notifyDue: !!cDue.checked,
       notifyWord: !!cWord.checked,
       notifyGoal: !!cGoal.checked,
@@ -570,7 +572,11 @@ function _mount(s) {
         if (!st?.supported) return;
         if (st.rotateMin) rot.value = String(st.rotateMin);
         nOn.checked = !!st.notifyOn;
-        nInt.value = String(st.notifyIntervalMin ?? 60);
+        // 秒 → 回顯就整單位（3600 倍數顯時、60 倍數顯分、否則秒）
+        const sec = st.notifyIntervalSec ?? 3600;
+        if (sec % 3600 === 0) { if (nUnit) nUnit.value = '3600'; nInt.value = String(sec / 3600); }
+        else if (sec % 60 === 0) { if (nUnit) nUnit.value = '60'; nInt.value = String(sec / 60); }
+        else { if (nUnit) nUnit.value = '1'; nInt.value = String(sec); }
         cDue.checked = st.notifyDue !== false;
         cWord.checked = st.notifyWord !== false;
         cGoal.checked = st.notifyGoal !== false;
@@ -591,7 +597,7 @@ function _mount(s) {
         paint(st);
       } catch (e) { console.warn('[widget] save:', e); }
     };
-    for (const el of [rot, nOn, nInt, cDue, cWord, cGoal, res, ...fieldBoxes]) el.addEventListener('change', save);
+    for (const el of [rot, nOn, nInt, nUnit, cDue, cWord, cGoal, res, ...fieldBoxes].filter(Boolean)) el.addEventListener('change', save);
     document.getElementById('widgetRefreshBtn')?.addEventListener('click', async () => {
       try { await widgetRefresh(); toast('Widget 已刷新'); }
       catch (e) { console.warn('[widget] refresh:', e); toast('Widget 刷新失敗'); }

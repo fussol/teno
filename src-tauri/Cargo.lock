@@ -5821,7 +5821,7 @@ dependencies = [
 
 [[package]]
 name = "teno"
-version = "5.19.55"
+version = "5.19.56"
 dependencies = [
  "argon2",
  "axum",

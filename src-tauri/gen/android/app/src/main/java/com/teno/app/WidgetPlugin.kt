@@ -20,7 +20,7 @@ private const val TAG = "WidgetPlugin"
 class SaveCfgArgs {
     var rotateMin: Int = 60
     var notifyOn: Boolean = false
-    var notifyIntervalMin: Int = 60
+    var notifyIntervalSec: Int = 3600   // 秒制（下限 1、小時無上限）
     var notifyDue: Boolean = true
     var notifyWord: Boolean = true
     var notifyGoal: Boolean = true
@@ -41,7 +41,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
         js.put("supported", true)
         js.put("rotateMin", c.rotateMin)
         js.put("notifyOn", c.notifyOn)
-        js.put("notifyIntervalMin", c.notifyIntervalMin)
+        js.put("notifyIntervalSec", c.notifyIntervalSec)
         js.put("notifyDue", c.notifyDue)
         js.put("notifyWord", c.notifyWord)
         js.put("notifyGoal", c.notifyGoal)
@@ -69,7 +69,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
             TenoWidget.saveCfg(activity, TenoWidget.Cfg(
                 rotateMin = args.rotateMin,
                 notifyOn = args.notifyOn,
-                notifyIntervalMin = args.notifyIntervalMin,
+                notifyIntervalSec = args.notifyIntervalSec,
                 notifyDue = args.notifyDue,
                 notifyWord = args.notifyWord,
                 notifyGoal = args.notifyGoal,

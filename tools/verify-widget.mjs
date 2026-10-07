@@ -109,9 +109,13 @@ ok(kw.includes('Bitmap.createBitmap(bw, bh') || kw.includes('Bitmap.createBitmap
 ok(kw.includes('本週 ${sum} 次'), '週總計 caption');
 ok(!kw.includes('c.mode') && !kw.includes('mode == "word"'), 'widgetMode 判定已移除');
 ok(kw.includes('goal_streak') && kw.includes('daily_goal'), '今日進度讀 goal_streak');
-// 間隔通知（1..1440 分）＋內容池隨機抽取
+// 間隔通知（秒制、小時無上限）＋內容池隨機抽取
 ok(kw.includes('notifyNextAt') && kw.includes('notifyIntervalMs'), 'notifyNextAt 排程（重入不重排計時）');
-ok(kw.includes('coerceIn(1, 1440)'), '間隔 clamp 1..1440 分鐘');
+ok(kw.includes('notifyIntervalSec') && kw.includes('coerceAtLeast(1)'), '間隔秒制 notifyIntervalSec（下限 1 秒、小時無上限）');
+ok(kw.includes('"Teno" to (if (w == null)'), '字卡通知標題 Teno（不叫 Teno 抽字）');
+ok(kw.includes('randomSentence') && kw.includes("split('\\n')"), '通知例句多行只隨機抽一句');
+ok(kw.includes('BigTextStyle'), '通知 BigTextStyle 多行展開');
+ok(kw.includes('lines.joinToString("\\n")'), '通知字卡各件 enter 分行');
 ok(kw.includes('notifyPool') && kw.includes('Random.nextInt'), '內容池隨機抽一則');
 ok(!kw.includes('notifyHour') && !kw.includes('nextNotifyAt'), '固定時刻（20:00）路徑已移除');
 
@@ -219,6 +223,7 @@ const st = settingsSrc();
 ok(st.includes('桌面 Widget</div>') || st.includes('} 桌面 Widget'), 'settings Widget 區塊標題');
 ok(st.includes('提醒通知'), 'settings 通知區塊標題（與 Widget 分家）');
 for (const id of ['widgetRotate', 'widgetNotifyOn', 'widgetNotifyInterval',
+  'widgetNotifyIntervalUnit',
   'notifyContentDue', 'notifyContentWord', 'notifyContentGoal',
   'widgetResident', 'widgetRefreshBtn', 'widgetPermBtn', 'widgetPermStatus',
   'notifPermBtn', 'notifPermStatus'])
