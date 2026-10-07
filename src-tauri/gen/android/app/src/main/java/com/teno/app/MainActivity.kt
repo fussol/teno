@@ -110,8 +110,6 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webViewRef = webView
-    // 關掉 overscroll 回彈光暈（捲到頂/底右側那條白線）；捲動功能不變（CSS 已隱藏捲軸）
-    webView.overScrollMode = android.view.View.OVER_SCROLL_NEVER
     BootDiag.attach(webView)   // BOOTDIAG：開始輪詢 JS 面（只在 .test 生效）
     flushHandler.post(flushTick)   // 暖路徑：onNewIntent 先於 webview 建立時也在這裡補送
   }
