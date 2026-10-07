@@ -54,8 +54,8 @@ object TenoWidget {
         val notifyDue: Boolean,      // 內容池：今日到期
         val notifyWord: Boolean,     // 內容池：隨機字卡
         val notifyGoal: Boolean,     // 內容池：今日進度
-        val notifyFields: List<String> = emptyList(),  // 通知字卡額外欄位（與 widget wordFields 完全分開）
-        val notifyDeck: String = "",    // 通知抽字字本（"" = 全部；只影響通知）
+        val notifyFields: List<String> = emptyList(),  // 通知字卡可開關欄位（10 欄白名單；與 widget wordFields 完全分開）
+        val notifyDecks: List<String> = emptyList(),  // 通知抽字字本（複選；空＝全部；只影響通知）
         val residentOn: Boolean,
         val wordFields: List<String> = emptyList(),  // 抽字 widget 額外顯示欄位（words 欄名）
     ) {
@@ -92,10 +92,7 @@ object TenoWidget {
     }
 
     data class PickedWord(val word: String, val def: String, val pron: String, val pos: String, val example: String, val id: String = "",
-                          val extra: Map<String, String> = emptyMap()) {
-        /** 通知組字用（已含 /…/ 的音標＋詞性）。 */
-        val meta: String get() = listOf(pron, pos).filter { it.isNotEmpty() }.joinToString("   ")
-    }
+                          val extra: Map<String, String> = emptyMap())
 
     /**
      * 抽字 widget 額外可顯示欄位白名單（key = words 欄名 = 設定值；value = 卡片標籤）。
@@ -112,8 +109,22 @@ object TenoWidget {
         "antonym" to "反",
     )
 
-    /** 通知字卡額外欄位白名單 = widget 白名單扣 deck（字本＝抽字來源選擇，不在通知裡顯示）。 */
-    val NOTIFY_FIELD_LABEL: Map<String, String> = WORD_FIELD_LABEL.filterKeys { it != "deck" }
+    /**
+     * 通知字卡可開關欄位白名單（key＝存值；前5＝固定欄位＝PickedWord 自有欄，後5＝words 動態欄位）。
+     * deck 不在此列：字本＝抽字來源（notifyDecks 複選），不在通知裡顯示。
+     */
+    val NOTIFY_FIELD_LABEL = mapOf(
+        "word" to "單字",
+        "pron" to "音標",
+        "pos" to "詞性",
+        "def" to "翻譯",
+        "example" to "例句",
+        "syllables" to "音節",
+        "related" to "相關",
+        "forms" to "變化",
+        "synonym" to "同",
+        "antonym" to "反",
+    )
 
     /**
      * 欄位值 → 卡片顯示文字。related/forms 存的是 JSON 陣列字串（'["a","b"]'），
@@ -167,9 +178,13 @@ object TenoWidget {
             notifyDue = p.getBoolean("notifyDue", true),
             notifyWord = p.getBoolean("notifyWord", true),
             notifyGoal = p.getBoolean("notifyGoal", true),
-            notifyFields = (p.getString("notifyFields", "") ?: "").split(",")
-                .map { it.trim() }.filter { it in NOTIFY_FIELD_LABEL },
-            notifyDeck = p.getString("notifyDeck", "") ?: "",
+            // V2 鍵存完整10欄；缺＝舊版（僅動態5欄）或首裝 → 固定5欄預設開＋搬舊動態勾選
+            notifyFields = (if (p.contains("notifyFields2")) p.getString("notifyFields2", "") ?: ""
+                else "word,pron,pos,def,example," + (p.getString("notifyFields", "") ?: ""))
+                .split(",").map { it.trim() }.filter { it in NOTIFY_FIELD_LABEL },
+            // 複選字本（JSON 陣列）；舊版單一 notifyDeck 字串 → 一元素
+            notifyDecks = if (p.contains("notifyDecks")) parseJsonList(p.getString("notifyDecks", "[]") ?: "[]")
+                else listOf(p.getString("notifyDeck", "") ?: "").filter { it.isNotEmpty() },
             residentOn = p.getBoolean("residentOn", false),
             wordFields = (p.getString("wordFields", "") ?: "").split(",")
                 .map { it.trim() }.filter { it in WORD_FIELD_LABEL },
@@ -186,8 +201,8 @@ object TenoWidget {
             .putBoolean("notifyDue", c.notifyDue)
             .putBoolean("notifyWord", c.notifyWord)
             .putBoolean("notifyGoal", c.notifyGoal)
-            .putString("notifyFields", c.notifyFields.filter { it in NOTIFY_FIELD_LABEL }.joinToString(","))
-            .putString("notifyDeck", c.notifyDeck)
+            .putString("notifyFields2", c.notifyFields.filter { it in NOTIFY_FIELD_LABEL }.joinToString(","))
+            .putString("notifyDecks", org.json.JSONArray(c.notifyDecks).toString())
             .putBoolean("residentOn", c.residentOn)
             .putString("wordFields", c.wordFields.filter { it in WORD_FIELD_LABEL }.joinToString(","))
             .apply()
@@ -313,8 +328,14 @@ object TenoWidget {
         } catch (_: Exception) { null }
     }
 
-    /** 隨機一字（排除上一字避免連續重複）。deck≠"" → 只從該字本抽（通知用）；fields 預設 widget 勾選。 */
-    internal fun pickWord(ctx: Context, deck: String = "", fields: List<String> = cfg(ctx).wordFields): PickedWord? {
+    /** JSON 字串陣列 → List<String>（缺/壞 → 空）。 */
+    internal fun parseJsonList(s: String): List<String> = try {
+        val a = org.json.JSONArray(s)
+        (0 until a.length()).map { a.getString(it) }
+    } catch (_: Exception) { emptyList() }
+
+    /** 隨機一字（排除上一字避免連續重複）。decks 空 → 全字本；非空 → 複選字本合併池（通知用）；fields 預設 widget 勾選。 */
+    internal fun pickWord(ctx: Context, decks: List<String> = emptyList(), fields: List<String> = cfg(ctx).wordFields): PickedWord? {
         return try {
             val db = openDb(ctx) ?: return null
             db.use {
@@ -339,12 +360,13 @@ object TenoWidget {
                     }
                 val cols = "word, definition, pronunciation, part_of_speech, example, rowid, id" +
                     want.joinToString("") { ", $it" }
-                // deck 為綁定參數（值非識別字串 → 無注入面）
-                val deckCond = if (deck.isEmpty()) "" else " AND deck = ?"
+                // decks 為綁定參數（值非識別字串 → 無注入面）
+                val deckCond = if (decks.isEmpty()) "" else " AND deck IN (" + decks.joinToString(",") { "?" } + ")"
+                val deckArgs = decks.toTypedArray()
                 q("SELECT $cols FROM words WHERE word != ''$deckCond AND rowid != ? ORDER BY RANDOM() LIMIT 1",
-                    if (deck.isEmpty()) arrayOf(last.toString()) else arrayOf(deck, last.toString()))
+                    deckArgs + arrayOf(last.toString()))
                     ?: q("SELECT $cols FROM words WHERE word != ''$deckCond ORDER BY RANDOM() LIMIT 1",
-                        if (deck.isEmpty()) null else arrayOf(deck))
+                        if (deckArgs.isEmpty()) null else deckArgs)
             }
         } catch (_: Exception) { null }
     }
@@ -751,18 +773,26 @@ object TenoWidget {
         val pick = pool[kotlin.random.Random.nextInt(pool.size)]
         val (title, body) = when (pick) {
             "word" -> {
-                // 字本（notifyDeck）決定抽字來源；欄位吃通知專屬勾選（與 widget 分離）
-                val w = pickWord(ctx, c.notifyDeck, c.notifyFields)
-                // 各件 enter 分行；例句多行隨機抽一句
+                // 抽字來源＝notifyDecks 複選字本合併池（空＝全部）；欄位吃通知專屬勾選；渲染按白名單固定序
+                val w = pickWord(ctx, c.notifyDecks, c.notifyFields)
+                // 各件 enter 分行；空欄跳過；例句多行隨機抽一句
                 "Teno" to (if (w == null) "開啟 Teno 匯入字庫" else run {
-                    val lines = mutableListOf(w.word)
-                    if (w.meta.isNotEmpty()) lines += w.meta
-                    if (w.def.isNotEmpty()) lines += w.def
-                    randomSentence(w.example)?.let { lines += it }
-                    for (f in c.notifyFields) {
-                        val v = w.extra[f]?.let { wordFieldText(it) }
-                        if (!v.isNullOrEmpty()) lines += "${NOTIFY_FIELD_LABEL[f]} $v"
+                    val lines = mutableListOf<String>()
+                    for (f in NOTIFY_FIELD_LABEL.keys) {
+                        if (f !in c.notifyFields) continue
+                        when (f) {
+                            "word" -> lines += w.word
+                            "pron" -> if (w.pron.isNotEmpty()) lines += w.pron
+                            "pos" -> if (w.pos.isNotEmpty()) lines += w.pos
+                            "def" -> if (w.def.isNotEmpty()) lines += w.def
+                            "example" -> randomSentence(w.example)?.let { lines += it }
+                            else -> {
+                                val v = w.extra[f]?.let { wordFieldText(it) }
+                                if (!v.isNullOrEmpty()) lines += "${NOTIFY_FIELD_LABEL[f]} $v"
+                            }
+                        }
                     }
+                    if (lines.isEmpty()) lines += w.word   // 全數關閉 → 兜底單字
                     lines.joinToString("\n")
                 })
             }

@@ -24,8 +24,8 @@ class SaveCfgArgs {
     var notifyDue: Boolean = true
     var notifyWord: Boolean = true
     var notifyGoal: Boolean = true
-    var notifyFields: String = ""    // 通知字卡額外欄位（csv，與 widget wordFields 分開）
-    var notifyDeck: String = ""      // 通知抽字字本（"" = 全部）
+    var notifyFields: String = ""    // 通知字卡可開關欄位（csv，與 widget wordFields 分開）
+    var notifyDecks: String = "[]"    // 通知抽字字本（JSON 陣列；空陣列＝全部）
     var residentOn: Boolean = false
     var wordFields: String = ""   // 逗號分隔的 words 欄名（syllables,deck,…）
 }
@@ -48,7 +48,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
         js.put("notifyWord", c.notifyWord)
         js.put("notifyGoal", c.notifyGoal)
         js.put("notifyFields", c.notifyFields.joinToString(","))
-        js.put("notifyDeck", c.notifyDeck)
+        js.put("notifyDecks", org.json.JSONArray(c.notifyDecks).toString())
         js.put("residentOn", c.residentOn)
         js.put("wordFields", c.wordFields.joinToString(","))
         js.put("dbOk", TenoWidget.dbOk(activity))
@@ -78,7 +78,7 @@ class WidgetPlugin(private val activity: Activity) : Plugin(activity) {
                 notifyWord = args.notifyWord,
                 notifyGoal = args.notifyGoal,
                 notifyFields = args.notifyFields.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                notifyDeck = args.notifyDeck,
+                notifyDecks = TenoWidget.parseJsonList(args.notifyDecks),
                 residentOn = args.residentOn,
                 wordFields = args.wordFields.split(",").map { it.trim() }.filter { it.isNotEmpty() },
             ))

@@ -534,15 +534,36 @@ function _mount(s) {
     const W_FIELDS = [['widgetFieldSyllables', 'syllables'], ['widgetFieldDeck', 'deck'],
       ['widgetFieldRelated', 'related'], ['widgetFieldForms', 'forms'],
       ['widgetFieldSynonym', 'synonym'], ['widgetFieldAntonym', 'antonym']];
-    // 通知字卡額外欄位（與 widget 分開；白名單 = widget 扣 deck）
-    const N_FIELDS = [['notifyFieldSyllables', 'syllables'], ['notifyFieldRelated', 'related'],
+    // 通知字卡可開關欄位（渲染固定序＝此陣列序；與 widget 分開）
+    const N_FIELDS = [['notifyFieldWord', 'word'], ['notifyFieldPron', 'pron'], ['notifyFieldPos', 'pos'],
+      ['notifyFieldDef', 'def'], ['notifyFieldExample', 'example'],
+      ['notifyFieldSyllables', 'syllables'], ['notifyFieldRelated', 'related'],
       ['notifyFieldForms', 'forms'], ['notifyFieldSynonym', 'synonym'], ['notifyFieldAntonym', 'antonym']];
-    const nDeck = document.getElementById('notifyDeckSelect');
+    const nDeckBoxes = document.getElementById('notifyDeckBoxes');
     const fieldBoxes = W_FIELDS.map(([id]) => document.getElementById(id)).filter(Boolean);
     const nFieldBoxes = N_FIELDS.map(([id]) => document.getElementById(id)).filter(Boolean);
     const wEl = document.getElementById('widgetPermStatus');
     const nEl = document.getElementById('notifPermStatus');
     let loaded = false;
+    // 抽字字本複選：decks 表序優先、words.deck 獨有補上（可抽即所列）；同步建，狀態到達前已可見
+    if (nDeckBoxes) {
+      try {
+        nDeckBoxes.innerHTML = '';
+        const names = [...new Set([
+          ...(s.state.decks || []).map((d) => d.name),
+          ...(s.state.words || []).map((w) => w.deck || ''),
+        ].filter(Boolean))];
+        for (const name of names) {
+          const lab = document.createElement('label');
+          lab.style.cssText = 'display:flex;gap:6px;align-items:center';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox'; cb.value = name;
+          lab.appendChild(cb);
+          lab.appendChild(document.createTextNode(' ' + name));
+          nDeckBoxes.appendChild(lab);
+        }
+      } catch (e) { console.warn('[widget] deck options:', e); }
+    }
     const collect = () => ({
       rotateMin: parseInt(rot.value, 10) || 60,
       notifyOn: !!nOn.checked,
@@ -556,7 +577,8 @@ function _mount(s) {
         .map(([, key]) => key).join(','),
       notifyFields: N_FIELDS.filter(([id]) => document.getElementById(id)?.checked)
         .map(([, key]) => key).join(','),
-      notifyDeck: nDeck?.value ?? '',
+      notifyDecks: JSON.stringify([...(nDeckBoxes?.querySelectorAll('input:checked') || [])]
+        .map((cb) => cb.value)),
     });
     // 狀態字串分兩區：widget 區看 DB／精確鬧鐘；通知區看通知權限
     const wText = (st) => {
@@ -599,15 +621,12 @@ function _mount(s) {
           const b = document.getElementById(id);
           if (b) b.checked = selN.has(key);
         }
-        if (nDeck) {
-          nDeck.length = 1;   // 保留「全部字本」
-          for (const d of (s.state.decks || [])) {
-            const o = document.createElement('option');
-            o.value = d.name; o.textContent = d.name;
-            nDeck.appendChild(o);
-          }
-          nDeck.value = st.notifyDeck ?? '';
-          if (nDeck.selectedIndex < 0) nDeck.value = '';   // 字本已刪 → 退回全部
+        if (nDeckBoxes) {
+          let saved = [];
+          try { saved = JSON.parse(st.notifyDecks || '[]'); } catch (_) { saved = []; }
+          const selD = new Set(saved);
+          for (const cb of nDeckBoxes.querySelectorAll('input')) cb.checked = selD.has(cb.value);
+          // 已刪字本的殘值不回勾 → 下次存設定自動清除（舊版單值也走這裡）
         }
         paint(st);
       } catch (e) { console.warn('[widget] status:', e); }
@@ -620,7 +639,7 @@ function _mount(s) {
         paint(st);
       } catch (e) { console.warn('[widget] save:', e); }
     };
-    for (const el of [rot, nOn, nInt, nUnit, cDue, cWord, cGoal, res, nDeck,
+    for (const el of [rot, nOn, nInt, nUnit, cDue, cWord, cGoal, res, nDeckBoxes,
       ...fieldBoxes, ...nFieldBoxes].filter(Boolean)) el.addEventListener('change', save);
     document.getElementById('widgetRefreshBtn')?.addEventListener('click', async () => {
       try { await widgetRefresh(); toast('Widget 已刷新'); }

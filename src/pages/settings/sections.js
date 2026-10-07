@@ -574,9 +574,14 @@ export function renderSettingsContent(s) {
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">字卡欄位</div>
-            <div class="config-field-hint">字卡通知逐行顯示：單字／音標詞性／翻譯／例句（隨機一句）固定，額外欄位在此勾選（與 widget 欄位分開）</div>
+            <div class="config-field-hint">字卡通知逐行顯示（固定序：單字→音標→詞性→翻譯→例句→音節→相關→變化→同→反；空欄自動跳過、例句隨機一句）；至少開一項，全關只顯示單字。與 widget 欄位分開設定</div>
           </div>
           <div style="display:flex;gap:var(--s3);flex-wrap:wrap">
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldWord"> 單字</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldPron"> 音標</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldPos"> 詞性</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldDef"> 翻譯</label>
+            <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldExample"> 例句</label>
             <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldSyllables"> 音節</label>
             <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldRelated"> 相關字</label>
             <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="notifyFieldForms"> 變化形</label>
@@ -587,11 +592,9 @@ export function renderSettingsContent(s) {
         <div class="config-field">
           <div class="config-field-info">
             <div class="config-field-label">抽字字本</div>
-            <div class="config-field-hint">字卡通知只從此字本抽隨機字（全部＝不分字本）；只影響通知，不影響抽字 widget</div>
+            <div class="config-field-hint">字卡通知的抽字來源：不勾＝全部字本，可勾多個合併抽（只影響通知，不影響抽字 widget；被刪的字本下次存設定時自動清除）</div>
           </div>
-          <select id="notifyDeckSelect" class="form-input" style="width:auto">
-            <option value="">全部字本</option>
-          </select>
+          <div id="notifyDeckBoxes" style="display:flex;gap:var(--s3);flex-wrap:wrap"></div>
         </div>
         <div style="display:flex;gap:var(--s2);flex-wrap:wrap">
           <button class="btn btn-sm btn-secondary" id="notifPermBtn">${icon('shield')} 授權</button>
