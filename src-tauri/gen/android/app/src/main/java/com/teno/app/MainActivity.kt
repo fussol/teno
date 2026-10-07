@@ -110,6 +110,9 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webViewRef = webView
+    // 右側白線＝overscroll 邊界繪製（染色實驗：不吃主題 colorEdgeEffect；CSS 無此元素、
+    // 在 BootDiag 圖層之下 → WebView/OEM 標準繪製）→ 官方單一出口關閉；不觸碰捲動機制
+    webView.overScrollMode = android.view.View.OVER_SCROLL_NEVER
     BootDiag.attach(webView)   // BOOTDIAG：開始輪詢 JS 面（只在 .test 生效）
     flushHandler.post(flushTick)   // 暖路徑：onNewIntent 先於 webview 建立時也在這裡補送
   }

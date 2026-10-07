@@ -7,7 +7,5 @@
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
         <!-- Android <12 fallback：windowBackground 同色，避免白屏閃爍 -->
         <item name="android:windowBackground">@color/splash_background</item>
-        <!-- 診斷染色：overscroll 邊界指示條染螢光粉，辨認是誰畫的（線變粉＝框架 EdgeEffect；仍白＝非它） -->
-        <item name="android:colorEdgeEffect">#FFFF00FF</item>
     </style>
 </resources>
